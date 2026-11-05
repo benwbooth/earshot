@@ -30,6 +30,8 @@ QtObject {
     property var found: ({})
     property bool started: false   // the current track has begun playing
     property bool wantPlaying: false
+    // A new song has begun, including the next chapter of a video that's already playing.
+    signal trackStarted(var track)
 
     // A track can be a chapter of a longer video: it starts and ends inside it.
     readonly property real trackStart: current && current.start ? current.start : 0
@@ -88,6 +90,7 @@ QtObject {
                 player.started = true
                 player.loading = false
                 player.failures = 0
+                player.trackStarted(player.current)
                 const video = player.engine.videoId
                 if (!player.current.youtubeId)
                     Backend.rememberVideo(player.current.key, video)
@@ -191,6 +194,7 @@ QtObject {
             if (Math.abs(engine.position - trackStart) > 1.5)
                 engine.seek(trackStart)
             engine.play()
+            trackStarted(track)
             prefetch()
             return
         }

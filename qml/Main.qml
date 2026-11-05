@@ -86,9 +86,9 @@ ApplicationWindow {
     }
     Connections {
         target: Player
-        function onStartedChanged() {
-            if (Player.started && Player.current && !window.active && !miniPlayer.active)
-                nowPlaying.announce(Player.current)
+        function onTrackStarted(track) {
+            if (!window.active && !miniPlayer.active)
+                nowPlaying.announce(track)
         }
     }
 
@@ -368,6 +368,8 @@ ApplicationWindow {
             } else if (arg.startsWith("--search-tab=")) {
                 const tab = arg.substring(13)
                 Qt.callLater(() => { if (stack.currentItem && stack.currentItem.pageName === "search") stack.currentItem.tab = tab })
+            } else if (arg.startsWith("--test-notification")) {
+                testNotification.start()
             } else if (arg.startsWith("--play-first")) {
                 autoPlay.start()
             } else if (arg.startsWith("--screenshot=")) {
@@ -375,6 +377,14 @@ ApplicationWindow {
                 screenshot.start()
             }
         }
+    }
+
+    Timer {
+        id: testNotification
+        interval: 3000
+        onTriggered: nowPlaying.announce(Player.current || {
+            key: "test", title: "Dragon Warrior: Overture March", artist: "Koichi Sugiyama", album: "Dragon Warrior (NES)", cover: ""
+        })
     }
 
     Timer {
