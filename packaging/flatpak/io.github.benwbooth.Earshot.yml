@@ -1,0 +1,72 @@
+# Earshot as a Flatpak: KDE's Qt runtime plus Qt WebEngine (for YouTube's player).
+#   flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.benwbooth.Earshot.yml
+id: io.github.benwbooth.Earshot
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+base: io.qt.qtwebengine.BaseApp
+base-version: '6.10'
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm21
+command: earshot
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # The waveform listens to what the speakers play, through PipeWire.
+  - --filesystem=xdg-run/pipewire-0
+  # Tray icon
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+
+modules:
+  # Pins the now-playing card to the corner of the screen on Wayland desktops.
+  - name: layer-shell-qt
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTING=OFF
+    cleanup:
+      - /include
+      - /lib/cmake
+    sources:
+      - type: git
+        url: https://invent.kde.org/plasma/layer-shell-qt.git
+        tag: v6.6.5
+
+  - name: earshot
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm21/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm21/lib
+      # Cargo fetches the crates listed in Cargo.lock.
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/earshot/cargo
+        LIBCLANG_PATH: /usr/lib/sdk/llvm21/lib
+        # Qt WebEngine comes from the base app in /app, the rest of Qt from /usr.
+        QMAKE: /run/build/earshot/qt/qmake
+    build-commands:
+      - sh packaging/flatpak/merged-qmake.sh /run/build/earshot/qt
+      - cargo build --release --locked
+      - install -Dm755 target/release/earshot /app/bin/earshot
+      - install -Dm644 packaging/flatpak/io.github.benwbooth.Earshot.desktop /app/share/applications/io.github.benwbooth.Earshot.desktop
+      - install -Dm644 packaging/earshot.svg /app/share/icons/hicolor/scalable/apps/io.github.benwbooth.Earshot.svg
+      - install -Dm644 packaging/earshot-256.png /app/share/icons/hicolor/256x256/apps/io.github.benwbooth.Earshot.png
+      - install -Dm644 packaging/flatpak/io.github.benwbooth.Earshot.metainfo.xml /app/share/metainfo/io.github.benwbooth.Earshot.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - result
+          - .flatpak-builder
+          - flatpak-build
+          - flatpak-repo

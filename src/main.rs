@@ -7,7 +7,7 @@ mod radio;
 mod visualizer;
 mod youtube;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
+use cxx_qt_lib::QString;
 
 fn main() {
     // A dark, flat look by default regardless of the desktop's Qt style.
@@ -18,23 +18,17 @@ fn main() {
 
     // YouTube's player runs in Qt WebEngine, which has to be set up first.
     native::init_web_engine();
-    let mut app = QGuiApplication::new();
-    QGuiApplication::set_desktop_file_name(&QString::from("earshot"));
-    native::set_window_icon(&QString::from(":/qt/qml/Earshot/qml/icons/earshot-app.svg"));
-    if let Some(mut app) = app.as_mut() {
-        app.as_mut().set_application_name(&QString::from("Earshot"));
-        app.as_mut().set_organization_name(&QString::from("Earshot"));
-    }
 
-    let mut engine = QQmlApplicationEngine::new();
-    if let Some(engine) = engine.as_mut() {
-        engine.load(&QUrl::from("qrc:/qt/qml/Earshot/qml/Main.qml"));
-    }
-
-    let code = app.as_mut().map(|app| app.exec()).unwrap_or(1);
-    // Tear Qt down (audio output included) before the process exits;
-    // exiting with them alive crashes in the audio backend's cleanup.
-    drop(engine);
-    drop(app);
+    // Matches the .desktop file, so the desktop shows Earshot's icon and name.
+    let desktop_id = std::env::var("FLATPAK_ID").unwrap_or_else(|_| "earshot".to_owned());
+    let args: Vec<String> = std::env::args().collect();
+    // Qt (audio output included) is torn down inside run(), before the process
+    // exits; exiting with it alive crashes in the audio backend's cleanup.
+    let code = native::run(
+        &args,
+        &QString::from(desktop_id.as_str()),
+        &QString::from(":/qt/qml/Earshot/qml/icons/earshot-app.svg"),
+        &QString::from("qrc:/qt/qml/Earshot/qml/Main.qml"),
+    );
     std::process::exit(code);
 }

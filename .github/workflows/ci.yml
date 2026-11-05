@@ -1,0 +1,16 @@
+# Builds and tests Earshot with the Nix flake on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Build and test
+        run: nix build --print-build-logs

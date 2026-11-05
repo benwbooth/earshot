@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.benwbooth.Earshot</id>
+  <name>Earshot</name>
+  <summary>Charts, Reddit radio, albums and playlists, played from YouTube</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.benwbooth">
+    <name>Ben Booth</name>
+  </developer>
+  <description>
+    <p>
+      Earshot is a desktop music player in the spirit of Headset: popular music by genre and era,
+      a radio made of songs people share on Reddit, and YouTube as the music source, with real
+      albums, artist pages and playlists.
+    </p>
+    <ul>
+      <li>Charts for 20+ genres and every decade from the 50s to the 2020s</li>
+      <li>About 50 music subreddits as radio stations</li>
+      <li>YouTube playlists and timestamped soundtrack videos open as albums</li>
+      <li>Playlists, liked songs and saved albums kept on your computer</li>
+      <li>A mini player, a tray icon and a now-playing card</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.benwbooth.Earshot.desktop</launchable>
+  <url type="homepage">https://benwbooth.github.io/earshot/</url>
+  <url type="bugtracker">https://github.com/benwbooth/earshot/issues</url>
+  <url type="vcs-browser">https://github.com/benwbooth/earshot</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://benwbooth.github.io/earshot/home.png</image>
+      <caption>Home: trending songs, albums and charts</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://benwbooth.github.io/earshot/album.png</image>
+      <caption>An album</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-05">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

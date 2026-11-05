@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Earshot
+GenericName=Music Player
+Comment=Charts, Reddit radio, albums and playlists
+Exec=earshot
+Icon=io.github.benwbooth.Earshot
+Categories=AudioVideo;Audio;Player;
+Keywords=music;youtube;reddit;radio;playlist;album;
+StartupWMClass=earshot

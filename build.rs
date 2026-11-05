@@ -65,6 +65,14 @@ fn main() {
         .qrc_resources(icons)
         .qt_module("Network")
         .qt_module("Quick")
+        .qt_module("Widgets")
         .qt_module("WebEngineQuick")
         .build();
+
+    // The icon Windows shows for earshot.exe in Explorer and the taskbar.
+    #[cfg(windows)]
+    winresource::WindowsResource::new()
+        .set_icon("packaging/earshot.ico")
+        .compile()
+        .expect("Windows icon resource");
 }

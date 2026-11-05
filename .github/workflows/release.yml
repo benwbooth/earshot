@@ -1,0 +1,272 @@
+# Builds Earshot for every platform when a version tag (v1.2.3) is pushed, and
+# publishes a GitHub release with:
+#   Windows  installer (.exe) and portable folder (.zip)
+#   macOS    Apple-silicon disk image (.dmg), plus the Homebrew cask in Casks/
+#   Linux    AppImage, Flatpak bundle, and a Flatpak repository on GitHub Pages
+# Run it by hand (Actions > Release > Run workflow) to rebuild an existing tag.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: "6.10.*"
+  QT_MODULES: "qtwebengine qtwebchannel qtpositioning"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: ${{ env.QT_MODULES }}
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        shell: pwsh
+        run: |
+          $env:QMAKE = "$env:QT_ROOT_DIR\bin\qmake.exe"
+          cargo build --release --locked
+      - name: Gather Qt and the Visual C++ runtime next to earshot.exe
+        shell: pwsh
+        run: |
+          $dir = "dist\Earshot"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item target\release\earshot.exe $dir
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --qmldir qml --no-compiler-runtime --no-translations "$dir\earshot.exe"
+          foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            Copy-Item "$env:SystemRoot\System32\$dll" $dir
+          }
+          Copy-Item README.md $dir
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\Earshot -DestinationPath "Earshot-$env:VERSION-windows-x64-portable.zip"
+      - name: Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\iscc.exe" "/DMyAppVersion=$env:VERSION" "/DSourceDir=$PWD\dist\Earshot" "/O$PWD" packaging\windows\earshot.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            Earshot-*-windows-x64-portable.zip
+            Earshot-*-windows-x64-setup.exe
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          modules: ${{ env.QT_MODULES }}
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: QMAKE="$QT_ROOT_DIR/bin/qmake" cargo build --release --locked
+      - name: Make Earshot.app
+        run: |
+          app=dist/Earshot.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/release/earshot "$app/Contents/MacOS/earshot"
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          iconset=$RUNNER_TEMP/earshot.iconset
+          mkdir -p "$iconset"
+          for size in 16 32 128 256 512; do
+            sips -z $size $size packaging/earshot-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+            sips -z $((size * 2)) $((size * 2)) packaging/earshot-1024.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/earshot.icns"
+          "$QT_ROOT_DIR/bin/macdeployqt" "$app" -qmldir=qml
+          # Not notarized; an ad-hoc signature is what lets Apple-silicon Macs run it.
+          codesign --force --deep --sign - "$app"
+      - name: Disk image
+        run: |
+          ln -s /Applications dist/Applications
+          hdiutil create -volname Earshot -srcfolder dist -ov -format UDZO "Earshot-$VERSION-macos-arm64.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: Earshot-*-macos-arm64.dmg
+
+  appimage:
+    needs: version
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - name: Build tools and libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang libclang-dev pkg-config libpipewire-0.3-dev libasound2-dev \
+            libgl1-mesa-dev libegl1 libxkbcommon-dev libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libnss3 libxcomposite1 libxdamage1 libxrandr2 \
+            libxtst6 libxkbfile1 libfuse2 file
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: ${{ env.QT_MODULES }}
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: QMAKE="$QT_ROOT_DIR/bin/qmake" cargo build --release --locked
+      - name: AppImage
+        run: |
+          base=https://github.com/linuxdeploy
+          wget -q "$base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          wget -q "$base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+          chmod +x linuxdeploy*.AppImage
+          cp packaging/earshot-256.png "$RUNNER_TEMP/earshot.png"
+          export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          export LD_LIBRARY_PATH="$QT_ROOT_DIR/lib"
+          export QML_SOURCES_PATHS="$PWD/qml"
+          # Native Wayland as well as X11, when this Qt has it.
+          if [ -e "$QT_ROOT_DIR/plugins/platforms/libqwayland-egl.so" ]; then
+            export EXTRA_PLATFORM_PLUGINS="libqwayland-egl.so;libqwayland-generic.so"
+            export EXTRA_QT_MODULES="waylandcompositor"
+          fi
+          export LDAI_OUTPUT="Earshot-$VERSION-x86_64.AppImage"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir \
+            --executable target/release/earshot \
+            --desktop-file packaging/earshot.desktop \
+            --icon-file "$RUNNER_TEMP/earshot.png" \
+            --plugin qt --output appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: Earshot-*-x86_64.AppImage
+
+  flatpak:
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      APP_ID: io.github.benwbooth.Earshot
+      GPG_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - name: Flatpak tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream
+          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Signing key
+        if: env.GPG_KEY != ''
+        run: |
+          export GNUPGHOME=$RUNNER_TEMP/gnupg
+          mkdir -m 700 "$GNUPGHOME"
+          echo "$GPG_KEY" | gpg --batch --import
+          key=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "SIGN_ARGS=--gpg-sign=$key --gpg-homedir=$GNUPGHOME" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean \
+            --repo=flatpak-repo $SIGN_ARGS build packaging/flatpak/$APP_ID.yml
+          flatpak build-update-repo --generate-static-deltas --prune $SIGN_ARGS flatpak-repo
+          flatpak build-bundle $SIGN_ARGS --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            flatpak-repo "Earshot-$VERSION-x86_64.flatpak" $APP_ID
+          tar -czf earshot-flatpak-repo.tar.gz flatpak-repo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: |
+            Earshot-*-x86_64.flatpak
+            earshot-flatpak-repo.tar.gz
+
+  release:
+    needs: [version, windows, macos, appimage, flatpak]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Checksums
+        run: cd assets && sha256sum * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Earshot ${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          files: assets/*
+
+  homebrew:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+      - name: Update Casks/earshot.rb
+        run: |
+          sha=$(sha256sum "Earshot-$VERSION-macos-arm64.dmg" | cut -d' ' -f1)
+          mkdir -p Casks
+          sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$sha/" packaging/macos/earshot.rb.in > Casks/earshot.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/earshot.rb
+          git diff --cached --quiet || git commit -m "Homebrew cask for Earshot $VERSION"
+          git push origin HEAD:main
+      # Republish the web page with this release's Flatpak repository.
+      - name: Update GitHub Pages
+        run: gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"

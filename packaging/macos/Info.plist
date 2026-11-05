@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Earshot</string>
+    <key>CFBundleExecutable</key>
+    <string>earshot</string>
+    <key>CFBundleIconFile</key>
+    <string>earshot</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.benwbooth.Earshot</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Earshot</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <!-- The waveform listens to what the speakers play (macOS 14.6+ asks first). -->
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Earshot listens to what your speakers are playing to draw its waveform. Nothing is recorded or saved.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Earshot listens to what your speakers are playing to draw its waveform. Nothing is recorded or saved.</string>
+</dict>
+</plist>

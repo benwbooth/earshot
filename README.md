@@ -42,6 +42,31 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
   library: loopback recording on Windows and macOS 14.6+, the PipeWire speaker monitor on Linux.
 - Your playlists, liked songs and saved albums live in `~/.local/share/earshot/library.json`.
 
+## Install
+
+Downloads are on the [releases page](https://github.com/benwbooth/earshot/releases/latest).
+
+- **Windows**: `Earshot-…-windows-x64-setup.exe` installs Earshot; `…-windows-x64-portable.zip` runs from any
+  folder without installing.
+- **macOS** (Apple silicon, macOS 13+): open `Earshot-…-macos-arm64.dmg` and drag Earshot to Applications, or use
+  Homebrew:
+  ```sh
+  brew tap benwbooth/earshot https://github.com/benwbooth/earshot
+  brew install --cask earshot
+  ```
+  Earshot isn't notarized by Apple; if macOS won't open the dmg's copy, run
+  `xattr -dr com.apple.quarantine /Applications/Earshot.app` once (Homebrew does this for you).
+- **Linux**:
+  - Flatpak, from Earshot's own Flatpak repository (updates with `flatpak update`):
+    ```sh
+    flatpak install --user https://benwbooth.github.io/earshot/flatpak/earshot.flatpakref
+    ```
+    or download the single-file bundle `Earshot-…-x86_64.flatpak` and `flatpak install --user` it.
+  - AppImage: download `Earshot-…-x86_64.AppImage`, make it executable and run it.
+  - Nix: `nix run github:benwbooth/earshot`.
+
+New versions are built by GitHub Actions (`.github/workflows/release.yml`) whenever a `v*` tag is pushed.
+
 ## Build and run (Nix)
 
 ```sh

@@ -1,2 +1,7 @@
 target/
 result*
+.flatpak-builder/
+flatpak-build/
+flatpak-repo/
+AppDir/
+dist/

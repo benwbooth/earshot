@@ -7,12 +7,12 @@ pub mod ffi {
         type QString = cxx_qt_lib::QString;
 
         include!("earshot/native.h");
-        #[cxx_name = "earshotSetWindowIcon"]
-        fn set_window_icon(resource: &QString);
-
         #[cxx_name = "earshotInitWebEngine"]
         fn init_web_engine();
+
+        #[cxx_name = "earshotRun"]
+        fn run(args: &Vec<String>, desktop_id: &QString, icon: &QString, qml: &QString) -> i32;
     }
 }
 
-pub use ffi::{init_web_engine, set_window_icon};
+pub use ffi::{init_web_engine, run};

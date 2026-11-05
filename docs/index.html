@@ -21,8 +21,11 @@
   .card h3 { margin: 0 0 8px; font-size: 18px; }
   .card p { margin: 0; color: var(--muted); font-size: 15px; }
   ol { color: var(--muted); padding-left: 20px; }
+  .downloads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .downloads a { color: var(--text); }
+  code { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; font-size: 14px; overflow-wrap: anywhere; }
   footer { color: var(--muted); font-size: 14px; padding: 48px 0; }
-  @media (max-width: 760px) { .pair, .grid { grid-template-columns: 1fr; } h1 { font-size: 36px; } }
+  @media (max-width: 760px) { .pair, .grid, .downloads { grid-template-columns: 1fr; } h1 { font-size: 36px; } }
 </style>
 </head>
 <body>
@@ -33,6 +36,12 @@
   <div class="pair"><img class="shot" src="./album.png" alt="An album page"><img class="shot" src="./radio.png" alt="Reddit radio"></div>
   <h2>What it does</h2>
   <div class="grid"><div class="card"><h3>Charts by genre and era</h3><p>Trending songs and albums, charts for 20+ genres and the hits of every decade from the 50s to the 2020s.</p></div><div class="card"><h3>Reddit radio</h3><p>About 50 music subreddits in groups. Songs play in the order the community ranks them; save any station as a playlist.</p></div><div class="card"><h3>Albums</h3><p>Full track lists with artwork, release date, label and running time. Play, shuffle, queue or save any album.</p></div><div class="card"><h3>Artists</h3><p>Popular songs and the full discography: albums, singles and EPs.</p></div><div class="card"><h3>Playlists</h3><p>Create, rename, reorder and filter playlists, keep liked songs, and import a YouTube playlist from a link.</p></div><div class="card"><h3>Search</h3><p>Songs, albums and artists, plus everything YouTube finds, in its order and loading more as you scroll. Soundtrack videos with timestamps open as albums.</p></div></div>
+  <h2>Download</h2>
+  <div class="downloads">
+    <div class="card"><h3>Windows</h3><p>An <a href="https://github.com/benwbooth/earshot/releases/latest">installer</a>, or a portable zip that runs from any folder.</p></div>
+    <div class="card"><h3>macOS</h3><p>A <a href="https://github.com/benwbooth/earshot/releases/latest">disk image</a> for Apple-silicon Macs, or Homebrew:<br><code>brew tap benwbooth/earshot https://github.com/benwbooth/earshot</code> then <code>brew install --cask earshot</code></p></div>
+    <div class="card"><h3>Linux</h3><p>Flatpak: <code>flatpak install --user https://benwbooth.github.io/earshot/flatpak/earshot.flatpakref</code>, or an <a href="https://github.com/benwbooth/earshot/releases/latest">AppImage</a>.</p></div>
+  </div>
   <h2>How it works</h2>
   <ol>
     <li>Song, album and artist details and artwork come from Deezer's public catalogue.</li>

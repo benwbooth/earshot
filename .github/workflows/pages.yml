@@ -1,0 +1,60 @@
+# Publishes https://benwbooth.github.io/earshot/: the project page in docs/,
+# plus the Flatpak repository from the latest release under /flatpak/.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "packaging/flatpak/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APP_ID: io.github.benwbooth.Earshot
+      SITE: https://benwbooth.github.io/earshot
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir site
+          cp -r docs/. site/
+          # The Flatpak repository, if a release has one.
+          if gh release download --repo "$GITHUB_REPOSITORY" --pattern earshot-flatpak-repo.tar.gz --dir "$RUNNER_TEMP"; then
+            mkdir -p site/flatpak
+            tar -xzf "$RUNNER_TEMP/earshot-flatpak-repo.tar.gz" -C site/flatpak
+            mv site/flatpak/flatpak-repo site/flatpak/repo
+            key=""
+            if [ -f packaging/flatpak/earshot-flatpak.gpg ]; then
+              key="GPGKey=$(base64 -w0 packaging/flatpak/earshot-flatpak.gpg)"
+            fi
+            printf '%s\n' "[Flatpak Repo]" "Title=Earshot" "Url=$SITE/flatpak/repo/" \
+              "Homepage=$SITE/" "Comment=Earshot music player" "Icon=$SITE/earshot.svg" $key \
+              > site/flatpak/earshot.flatpakrepo
+            printf '%s\n' "[Flatpak Ref]" "Title=Earshot" "Name=$APP_ID" "Branch=master" \
+              "Url=$SITE/flatpak/repo/" "SuggestRemoteName=earshot" "IsRuntime=false" \
+              "RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo" "Homepage=$SITE/" \
+              "Icon=$SITE/earshot.svg" $key \
+              > site/flatpak/earshot.flatpakref
+          fi
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
