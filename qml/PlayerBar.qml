@@ -205,6 +205,12 @@ Rectangle {
             spacing: 6
             Item { Layout.fillWidth: true }
             IconButton {
+                iconName: "mini"
+                iconSize: 18
+                tip: "Mini player (Ctrl+M)"
+                onClicked: Nav.toggleMini()
+            }
+            IconButton {
                 iconName: "queue"
                 iconSize: 18
                 active: Nav.current === "queue"

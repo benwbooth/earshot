@@ -46,14 +46,25 @@ QtObject {
                 if (handler.fail) handler.fail("Unexpected answer")
                 return
             }
-            if (handler.ok) handler.ok(data)
+            // A page may have been closed before its answer arrived.
+            try {
+                if (handler.ok) handler.ok(data)
+            } catch (error) {
+                if (!(error instanceof TypeError))
+                    throw error
+            }
         }
         function onFailed(request, message) {
             const handler = api.pending[request]
             if (!handler)
                 return
             delete api.pending[request]
-            if (handler.fail) handler.fail(message)
+            try {
+                if (handler.fail) handler.fail(message)
+            } catch (error) {
+                if (!(error instanceof TypeError))
+                    throw error
+            }
         }
     }
 

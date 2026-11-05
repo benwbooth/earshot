@@ -1,6 +1,7 @@
 mod backend;
 mod catalog;
 mod library;
+mod native;
 mod net;
 mod radio;
 mod youtube;
@@ -16,6 +17,7 @@ fn main() {
 
     let mut app = QGuiApplication::new();
     QGuiApplication::set_desktop_file_name(&QString::from("earshot"));
+    native::set_window_icon(&QString::from(":/qt/qml/Earshot/qml/icons/earshot-app.svg"));
     if let Some(mut app) = app.as_mut() {
         app.as_mut().set_application_name(&QString::from("Earshot"));
         app.as_mut().set_organization_name(&QString::from("Earshot"));

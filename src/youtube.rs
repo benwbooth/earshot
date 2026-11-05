@@ -126,6 +126,176 @@ pub fn playlist(url: &str) -> Result<Value, String> {
     }))
 }
 
+/// The best thumbnail a flat entry lists (playlists carry their own).
+fn entry_thumbnail(entry: &Value) -> String {
+    entry
+        .get("thumbnails")
+        .and_then(Value::as_array)
+        .and_then(|list| list.last())
+        .and_then(|thumb| thumb.get("url"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned()
+}
+
+/// Videos at least this long are offered as albums (full soundtracks, live sets).
+const ALBUM_VIDEO_SECONDS: u64 = 15 * 60;
+
+/// What youtube.com itself shows for a search, in its order: videos and
+/// playlists mixed, exactly as on the site.
+fn results_page(query: &str, count: usize) -> Result<Vec<Value>, String> {
+    let url = format!("https://www.youtube.com/results?search_query={}", crate::net::encode(query));
+    let text = run(&["--flat-playlist", "--playlist-end", &count.to_string(), "-J", "--", &url])?;
+    let found: Value = serde_json::from_str(&text).map_err(|error| format!("Unexpected answer from yt-dlp: {error}"))?;
+    Ok(found.get("entries").and_then(Value::as_array).cloned().unwrap_or_default())
+}
+
+/// A real YouTube search, kept in YouTube's order: playlists and full-length
+/// videos (soundtracks, full albums, live sets) come back as albums, shorter
+/// videos as songs.
+pub fn search_albums(query: &str) -> Result<Value, String> {
+    let mut albums = Vec::new();
+    let mut tracks = Vec::new();
+    for entry in results_page(query, 40)? {
+        let url = entry.get("url").and_then(Value::as_str).unwrap_or("");
+        let id = entry.get("id").and_then(Value::as_str).unwrap_or("");
+        if url.contains("list=") {
+            // "RD…" lists are YouTube's endless auto-generated mixes, not albums.
+            if id.starts_with("RD") || id.is_empty() {
+                continue;
+            }
+            let channel = entry.get("channel").or_else(|| entry.get("uploader")).and_then(Value::as_str).unwrap_or("");
+            albums.push(json!({
+                "id": format!("yt:pl:{id}"),
+                "title": entry.get("title").and_then(Value::as_str).unwrap_or("Playlist"),
+                "artist": channel,
+                "artistId": "",
+                "cover": entry_thumbnail(&entry),
+                "coverBig": entry_thumbnail(&entry),
+                "year": "",
+                "kind": "playlist",
+                "trackCount": entry.get("playlist_count").and_then(Value::as_u64).unwrap_or(0),
+            }));
+            continue;
+        }
+        let Some(video) = entry_track(&entry) else { continue };
+        if video["duration"].as_u64().unwrap_or(0) >= ALBUM_VIDEO_SECONDS {
+            let video_id = video["youtubeId"].as_str().unwrap_or("");
+            albums.push(json!({
+                "id": format!("yt:v:{video_id}"),
+                "title": video["rawTitle"],
+                "artist": video["channel"],
+                "artistId": "",
+                "cover": thumbnail(video_id),
+                "coverBig": thumbnail(video_id),
+                "year": "",
+                "kind": "video",
+                "duration": video["duration"],
+            }));
+        } else {
+            tracks.push(video);
+        }
+    }
+    Ok(json!({ "albums": albums, "tracks": tracks }))
+}
+
+/// A YouTube playlist ("yt:pl:ID") or a long video split at its chapters ("yt:v:ID"), as an album.
+pub fn album(id: &str) -> Result<Value, String> {
+    if let Some(list) = id.strip_prefix("yt:pl:") {
+        let found = flat(&format!("https://www.youtube.com/playlist?list={list}"))?;
+        let title = found.get("title").and_then(Value::as_str).unwrap_or("Playlist").to_owned();
+        let channel = found.get("channel").or_else(|| found.get("uploader")).and_then(Value::as_str).unwrap_or("").to_owned();
+        let mut tracks: Vec<Value> = found
+            .get("entries")
+            .and_then(Value::as_array)
+            .map(|entries| entries.iter().filter_map(entry_track).collect())
+            .unwrap_or_default();
+        for (index, track) in tracks.iter_mut().enumerate() {
+            track["album"] = json!(title);
+            track["albumId"] = json!(id);
+            track["trackNumber"] = json!(index + 1);
+        }
+        if tracks.is_empty() {
+            return Err("This playlist has no playable videos.".to_owned());
+        }
+        let cover = tracks[0]["cover"].clone();
+        let total: u64 = tracks.iter().filter_map(|t| t["duration"].as_u64()).sum();
+        return Ok(json!({
+            "id": id, "title": title, "artist": channel, "artistId": "",
+            "cover": cover, "coverBig": cover, "year": "", "kind": "playlist",
+            "trackCount": tracks.len(), "duration": total, "label": "YouTube playlist",
+            "releaseDate": "", "genres": [], "tracks": tracks, "source": "youtube",
+        }));
+    }
+
+    let video = id.strip_prefix("yt:v:").ok_or("Unknown YouTube album")?;
+    let text = run(&["--skip-download", "--no-playlist", "-J", "--", &format!("https://www.youtube.com/watch?v={video}")])?;
+    let info: Value = serde_json::from_str(&text).map_err(|error| format!("Unexpected answer from yt-dlp: {error}"))?;
+    let title = info.get("title").and_then(Value::as_str).unwrap_or("Album").to_owned();
+    let channel = info.get("channel").or_else(|| info.get("uploader")).and_then(Value::as_str).unwrap_or("").to_owned();
+    let length = info.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
+    let date = info.get("upload_date").and_then(Value::as_str).unwrap_or("");
+    let cover = thumbnail(video);
+    let chapters: Vec<(f64, f64, String)> = info
+        .get("chapters")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .map(|chapter| {
+                    (
+                        chapter.get("start_time").and_then(Value::as_f64).unwrap_or(0.0),
+                        chapter.get("end_time").and_then(Value::as_f64).unwrap_or(length),
+                        chapter.get("title").and_then(Value::as_str).unwrap_or("").trim().to_owned(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let parts = if chapters.is_empty() { vec![(0.0, length, title.clone())] } else { chapters };
+    let tracks: Vec<Value> = parts
+        .iter()
+        .enumerate()
+        .map(|(index, (start, end, name))| {
+            json!({
+                "key": format!("yt:{video}@{}", *start as u64),
+                "youtubeId": video,
+                "title": strip_track_number(name),
+                "artist": channel,
+                "artistId": "",
+                "album": title,
+                "albumId": id,
+                "cover": cover,
+                "coverBig": cover,
+                "duration": (end - start).max(0.0) as u64,
+                "start": start,
+                "end": if index + 1 == parts.len() { 0.0 } else { *end },
+                "trackNumber": index + 1,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "id": id, "title": title, "artist": channel, "artistId": "",
+        "cover": cover, "coverBig": cover,
+        "year": date.get(..4).unwrap_or(""), "kind": "video",
+        "trackCount": tracks.len(), "duration": length as u64,
+        "label": if parts.len() > 1 { "One YouTube video, split at its chapters" } else { "One YouTube video" },
+        "releaseDate": if date.len() == 8 { format!("{}-{}-{}", &date[..4], &date[4..6], &date[6..]) } else { String::new() },
+        "genres": [], "tracks": tracks, "source": "youtube",
+    }))
+}
+
+/// "12. Town" or "03 - Town" -> "Town".
+fn strip_track_number(name: &str) -> String {
+    let rest = name.trim_start_matches(|c: char| c.is_ascii_digit());
+    if rest.len() < name.len() {
+        let rest = rest.trim_start_matches(['.', ')', '-', ':', ' ']);
+        if !rest.is_empty() {
+            return rest.to_owned();
+        }
+    }
+    name.to_owned()
+}
+
 fn words(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
@@ -277,6 +447,14 @@ mod tests {
     fn splits_titles() {
         assert_eq!(split_title("Daft Punk - Around The World (Official Music Video)", "Daft Punk"), ("Daft Punk".into(), "Around The World".into()));
         assert_eq!(split_title("Harder Better", "Daft Punk - Topic"), ("Daft Punk".into(), "Harder Better".into()));
+    }
+
+    #[test]
+    fn strips_chapter_numbers() {
+        assert_eq!(strip_track_number("1. Overture - Roto's Theme"), "Overture - Roto's Theme");
+        assert_eq!(strip_track_number("03 - Town"), "Town");
+        assert_eq!(strip_track_number("1999"), "1999");
+        assert_eq!(strip_track_number("Town"), "Town");
     }
 
     #[test]

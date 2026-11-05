@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtCore
+import Qt.labs.platform as Platform
 import Earshot
 
 ApplicationWindow {
@@ -11,6 +12,7 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 600
     visible: true
+    flags: Qt.Window | Qt.FramelessWindowHint
     title: Player.current ? Player.current.title + " · " + Player.current.artist + " — Earshot" : "Earshot"
     color: Theme.background
     font.family: Theme.fontFamily
@@ -41,6 +43,87 @@ ApplicationWindow {
         property alias width: window.width
         property alias height: window.height
     }
+
+    // Closing the window keeps the music playing in the tray; quit from the tray menu.
+    property bool quitting: false
+    onClosing: close => {
+        if (tray.available && !quitting) {
+            close.accepted = false
+            window.hide()
+            if (!trayHint.shown) {
+                tray.showMessage("Earshot is still playing", "It's in the system tray. Right-click the headphones icon to quit.", Platform.SystemTrayIcon.Information, 4000)
+                trayHint.shown = true
+            }
+        }
+    }
+
+    // Qt 6 asks every window to close before quitting, and closing normally
+    // hides to the tray, so mark the quit as real first.
+    function quitApp() {
+        quitting = true
+        miniPlayer.close()
+        Qt.quit()
+    }
+
+    function showWindow() {
+        miniPlayer.hide()
+        window.show()
+        window.raise()
+        window.requestActivate()
+    }
+
+    // Compact mode: swap the full window for the small always-on-top player.
+    function enterMini() {
+        window.hide()
+        miniPlayer.show()
+        miniPlayer.raise()
+    }
+
+    MiniPlayer {
+        id: miniPlayer
+        onExpandRequested: window.showWindow()
+    }
+
+    Settings {
+        id: trayHint
+        category: "tray"
+        property bool shown: false
+    }
+
+    // Monochrome tray icon that suits the panel: light glyph on dark panels, dark on light ones.
+    Platform.SystemTrayIcon {
+        id: tray
+        visible: true
+        icon.source: Qt.color(window.systemPalette.window).hslLightness > 0.5 ? Theme.icon("tray-dark") : Theme.icon("tray-light")
+        tooltip: Player.current ? Player.current.title + " — " + Player.current.artist : "Earshot"
+        onActivated: reason => {
+            if (reason === Platform.SystemTrayIcon.Trigger || reason === Platform.SystemTrayIcon.DoubleClick) {
+                if (window.visible && window.active)
+                    window.hide()
+                else
+                    window.showWindow()
+            } else if (reason === Platform.SystemTrayIcon.MiddleClick) {
+                Player.toggle()
+            }
+        }
+        menu: Platform.Menu {
+            Platform.MenuItem {
+                text: Player.current ? Player.current.title + " — " + Player.current.artist : "Nothing playing"
+                enabled: false
+            }
+            Platform.MenuSeparator {}
+            Platform.MenuItem { text: Player.playing ? "Pause" : "Play"; enabled: Player.current !== null; onTriggered: Player.toggle() }
+            Platform.MenuItem { text: "Next"; enabled: Player.hasNext; onTriggered: Player.next(false) }
+            Platform.MenuItem { text: "Previous"; enabled: Player.current !== null; onTriggered: Player.previous() }
+            Platform.MenuSeparator {}
+            Platform.MenuItem { text: window.visible ? "Hide Earshot" : "Show Earshot"; onTriggered: window.visible ? window.hide() : window.showWindow() }
+            Platform.MenuItem { text: miniPlayer.visible ? "Full window" : "Mini player"; onTriggered: miniPlayer.visible ? window.showWindow() : window.enterMini() }
+            Platform.MenuItem { text: "Quit"; onTriggered: window.quitApp() }
+        }
+    }
+
+    // The desktop's colours, to pick the tray glyph.
+    readonly property SystemPalette systemPalette: SystemPalette { colorGroup: SystemPalette.Active }
 
     readonly property var pages: ({
         home: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
@@ -79,6 +162,18 @@ ApplicationWindow {
             newPlaylist.ask("")
         }
         function onAskImportPlaylist() { importPrompt.ask("") }
+        function onToggleMini() {
+            if (miniPlayer.visible)
+                window.showWindow()
+            else
+                window.enterMini()
+        }
+        function onSearch(query) {
+            if (topBar.searchField.text !== query)
+                topBar.searchField.text = query
+            if (Nav.current !== "search")
+                window.navigate("search", { query: query })
+        }
     }
 
     Component { id: homePage; HomePage {} }
@@ -95,6 +190,14 @@ ApplicationWindow {
         id: shell
         anchors.fill: parent
         spacing: 0
+
+        TopBar {
+            id: topBar
+            Layout.fillWidth: true
+            window: window
+            canGoBack: stack.depth > 1
+            onBackClicked: stack.pop()
+        }
 
         RowLayout {
             Layout.fillWidth: true
@@ -130,20 +233,6 @@ ApplicationWindow {
                     replaceEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 } }
                     replaceExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 } }
                 }
-
-                IconButton {
-                    visible: stack.depth > 1
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.margins: 14
-                    z: 10
-                    iconName: "back"
-                    iconSize: 18
-                    color: Theme.text
-                    tip: "Back"
-                    background: Rectangle { radius: width / 2; color: Qt.rgba(0, 0, 0, 0.55) }
-                    onClicked: stack.pop()
-                }
             }
         }
 
@@ -151,6 +240,8 @@ ApplicationWindow {
             Layout.fillWidth: true
         }
     }
+
+    ResizeEdges { window: window }
 
     // Short notices ("Added to playlist", errors)
     Rectangle {
@@ -218,8 +309,9 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Ctrl+F"; onActivated: Nav.open("search") }
-    Shortcut { sequence: "Ctrl+L"; onActivated: Nav.open("search") }
+    Shortcut { sequences: ["Ctrl+F", "Ctrl+L"]; onActivated: topBar.searchField.forceActiveFocus() }
+    Shortcut { sequence: "Ctrl+Q"; context: Qt.ApplicationShortcut; onActivated: window.quitApp() }
+    Shortcut { sequence: "Ctrl+M"; context: Qt.ApplicationShortcut; onActivated: Nav.toggleMini() }
     Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (stack.depth > 1) stack.pop() }
     Shortcut { sequence: "Ctrl+Right"; onActivated: Player.next(false) }
     Shortcut { sequence: "Ctrl+Left"; onActivated: Player.previous() }
@@ -248,7 +340,7 @@ ApplicationWindow {
                 Qt.callLater(() => window.navigate(spec[0], pageArgs))
             } else if (arg.startsWith("--search=")) {
                 const q = arg.substring(9)
-                Qt.callLater(() => window.navigate("search", { query: q }))
+                Qt.callLater(() => Nav.search(q))
             } else if (arg.startsWith("--play-first")) {
                 autoPlay.start()
             } else if (arg.startsWith("--screenshot=")) {
@@ -279,7 +371,7 @@ ApplicationWindow {
         }
         onTriggered: shell.grabToImage(result => {
             result.saveToFile(path)
-            Qt.quit()
+            window.quitApp()
         })
     }
 }

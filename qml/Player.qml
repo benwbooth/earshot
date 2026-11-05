@@ -23,12 +23,22 @@ QtObject {
     property int pendingRequest: -1
     property string pendingKey: ""
     property bool retried: false
+    // The YouTube video whose audio is loaded, so chapters of one long video
+    // play on from the same file instead of reloading it.
+    property string loadedVideo: ""
+    property real seekPending: -1
+
+    // A track can be a chapter of a longer video: it starts and ends inside the file.
+    readonly property real trackStart: current && current.start ? current.start : 0
+    readonly property real trackEnd: current && current.end ? current.end : 0
 
     readonly property bool playing: media.playbackState === MediaPlayer.PlayingState
-    readonly property real position: media.position / 1000
-    readonly property real length: media.duration > 0 ? media.duration / 1000 : (current ? current.duration : 0)
+    readonly property real position: Math.max(0, media.position / 1000 - trackStart)
+    readonly property real length: trackEnd > 0 ? trackEnd - trackStart
+                                  : media.duration > 0 ? media.duration / 1000 - trackStart
+                                  : (current ? current.duration : 0)
     readonly property bool hasNext: index + 1 < queue.length || (repeat === 1 && queue.length > 0)
-    readonly property bool hasPrevious: index > 0 || media.position > 3000
+    readonly property bool hasPrevious: index > 0 || position > 3
 
     property Settings settings: Settings {
         category: "player"
@@ -46,8 +56,16 @@ QtObject {
         onMediaStatusChanged: {
             if (mediaStatus === MediaPlayer.EndOfMedia)
                 player.next(true)
-            else if (mediaStatus === MediaPlayer.BufferedMedia || mediaStatus === MediaPlayer.LoadedMedia)
+            else if (mediaStatus === MediaPlayer.BufferedMedia || mediaStatus === MediaPlayer.LoadedMedia) {
                 player.loading = false
+                player.applyPendingSeek()
+            }
+        }
+        onSeekableChanged: player.applyPendingSeek()
+        // A chapter ends before the file does: move on at its end time.
+        onPositionChanged: {
+            if (player.trackEnd > 0 && position / 1000 >= player.trackEnd - 0.05 && player.seekPending < 0)
+                player.next(true)
         }
         onErrorOccurred: (code, message) => {
             if (!player.current)
@@ -110,11 +128,29 @@ QtObject {
         resolveCurrent(false)
     }
 
+    function applyPendingSeek() {
+        if (seekPending >= 0 && media.seekable) {
+            media.position = seekPending * 1000
+            seekPending = -1
+        }
+    }
+
     function resolveCurrent(force) {
         const track = current
         if (!track)
             return
+        // Another chapter of the video that's already loaded: just move there.
+        if (!force && track.youtubeId && track.youtubeId === loadedVideo && media.source.toString() !== "" && error === "") {
+            if (Math.abs(media.position / 1000 - trackStart) > 1.5)
+                media.position = trackStart * 1000
+            if (!playing)
+                media.play()
+            loading = false
+            prefetch()
+            return
+        }
         media.stop()
+        loadedVideo = ""
         error = ""
         loading = true
         if (pendingRequest >= 0)
@@ -125,8 +161,11 @@ QtObject {
             if (!current || result.key !== current.key)
                 return
             failures = 0
+            loadedVideo = result.videoId || track.youtubeId || ""
+            seekPending = trackStart > 0 ? trackStart : -1
             media.source = result.url
             media.play()
+            applyPendingSeek()
             prefetch()
         }, function (message) {
             pendingRequest = -1
@@ -137,7 +176,7 @@ QtObject {
 
     function prefetch() {
         const upcoming = queue[index + 1]
-        if (upcoming)
+        if (upcoming && !(upcoming.youtubeId && upcoming.youtubeId === loadedVideo))
             Backend.resolve(JSON.stringify(upcoming))
     }
 
@@ -171,7 +210,7 @@ QtObject {
         if (queue.length === 0)
             return
         if (automatic && repeat === 2) {
-            media.position = 0
+            seek(0)
             media.play()
             return
         }
@@ -186,15 +225,16 @@ QtObject {
     }
 
     function previous() {
-        if (media.position > 3000 || index <= 0) {
-            media.position = 0
+        if (position > 3 || index <= 0) {
+            seek(0)
             return
         }
         jump(index - 1)
     }
 
+    // Seconds from the start of the current track (which may be a chapter).
     function seek(seconds) {
-        media.position = Math.max(0, seconds * 1000)
+        media.position = (trackStart + Math.max(0, seconds)) * 1000
     }
 
     function setShuffle(on) {

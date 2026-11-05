@@ -34,6 +34,7 @@ Flickable {
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {}
+    KineticScroll { view: page }
 
     // Big artist photo header
     Item {

@@ -33,6 +33,7 @@ Flickable {
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {}
+    KineticScroll { view: page }
 
     readonly property string greeting: {
         const hour = new Date().getHours()

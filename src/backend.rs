@@ -34,6 +34,8 @@ pub mod qobject {
         #[qinvokable]
         fn search_youtube(self: Pin<&mut Backend>, query: &QString) -> i32;
         #[qinvokable]
+        fn search_youtube_albums(self: Pin<&mut Backend>, query: &QString) -> i32;
+        #[qinvokable]
         fn album(self: Pin<&mut Backend>, id: &QString) -> i32;
         #[qinvokable]
         fn artist(self: Pin<&mut Backend>, id: &QString) -> i32;
@@ -171,9 +173,14 @@ impl qobject::Backend {
         self.spawn(move || youtube::search(&query, 25).map(|tracks| json!({ "tracks": tracks })))
     }
 
+    pub fn search_youtube_albums(self: Pin<&mut Self>, query: &QString) -> i32 {
+        let query = query.to_string();
+        self.spawn(move || youtube::search_albums(&query))
+    }
+
     pub fn album(self: Pin<&mut Self>, id: &QString) -> i32 {
         let id = id.to_string();
-        self.spawn(move || catalog::album_detail(&id))
+        self.spawn(move || if id.starts_with("yt:") { youtube::album(&id) } else { catalog::album_detail(&id) })
     }
 
     pub fn artist(self: Pin<&mut Self>, id: &QString) -> i32 {

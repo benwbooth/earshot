@@ -3,6 +3,7 @@ use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 fn main() {
     println!("cargo:rerun-if-changed=qml");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=native");
 
     let module = QmlModule::new("Earshot").qml_files([
         QmlFile::from("qml/Theme.qml").singleton(true),
@@ -11,6 +12,10 @@ fn main() {
         QmlFile::from("qml/Nav.qml").singleton(true),
         QmlFile::from("qml/Main.qml"),
         QmlFile::from("qml/Sidebar.qml"),
+        QmlFile::from("qml/TopBar.qml"),
+        QmlFile::from("qml/ResizeEdges.qml"),
+        QmlFile::from("qml/KineticScroll.qml"),
+        QmlFile::from("qml/MiniPlayer.qml"),
         QmlFile::from("qml/PlayerBar.qml"),
         QmlFile::from("qml/Icon.qml"),
         QmlFile::from("qml/IconButton.qml"),
@@ -46,7 +51,9 @@ fn main() {
         .collect();
 
     CxxQtBuilder::new_qml_module(module)
-        .files(["src/backend.rs"])
+        .files(["src/backend.rs", "src/native.rs"])
+        .crate_include_root(Some("native".to_owned()))
+        .cpp_file("native/native.cpp")
         .qrc_resources(icons)
         .qt_module("Network")
         .qt_module("Quick")

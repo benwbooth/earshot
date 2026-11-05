@@ -41,7 +41,7 @@
           version = "0.1.0";
           src = lib.fileset.toSource {
             root = ./.;
-            fileset = lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./build.rs ./src ./qml ./packaging ];
+            fileset = lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./build.rs ./src ./qml ./native ./packaging ];
           };
           cargoLock.lockFile = ./Cargo.lock;
 

@@ -16,8 +16,89 @@ Flickable {
     property string error: ""
     property string youtubeError: ""
     property int request: -1
+    property var ytAlbums: null
+    property bool ytAlbumsLoading: false
+    // Real YouTube results come first, in YouTube's own order; the music
+    // catalogue (for album details and artist pages) follows.
+    readonly property bool youtubeFirst: true
+
+    component YoutubeAlbums: ColumnLayout {
+        id: section
+        required property var host
+        Layout.fillWidth: true
+        spacing: 20
+
+        SectionHeader {
+            visible: section.host.query !== "" && section.host.tab !== "songs" && section.host.tab !== "artists"
+                     && (section.host.ytAlbumsLoading || (section.host.ytAlbums && section.host.ytAlbums.length > 0))
+            title: "On YouTube"
+            action: section.host.tab === "all" ? "SEE ALL" : ""
+            onActionClicked: section.host.tab = "albums"
+        }
+        Text {
+            visible: section.host.ytAlbumsLoading && section.host.tab !== "songs" && section.host.tab !== "artists"
+            text: "Looking for playlists and full-length videos…"
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontBody
+        }
+        HorizontalShelf {
+            id: ytShelf
+            visible: section.host.tab !== "songs" && section.host.tab !== "artists" && !!section.host.ytAlbums
+            maxRows: section.host.tab === "all" ? (section.host.youtubeFirst ? 2 : 1) : -1
+            Repeater {
+                model: ytShelf.take(section.host.ytAlbums || [])
+                delegate: AlbumCard {
+                    required property var modelData
+                    width: ytShelf.cardWidth
+                    title: modelData.title
+                    subtitle: section.host.ytAlbumSubtitle(modelData)
+                    image: modelData.coverBig || modelData.cover
+                    seed: modelData.id
+                    onClicked: Nav.album(modelData.id)
+                    onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
+                }
+            }
+        }
+        TrackList {
+            visible: section.host.tab === "all" && !!section.host.youtube && section.host.youtube.length > 0
+            Layout.fillWidth: true
+            tracks: section.host.youtube || []
+            limit: 5
+            showHeader: false
+            showAlbum: false
+            showNumber: false
+            context: "YouTube: " + section.host.query
+        }
+    }
 
     function firstTracks() { return results ? results.tracks : [] }
+
+    // Playlists and full-length videos (soundtracks, live sets) that work as albums.
+    function runYoutubeAlbums() {
+        ytAlbums = null
+        if (query === "")
+            return
+        ytAlbumsLoading = true
+        const q = query
+        Api.call(Backend.searchYoutubeAlbums(q), function (found) {
+            if (q !== page.query) return
+            page.ytAlbums = found.albums
+            page.youtube = found.tracks
+            page.ytAlbumsLoading = false
+        }, function (message) {
+            if (q !== page.query) return
+            page.ytAlbums = []
+            page.youtube = []
+            page.youtubeError = message
+            page.ytAlbumsLoading = false
+        })
+    }
+
+    function ytAlbumSubtitle(album) {
+        if (album.kind === "playlist")
+            return (album.artist ? album.artist + " · " : "") + "Playlist"
+        return (album.artist ? album.artist + " · " : "") + Theme.longDuration(album.duration)
+    }
 
     function run(text) {
         query = text.trim()
@@ -40,8 +121,7 @@ Flickable {
             page.loading = false
             page.error = message
         })
-        if (tab === "youtube")
-            runYoutube()
+        runYoutubeAlbums()
     }
 
     function runYoutube() {
@@ -59,14 +139,20 @@ Flickable {
         })
     }
 
-    onTabChanged: if (tab === "youtube") runYoutube()
 
     Component.onCompleted: {
         const initial = args.query || Api.lastSearch || ""
         field.text = initial
         if (initial !== "")
             run(initial)
-        field.forceActiveFocus()
+    }
+
+    Connections {
+        target: Nav
+        function onSearch(query) {
+            field.text = query
+            debounce.restart()
+        }
     }
 
     contentWidth: width
@@ -74,6 +160,7 @@ Flickable {
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {}
+    KineticScroll { view: page }
 
     Timer {
         id: debounce
@@ -88,8 +175,10 @@ Flickable {
         width: page.width - Theme.pagePadding * 2
         spacing: 20
 
+        // The query is typed in the top bar; this field only holds it.
         TextField {
             id: field
+            visible: false
             Layout.fillWidth: true
             Layout.maximumWidth: 640
             implicitHeight: 52
@@ -142,7 +231,7 @@ Flickable {
         }
 
         StatusView {
-            loading: page.tab !== "youtube" && page.loading && !page.results
+            loading: page.tab !== "youtube" && page.loading && !page.results && !page.ytAlbums
             error: page.tab !== "youtube" ? page.error : page.youtubeError
             empty: page.query === "" ? "Search for any song, album or artist. Earshot finds the music on YouTube when you press play."
                  : (page.tab !== "youtube" && page.results && page.results.tracks.length === 0 && page.results.albums.length === 0 ? "Nothing found for \"" + page.query + "\"" : "")
@@ -150,8 +239,11 @@ Flickable {
             onRetry: page.run(page.query)
         }
         StatusView {
-            loading: page.tab === "youtube" && page.youtubeLoading
+            loading: page.tab === "youtube" && page.ytAlbumsLoading
         }
+
+        // Soundtrack-style searches show the YouTube albums first.
+        YoutubeAlbums { host: page; visible: page.youtubeFirst }
 
         // Top result + songs
         RowLayout {
@@ -251,10 +343,12 @@ Flickable {
             context: "Search: " + page.query
         }
 
+        YoutubeAlbums { host: page; visible: !page.youtubeFirst }
+
         SectionHeader {
-            visible: page.tab === "all" && page.results && page.results.albums.length > 0
-            title: "Albums"
-            action: "SEE ALL"
+            visible: (page.tab === "all" || page.tab === "albums") && page.results && page.results.albums.length > 0
+            title: page.tab === "albums" ? "Albums in the catalogue" : "Albums"
+            action: page.tab === "all" ? "SEE ALL" : ""
             onActionClicked: page.tab = "albums"
         }
         HorizontalShelf {

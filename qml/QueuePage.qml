@@ -15,6 +15,7 @@ Flickable {
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {}
+    KineticScroll { view: page }
 
     ColumnLayout {
         id: content

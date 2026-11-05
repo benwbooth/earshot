@@ -58,32 +58,8 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
-        anchors.topMargin: 22
+        anchors.topMargin: 16
         spacing: 2
-
-        RowLayout {
-            Layout.leftMargin: 10
-            Layout.bottomMargin: 20
-            spacing: 10
-            Rectangle {
-                implicitWidth: 30
-                implicitHeight: 30
-                radius: 9
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0; color: Theme.accent }
-                    GradientStop { position: 1; color: Theme.accent2 }
-                }
-                Icon { anchors.centerIn: parent; name: "music"; size: 17; color: "#ffffff" }
-            }
-            Text {
-                text: "Earshot"
-                color: Theme.text
-                font.pixelSize: 20
-                font.weight: Font.Bold
-                font.letterSpacing: -0.3
-            }
-        }
 
         NavItem { iconName: "home"; label: "Home"; page: "home" }
         NavItem { iconName: "search"; label: "Search"; page: "search" }
@@ -120,6 +96,7 @@ Rectangle {
         }
 
         ListView {
+            id: playlistList
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -127,6 +104,7 @@ Rectangle {
             model: sidebar.playlists.filter(p => !p.special)
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            KineticScroll { view: playlistList }
             delegate: NavItem {
                 required property var modelData
                 width: ListView.view.width

@@ -8,6 +8,8 @@ QtObject {
     signal toast(string message)
     signal askNewPlaylist(var tracks)
     signal askImportPlaylist()
+    signal search(string query)
+    signal toggleMini()
 
     property string current: "home"
     property var currentArgs: ({})

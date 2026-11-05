@@ -35,6 +35,7 @@ Flickable {
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {}
+    KineticScroll { view: page }
 
     // Blurred artwork wash behind the header
     Item {
@@ -96,7 +97,7 @@ Flickable {
                 Layout.alignment: Qt.AlignBottom
                 spacing: 10
                 Text {
-                    text: page.album ? (page.album.kind === "single" ? "SINGLE" : page.album.kind === "ep" ? "EP" : page.album.kind === "compile" ? "COMPILATION" : "ALBUM") : ""
+                    text: page.album ? (page.album.kind === "single" ? "SINGLE" : page.album.kind === "ep" ? "EP" : page.album.kind === "compile" ? "COMPILATION" : page.album.kind === "playlist" ? "PLAYLIST ON YOUTUBE" : page.album.kind === "video" ? "ALBUM ON YOUTUBE" : "ALBUM") : ""
                     color: Theme.text
                     font.pixelSize: Theme.fontSmall
                     font.weight: Font.DemiBold
@@ -125,6 +126,7 @@ Flickable {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            enabled: !!page.album && !!page.album.artistId
                             onClicked: Nav.artist(page.album.artistId)
                         }
                     }
