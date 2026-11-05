@@ -17,6 +17,13 @@ Flickable {
 
     readonly property string service: args.id || "soundcloud"
     readonly property var info: ({
+        youtube: {
+            name: "YouTube", tint: "#ff0033",
+            blurb: "Playlists, full albums and soundtracks (split into songs at their timestamps), and songs, straight from YouTube's own search.",
+            hint: "Any genre, game, film or mood: city pop, zelda, rainy day…",
+            genres: ["Lo-fi", "Video game", "Soundtrack", "Anime", "City pop", "Synthwave", "Jazz", "Classical", "Ambient",
+                     "Hip-hop", "Rock", "Metal", "Electronic", "K-pop", "Chiptune", "Live concert", "Folk", "Blues", "Reggae", "Latin"]
+        },
         soundcloud: {
             name: "SoundCloud", tint: "#ff5500",
             blurb: "Playlists and tracks from SoundCloud's artists, DJs and producers. They play in SoundCloud's own player.",

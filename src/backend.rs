@@ -226,6 +226,8 @@ impl qobject::Backend {
             "soundcloud" => soundcloud::browse(&tag),
             "mixcloud" => mixcloud::browse(&tag),
             "archive" => archive::browse(&tag),
+            // YouTube's own search for the genre: playlists and full-length videos as albums, then songs.
+            "youtube" => youtube::search_albums(&format!("{tag} music"), ""),
             other => Err(format!("Can't browse {other}")),
         })
     }

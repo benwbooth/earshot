@@ -19,7 +19,8 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
 - **Search**: songs, albums and artists, with a top result, plus **YouTube**, **Bandcamp**, **SoundCloud**,
   **Mixcloud** and **Internet Archive** tabs for live sets, covers, independent releases, DJ mixes, concert
   recordings and anything not in the catalogue.
-- **Browse each service** from the side pane: SoundCloud playlists and tracks, Mixcloud's popular shows, and the
+- **Browse each service** from the side pane: YouTube playlists, full albums and soundtracks by genre or mood,
+  SoundCloud playlists and tracks, Mixcloud's popular shows, and the
   Internet Archive's Live Music Archive, 78 rpm records and netlabels, by genre or any tag.
 - **Open on the web**: any song or album can be opened on YouTube, Bandcamp, SoundCloud, Mixcloud, the Internet
   Archive or Deezer in your browser.
