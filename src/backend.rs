@@ -284,10 +284,13 @@ impl qobject::Backend {
     }
 
     /// Notes a song as listened to (for Made for you); kept on this computer only.
-    pub fn record_play(self: Pin<&mut Self>, track: &QString, video: &QString) {
-        let mut library = self.library();
-        library.record_play(&parse(track), &video.to_string());
-        library.save();
+    pub fn record_play(mut self: Pin<&mut Self>, track: &QString, video: &QString) {
+        {
+            let mut library = self.library();
+            library.record_play(&parse(track), &video.to_string());
+            library.save();
+        }
+        self.as_mut().library_changed();
     }
 
     /// Discover Weekly, Daily Mixes, Release Radar and Albums for you.

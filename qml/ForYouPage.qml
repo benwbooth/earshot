@@ -33,7 +33,15 @@ Flickable {
         })
     }
 
-    Component.onCompleted: if (!made) load(false)
+    // Until there's enough history, look again on every visit and after each song counted.
+    Component.onCompleted: if (!made || made.needMore) load(false)
+    Connections {
+        target: Backend
+        function onLibraryRevisionChanged() {
+            if (page.made && page.made.needMore && !page.loading)
+                page.load(false)
+        }
+    }
 
     contentWidth: width
     contentHeight: content.implicitHeight + 64
