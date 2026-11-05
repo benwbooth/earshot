@@ -25,6 +25,8 @@ Flickable {
     // Real YouTube results come first, in YouTube's own order; the music
     // catalogue (for album details and artist pages) follows.
     readonly property bool youtubeFirst: true
+    // Tabs that show YouTube's playlists and full-length videos.
+    readonly property bool youtubeTab: tab === "all" || tab === "albums" || tab === "youtube"
 
     component YoutubeAlbums: ColumnLayout {
         id: section
@@ -33,21 +35,21 @@ Flickable {
         spacing: 20
 
         SectionHeader {
-            visible: section.host.query !== "" && section.host.tab !== "songs" && section.host.tab !== "artists"
+            visible: section.host.query !== "" && section.host.youtubeTab
                      && (section.host.ytAlbumsLoading || (section.host.ytAlbums && section.host.ytAlbums.length > 0))
             title: "On YouTube"
             action: section.host.tab === "all" ? "SEE ALL" : ""
             onActionClicked: section.host.tab = "youtube"
         }
         Text {
-            visible: section.host.ytAlbumsLoading && section.host.tab !== "songs" && section.host.tab !== "artists"
+            visible: section.host.ytAlbumsLoading && section.host.youtubeTab
             text: "Looking for playlists and full-length videos…"
             color: Theme.textMuted
             font.pixelSize: Theme.fontBody
         }
         HorizontalShelf {
             id: ytShelf
-            visible: section.host.tab !== "songs" && section.host.tab !== "artists" && !!section.host.ytAlbums
+            visible: section.host.youtubeTab && !!section.host.ytAlbums
             maxRows: section.host.tab === "all" ? (section.host.youtubeFirst ? 2 : 1) : -1
             Repeater {
                 model: ytShelf.take(section.host.ytAlbums || [])
@@ -76,6 +78,97 @@ Flickable {
     }
 
     function firstTracks() { return results ? results.tracks : [] }
+
+    // Bandcamp and SoundCloud: { albums, tracks (, tags) } each, or null while loading.
+    property var bandcamp: null
+    property var soundcloud: null
+    property string bandcampError: ""
+    property string soundcloudError: ""
+
+    function runServices() {
+        bandcamp = null
+        soundcloud = null
+        bandcampError = ""
+        soundcloudError = ""
+        if (query === "")
+            return
+        const q = query
+        Api.call(Backend.searchBandcamp(q), function (found) {
+            if (q === page.query) page.bandcamp = found
+        }, function (message) {
+            if (q === page.query) { page.bandcamp = { albums: [], tracks: [], tags: [] }; page.bandcampError = message }
+        })
+        Api.call(Backend.searchSoundcloud(q), function (found) {
+            if (q === page.query) page.soundcloud = found
+        }, function (message) {
+            if (q === page.query) { page.soundcloud = { albums: [], tracks: [] }; page.soundcloudError = message }
+        })
+    }
+
+    // One service's results: a shelf of albums or playlists and a list of songs.
+    component ServiceSection: ColumnLayout {
+        id: service
+        required property var host
+        required property string key       // its tab
+        required property string name      // "Bandcamp"
+        required property var found
+        property string failure: ""
+        property var tags: []
+        readonly property bool shown: host.query !== "" && (host.tab === "all" || host.tab === key)
+        readonly property bool full: host.tab === key
+
+        Layout.fillWidth: true
+        spacing: 16
+        visible: shown && (!found || failure !== "" || found.albums.length + found.tracks.length + tags.length > 0)
+
+        SectionHeader {
+            title: "On " + service.name
+            action: service.full ? "" : "SEE ALL"
+            onActionClicked: service.host.tab = service.key
+        }
+        Text {
+            visible: !service.found
+            text: "Searching " + service.name + "…"
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontBody
+        }
+        Text {
+            visible: service.failure !== ""
+            Layout.fillWidth: true
+            text: service.failure
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontBody
+            wrapMode: Text.Wrap
+        }
+        TagChips { tags: service.tags.slice(0, service.full ? 12 : 6) }
+        HorizontalShelf {
+            id: serviceShelf
+            visible: !!service.found && service.found.albums.length > 0
+            maxRows: service.full ? -1 : 1
+            Repeater {
+                model: serviceShelf.take(service.found ? service.found.albums : [])
+                delegate: AlbumCard {
+                    required property var modelData
+                    width: serviceShelf.cardWidth
+                    title: modelData.title
+                    subtitle: modelData.artist + (modelData.kind === "playlist" ? " · Playlist" : "")
+                    image: modelData.coverBig || modelData.cover
+                    seed: modelData.id
+                    onClicked: Nav.album(modelData.id)
+                    onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
+                }
+            }
+        }
+        TrackList {
+            visible: !!service.found && service.found.tracks.length > 0
+            Layout.fillWidth: true
+            tracks: service.found ? service.found.tracks : []
+            limit: service.full ? -1 : 5
+            showHeader: service.full
+            showNumber: false
+            context: service.name + ": " + service.host.query
+        }
+    }
 
     // Playlists and full-length videos (soundtracks, live sets) that work as albums.
     function runYoutubeAlbums() {
@@ -166,6 +259,7 @@ Flickable {
             page.error = message
         })
         runYoutubeAlbums()
+        runServices()
     }
 
 
@@ -245,11 +339,12 @@ Flickable {
             }
         }
 
-        RowLayout {
+        Flow {
             visible: page.query !== ""
+            Layout.fillWidth: true
             spacing: 8
             Repeater {
-                model: [["all", "All"], ["songs", "Songs"], ["albums", "Albums"], ["artists", "Artists"], ["youtube", "YouTube"]]
+                model: [["all", "All"], ["songs", "Songs"], ["albums", "Albums"], ["artists", "Artists"], ["youtube", "YouTube"], ["bandcamp", "Bandcamp"], ["soundcloud", "SoundCloud"]]
                 delegate: PillButton {
                     required property var modelData
                     text: modelData[1]
@@ -260,10 +355,11 @@ Flickable {
         }
 
         StatusView {
-            loading: page.tab !== "youtube" && page.loading && !page.results && !page.ytAlbums
-            error: page.tab !== "youtube" ? page.error : page.youtubeError
-            empty: page.query === "" ? "Search for any song, album or artist. Earshot finds the music on YouTube when you press play."
-                 : (page.tab !== "youtube" && page.results && page.results.tracks.length === 0 && page.results.albums.length === 0 ? "Nothing found for \"" + page.query + "\"" : "")
+            readonly property bool catalogTab: ["all", "songs", "albums", "artists"].indexOf(page.tab) >= 0
+            loading: catalogTab && page.loading && !page.results && !page.ytAlbums
+            error: page.tab === "youtube" ? page.youtubeError : catalogTab ? page.error : ""
+            empty: page.query === "" ? "Search for any song, album or artist. Earshot finds the music on YouTube, Bandcamp and SoundCloud."
+                 : (catalogTab && page.tab !== "all" && page.results && page.results.tracks.length === 0 && page.results.albums.length === 0 ? "Nothing found for \"" + page.query + "\"" : "")
             emptyIcon: "search"
             onRetry: page.run(page.query)
         }
@@ -445,6 +541,22 @@ Flickable {
             text: "Loading more from YouTube…"
             color: Theme.textMuted
             font.pixelSize: Theme.fontBody
+        }
+
+        ServiceSection {
+            host: page
+            key: "bandcamp"
+            name: "Bandcamp"
+            found: page.bandcamp
+            failure: page.bandcampError
+            tags: page.bandcamp && page.bandcamp.tags ? page.bandcamp.tags : []
+        }
+        ServiceSection {
+            host: page
+            key: "soundcloud"
+            name: "SoundCloud"
+            found: page.soundcloud
+            failure: page.soundcloudError
         }
     }
 }

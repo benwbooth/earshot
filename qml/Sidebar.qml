@@ -65,6 +65,7 @@ Rectangle {
         NavItem { iconName: "home"; label: "Home"; page: "home" }
         NavItem { iconName: "search"; label: "Search"; page: "search" }
         NavItem { iconName: "radio"; label: "Reddit radio"; page: "radio" }
+        NavItem { iconName: "tag"; label: "Bandcamp"; page: "bandcamp" }
         NavItem { iconName: "queue"; label: "Queue"; page: "queue"; detail: Player.queue.length > 0 ? (Player.queue.length - Player.index - 1 > 0 ? Player.queue.length - Player.index - 1 : "") : "" }
 
         Text {
@@ -92,7 +93,7 @@ Rectangle {
                 font.weight: Font.DemiBold
                 font.letterSpacing: 1.2
             }
-            IconButton { iconName: "link"; iconSize: 15; tip: "Import a YouTube playlist"; onClicked: Nav.askImportPlaylist() }
+            IconButton { iconName: "link"; iconSize: 15; tip: "Import a playlist from YouTube, SoundCloud or Bandcamp"; onClicked: Nav.askImportPlaylist() }
             IconButton { iconName: "plus"; iconSize: 16; tip: "New playlist"; onClicked: Nav.askNewPlaylist([]) }
         }
 
@@ -125,23 +126,6 @@ Rectangle {
                 wrapMode: Text.WordWrap
                 color: Theme.textFaint
                 font.pixelSize: Theme.fontSmall + 1
-            }
-        }
-
-        Rectangle {
-            visible: !Backend.canPlay
-            Layout.fillWidth: true
-            implicitHeight: warn.implicitHeight + 20
-            radius: 8
-            color: Qt.rgba(1, 0.42, 0.42, 0.12)
-            Text {
-                id: warn
-                anchors.fill: parent
-                anchors.margins: 10
-                wrapMode: Text.WordWrap
-                text: "yt-dlp isn't installed, so songs can't play yet. Install it and restart Earshot."
-                color: Theme.danger
-                font.pixelSize: Theme.fontSmall
             }
         }
     }

@@ -11,6 +11,7 @@ QtObject {
     property var radioCache: ({})
     property string lastSearch: ""
     property string lastStation: "listentothis"
+    property var bandcampTags: null
 
     // Fetches an album's songs and plays them from the top.
     function playAlbum(id, title, shuffle) {

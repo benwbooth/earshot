@@ -1,9 +1,11 @@
 mod backend;
+mod bandcamp;
 mod catalog;
 mod library;
 mod native;
 mod net;
 mod radio;
+mod soundcloud;
 mod visualizer;
 mod youtube;
 

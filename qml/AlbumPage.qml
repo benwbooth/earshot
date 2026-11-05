@@ -16,6 +16,15 @@ Flickable {
 
     function firstTracks() { return album ? album.tracks : [] }
 
+    // "ALBUM", "PLAYLIST ON SOUNDCLOUD", "ALBUM ON BANDCAMP"…
+    function kindLabel() {
+        if (!album)
+            return ""
+        const kind = { single: "SINGLE", ep: "EP", compile: "COMPILATION", playlist: "PLAYLIST" }[album.kind] || "ALBUM"
+        const where = { youtube: " ON YOUTUBE", soundcloud: " ON SOUNDCLOUD", bandcamp: " ON BANDCAMP" }[album.source] || ""
+        return kind + where
+    }
+
     function load() {
         loading = true
         error = ""
@@ -98,7 +107,7 @@ Flickable {
                 Layout.alignment: Qt.AlignBottom
                 spacing: 10
                 Text {
-                    text: page.album ? (page.album.kind === "single" ? "SINGLE" : page.album.kind === "ep" ? "EP" : page.album.kind === "compile" ? "COMPILATION" : page.album.kind === "playlist" ? "PLAYLIST ON YOUTUBE" : page.album.kind === "video" ? "ALBUM ON YOUTUBE" : "ALBUM") : ""
+                    text: page.kindLabel()
                     color: Theme.text
                     font.pixelSize: Theme.fontSmall
                     font.weight: Font.DemiBold
@@ -177,6 +186,11 @@ Flickable {
             loading: page.loading
             error: page.error
             onRetry: page.load()
+        }
+
+        // A Bandcamp release's tags: each opens more albums like it.
+        TagChips {
+            tags: page.album && page.album.tags ? page.album.tags : []
         }
 
         TrackList {

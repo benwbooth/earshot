@@ -42,6 +42,7 @@ ApplicationWindow {
         category: "window"
         property alias width: window.width
         property alias height: window.height
+        property alias sidebarWidth: sidebar.width
     }
 
     // Closing the window keeps the music playing in the tray; quit from the tray menu.
@@ -142,7 +143,8 @@ ApplicationWindow {
 
     readonly property var pages: ({
         home: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
-        artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage
+        artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage,
+        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage
     })
 
     function navigate(page, args) {
@@ -153,7 +155,7 @@ ApplicationWindow {
         const top = stack.currentItem
         if (top && top.pageName === page && JSON.stringify(top.args) === JSON.stringify(args))
             return
-        if (page === "home" || page === "search" || page === "radio" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
+        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
             stack.replace(null, component, { args: args })
         else
             stack.push(component, { args: args })
@@ -200,6 +202,8 @@ ApplicationWindow {
     Component { id: playlistPage; PlaylistPage {} }
     Component { id: albumsPage; LibraryAlbumsPage {} }
     Component { id: queuePage; QueuePage {} }
+    Component { id: bandcampPage; BandcampPage {} }
+    Component { id: bandcampTagPage; BandcampTagPage {} }
 
     ColumnLayout {
         id: shell
@@ -220,7 +224,38 @@ ApplicationWindow {
             spacing: 0
 
             Sidebar {
+                id: sidebar
+                width: 248
+                Layout.preferredWidth: width
                 Layout.fillHeight: true
+
+                // Drag the side pane's edge to make it wider or narrower.
+                Item {
+                    anchors.right: parent.right
+                    anchors.rightMargin: -4
+                    width: 8
+                    height: parent.height
+                    z: 10
+                    HoverHandler { id: edgeHover; cursorShape: Qt.SizeHorCursor }
+                    DragHandler {
+                        id: edgeDrag
+                        target: null
+                        xAxis.enabled: true
+                        yAxis.enabled: false
+                        cursorShape: Qt.SizeHorCursor
+                        property real startWidth: 0
+                        onActiveChanged: if (active) startWidth = sidebar.width
+                        onTranslationChanged: if (active) sidebar.width = Math.round(Math.max(180, Math.min(window.width * 0.45, startWidth + translation.x)))
+                    }
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 2
+                        height: parent.height
+                        color: Theme.accent
+                        opacity: edgeDrag.active ? 0.8 : edgeHover.hovered ? 0.4 : 0
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
+                }
             }
 
             Item {
@@ -318,9 +353,9 @@ ApplicationWindow {
 
     TextPrompt {
         id: importPrompt
-        title: "Import a YouTube playlist"
-        message: "Paste a link to a YouTube or YouTube Music playlist. Its songs are copied into a new playlist here."
-        placeholder: "https://www.youtube.com/playlist?list=…"
+        title: "Import a playlist"
+        message: "Paste a link to a YouTube or YouTube Music playlist, a SoundCloud playlist, album or song, or a Bandcamp album or song. Its songs are copied into a new playlist here."
+        placeholder: "https://…"
         acceptText: "Import"
         onAccepted: url => {
             Nav.notify("Importing playlist…")

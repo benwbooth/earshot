@@ -34,6 +34,16 @@ pub mod qobject {
         #[qinvokable]
         fn search_youtube_albums(self: Pin<&mut Backend>, query: &QString, next: &QString) -> i32;
         #[qinvokable]
+        fn search_bandcamp(self: Pin<&mut Backend>, query: &QString) -> i32;
+        #[qinvokable]
+        fn search_soundcloud(self: Pin<&mut Backend>, query: &QString) -> i32;
+        #[qinvokable]
+        fn bandcamp_tags(self: Pin<&mut Backend>) -> i32;
+        #[qinvokable]
+        fn bandcamp_tag(self: Pin<&mut Backend>, tag: &QString, slice: &QString, next: &QString) -> i32;
+        #[qinvokable]
+        fn stream(self: Pin<&mut Backend>, track: &QString) -> i32;
+        #[qinvokable]
         fn album(self: Pin<&mut Backend>, id: &QString) -> i32;
         #[qinvokable]
         fn artist(self: Pin<&mut Backend>, id: &QString) -> i32;
@@ -94,7 +104,7 @@ use cxx_qt_lib::QString;
 use serde_json::{Value, json};
 
 use crate::library::Library;
-use crate::{catalog, radio, youtube};
+use crate::{bandcamp, catalog, radio, soundcloud, youtube};
 
 pub struct BackendRust {
     library_revision: i32,
@@ -181,9 +191,44 @@ impl qobject::Backend {
         self.spawn(move || youtube::search_albums(&query, &next))
     }
 
+    pub fn search_bandcamp(self: Pin<&mut Self>, query: &QString) -> i32 {
+        let query = query.to_string();
+        self.spawn(move || bandcamp::search(&query))
+    }
+
+    pub fn search_soundcloud(self: Pin<&mut Self>, query: &QString) -> i32 {
+        let query = query.to_string();
+        self.spawn(move || soundcloud::search(&query))
+    }
+
+    /// Bandcamp's genres and sub-genres, for browsing.
+    pub fn bandcamp_tags(self: Pin<&mut Self>) -> i32 {
+        self.spawn(bandcamp::tags)
+    }
+
+    /// One page of albums with a Bandcamp tag; `slice` is top, new or rand.
+    pub fn bandcamp_tag(self: Pin<&mut Self>, tag: &QString, slice: &QString, next: &QString) -> i32 {
+        let (tag, slice, next) = (bandcamp::tag_slug(&tag.to_string()), slice.to_string(), next.to_string());
+        self.spawn(move || bandcamp::tag(&tag, &slice, &next))
+    }
+
+    /// A Bandcamp song's audio link, fetched fresh since Bandcamp's links expire.
+    pub fn stream(self: Pin<&mut Self>, track: &QString) -> i32 {
+        let track = parse(track);
+        self.spawn(move || {
+            let url = bandcamp::stream(&track)?;
+            Ok(json!({ "key": track["key"], "url": url }))
+        })
+    }
+
     pub fn album(self: Pin<&mut Self>, id: &QString) -> i32 {
         let id = id.to_string();
-        self.spawn(move || if id.starts_with("yt:") { youtube::album(&id) } else { catalog::album_detail(&id) })
+        self.spawn(move || match id.split(':').next() {
+            Some("yt") => youtube::album(&id),
+            Some("bc") => bandcamp::album(&id),
+            Some("sc") => soundcloud::album(&id),
+            _ => catalog::album_detail(&id),
+        })
     }
 
     pub fn artist(self: Pin<&mut Self>, id: &QString) -> i32 {
@@ -218,7 +263,15 @@ impl qobject::Backend {
 
     pub fn import_playlist(self: Pin<&mut Self>, url: &QString) -> i32 {
         let url = url.to_string().trim().to_owned();
-        self.spawn(move || youtube::playlist(&url))
+        self.spawn(move || {
+            if url.contains("soundcloud.com/") {
+                soundcloud::import(&url)
+            } else if url.contains("bandcamp.com/") {
+                bandcamp::import(&url)
+            } else {
+                youtube::playlist(&url)
+            }
+        })
     }
 
     /// Listens to the speakers while music plays, for the waveform.

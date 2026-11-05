@@ -5,7 +5,8 @@ import QtWebEngine
 // Plays music through YouTube's own embedded player, kept out of sight (as
 // Headset did). Nothing is downloaded: YouTube streams it like on youtube.com.
 // Some owners don't allow their videos in embedded players; those play on
-// youtube.com's own watch page instead, hidden the same way.
+// youtube.com's own watch page instead, hidden the same way. The same hidden
+// page also plays Bandcamp's audio streams and SoundCloud's embedded player.
 Item {
     id: engine
 
@@ -45,11 +46,14 @@ Item {
         memory.watchOnly = JSON.stringify(list.slice(0, 500))
     }
 
-    function load(id, start) {
+    function reset(id, start) {
         videoId = id
         position = start || 0
         duration = 0
         playerState = -1
+    }
+    function load(id, start) {
+        reset(id, start)
         if (isWatchOnly(id)) {
             openWatchPage(id, start)
             return
@@ -57,12 +61,24 @@ Item {
         leaveWatchPage()
         call("earshotLoad(" + JSON.stringify(id) + "," + (start || 0) + ")")
     }
-    function play() { watchMode ? watchCall("p.playVideo()") : call("player && player.playVideo()") }
-    function pause() { watchMode ? watchCall("p.pauseVideo()") : call("player && player.pauseVideo()") }
+    // A plain audio link (Bandcamp's streams).
+    function loadAudio(url, start) {
+        reset("audio:" + url, start)
+        leaveWatchPage()
+        call("earshotLoadAudio(" + JSON.stringify(url) + "," + (start || 0) + ")")
+    }
+    // A song in SoundCloud's own embedded player.
+    function loadSoundCloud(trackId, start) {
+        reset("soundcloud:" + trackId, start)
+        leaveWatchPage()
+        call("earshotLoadSoundCloud(" + JSON.stringify(String(trackId)) + "," + (start || 0) + ")")
+    }
+    function play() { watchMode ? watchCall("p.playVideo()") : call("earshotPlay()") }
+    function pause() { watchMode ? watchCall("p.pauseVideo()") : call("earshotPause()") }
     function stop() {
         videoId = ""
         leaveWatchPage()
-        call("player && player.stopVideo()")
+        call("earshotStop()")
         playerState = -1
     }
     function seek(seconds) {
@@ -70,7 +86,7 @@ Item {
         if (watchMode)
             watchCall("p.seekTo(" + seconds + ", true)")
         else
-            call("player && player.seekTo(" + seconds + ", true)")
+            call("earshotSeek(" + seconds + ")")
     }
     function setVolume(percent) {
         volume = Math.round(percent)
@@ -88,7 +104,7 @@ Item {
 
     // youtube.com's watch page: its player element has the same controls as the embedded one.
     function openWatchPage(id, start) {
-        call("player && player.stopVideo()")
+        call("earshotStop()")
         watchMode = true
         watchAd = false
         watchState = -1
@@ -122,14 +138,54 @@ Item {
         + '      onError:function(e){lastError=e.data;}'
         + '    }});'
         + '}'
-        + 'function earshotLoad(id,start){if(!ready){pending={id:id,start:start};return;}ended=false;lastError=0;'
+        // Which player has the current song: "yt" YouTube, "audio" a plain stream (Bandcamp), "sc" SoundCloud.
+        + 'var mode="yt";'
+        + 'function quiet(next){'
+        + '  if(next!=="yt"&&ready)player.stopVideo();'
+        + '  if(next!=="audio"&&audio.src){audio.pause();audio.removeAttribute("src");audio.load();}'
+        + '  if(next!=="sc"&&sc)sc.pause();'
+        + '  mode=next;ended=false;lastError=0;}'
+        + 'function earshotLoad(id,start){quiet("yt");if(!ready){pending={id:id,start:start};return;}'
         + '  player.loadVideoById({videoId:id,startSeconds:start||0,suggestedQuality:"small"});}'
-        + 'function earshotVolume(v){volume=v;if(ready)player.setVolume(v);}'
-        + 'function earshotStatus(){if(!ready)return JSON.stringify({ready:false});'
-        + '  var s={ready:true,state:player.getPlayerState(),time:player.getCurrentTime()||0,duration:player.getDuration()||0,ended:ended,error:lastError};'
-        + '  ended=false;lastError=0;return JSON.stringify(s);}'
+        // Plain audio
+        + 'var audio=new Audio();audio.preload="auto";'
+        + 'audio.addEventListener("ended",function(){if(mode==="audio")ended=true;});'
+        + 'audio.addEventListener("error",function(){if(mode==="audio"&&audio.src)lastError=1001;});'
+        + 'function earshotLoadAudio(url,start){quiet("audio");audio.src=url;audio.volume=volume/100;'
+        + '  if(start)audio.currentTime=start;audio.play().catch(function(){});}'
+        // SoundCloud's widget, made the first time a SoundCloud song plays
+        + 'var sc=null,scState=-1,scPos=0,scDur=0,scStart=0;'
+        + 'function scUrl(id){return "https://api.soundcloud.com/tracks/"+id;}'
+        + 'function scBegin(){sc.setVolume(volume);sc.getDuration(function(d){scDur=d;});if(scStart>0)sc.seekTo(scStart*1000);sc.play();}'
+        + 'var scLoaded=0;'
+        + 'function earshotLoadSoundCloud(id,start){quiet("sc");scState=-1;scPos=(start||0)*1000;scDur=0;scStart=start||0;scLoaded=Date.now();'
+        + '  if(typeof SC==="undefined"){lastError=1002;return;}'
+        + '  if(!sc){var f=document.createElement("iframe");f.allow="autoplay";f.width=160;f.height=90;f.style.border="0";'
+        + '    f.src="https://w.soundcloud.com/player/?url="+encodeURIComponent(scUrl(id))+"&auto_play=true&visual=false";'
+        + '    document.body.appendChild(f);sc=SC.Widget(f);var E=SC.Widget.Events;'
+        + '    sc.bind(E.READY,scBegin);'
+        + '    sc.bind(E.PLAY,function(){scState=1;sc.getDuration(function(d){scDur=d;});});'
+        + '    sc.bind(E.PAUSE,function(){if(scState!==0)scState=2;});'
+        + '    sc.bind(E.PLAY_PROGRESS,function(e){scPos=e.currentPosition;if(scState<1)scState=1;});'
+        + '    sc.bind(E.FINISH,function(){scState=0;if(mode==="sc")ended=true;});'
+        + '    sc.bind(E.ERROR,function(){if(mode==="sc")lastError=1002;});'
+        + '  }else{sc.load(scUrl(id),{auto_play:true,visual:false,callback:scBegin});}}'
+        // The same controls for whichever player is in use
+        + 'function earshotPlay(){if(mode==="audio")audio.play().catch(function(){});else if(mode==="sc"){if(sc)sc.play();}else if(ready)player.playVideo();}'
+        + 'function earshotPause(){if(mode==="audio")audio.pause();else if(mode==="sc"){if(sc)sc.pause();}else if(ready)player.pauseVideo();}'
+        + 'function earshotSeek(s){if(mode==="audio")audio.currentTime=s;else if(mode==="sc"){if(sc){sc.seekTo(s*1000);scPos=s*1000;}}else if(ready)player.seekTo(s,true);}'
+        + 'function earshotStop(){var was=mode;quiet("none");mode=was;}'
+        + 'function earshotVolume(v){volume=v;if(ready)player.setVolume(v);audio.volume=v/100;if(sc)sc.setVolume(v);}'
+        + 'function earshotStatus(){var s;'
+        + '  if(mode==="audio")s={ready:true,state:audio.ended?0:audio.paused?2:audio.readyState<3?3:1,time:audio.currentTime||0,duration:isFinite(audio.duration)?audio.duration:0};'
+        + '  else if(mode==="sc"){s={ready:true,state:scState,time:scPos/1000,duration:scDur/1000};'
+        + '    if(scState<1&&Date.now()-scLoaded>30000){scLoaded=Date.now();lastError=1002;}}'
+        + '  else if(!ready)return JSON.stringify({ready:false});'
+        + '  else s={ready:true,state:player.getPlayerState(),time:player.getCurrentTime()||0,duration:player.getDuration()||0};'
+        + '  s.ended=ended;s.error=lastError;ended=false;lastError=0;return JSON.stringify(s);}'
         + '</script>'
         + '<script src="https://www.youtube.com/iframe_api"></script>'
+        + '<script src="https://w.soundcloud.com/player/api.js"></script>'
         + '</body></html>'
 
     // What the watch page's player is doing; ads count as still loading.
@@ -259,6 +315,8 @@ Item {
         case 101:
         case 150:
         case 153: return "This video's owner doesn't allow it to play outside youtube.com."
+        case 1001: return "Bandcamp's audio stopped loading."
+        case 1002: return "SoundCloud's player couldn't play this song."
         default: return "YouTube's player stopped (error " + code + ")."
         }
     }

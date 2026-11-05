@@ -92,7 +92,7 @@ QtObject {
                 player.failures = 0
                 player.trackStarted(player.current)
                 const video = player.engine.videoId
-                if (!player.current.youtubeId)
+                if (!player.current.youtubeId && !player.current.service)
                     Backend.rememberVideo(player.current.key, video)
                 player.prefetch()
             }
@@ -106,11 +106,19 @@ QtObject {
             player.next(true)
         }
         function onFailed(code, message) {
-            console.warn("YouTube player error", code, player.engine.videoId, message)
+            console.warn("Player error", code, player.engine.videoId, message)
             if (!player.current)
                 return
+            // A Bandcamp link may have expired: fetch a fresh one once.
+            if (player.current.service === "bandcamp" && player.streams[player.current.key]
+                    && player.streamRetried !== player.current.key) {
+                player.streamRetried = player.current.key
+                player.forgetStream(player.current.key)
+                player.resolveCurrent()
+                return
+            }
             // Another upload of the same song may be allowed to play here.
-            if (player.candidate + 1 < player.candidates.length) {
+            if (!player.current.service && player.candidate + 1 < player.candidates.length) {
                 player.candidate += 1
                 player.engine.load(player.candidates[player.candidate], player.trackStart)
                 return
@@ -202,6 +210,30 @@ QtObject {
         loading = true
         if (pendingRequest >= 0)
             Api.cancel(pendingRequest)
+        // SoundCloud songs play in SoundCloud's own player.
+        if (track.service === "soundcloud") {
+            engine.loadSoundCloud(track.soundcloudId, trackStart)
+            return
+        }
+        // Bandcamp songs stream from Bandcamp, with a link fetched just before.
+        if (track.service === "bandcamp") {
+            if (streams[track.key]) {
+                engine.loadAudio(streams[track.key].url, trackStart)
+                return
+            }
+            engine.stop()
+            pendingRequest = Api.call(Backend.stream(JSON.stringify(track)), function (result) {
+                pendingRequest = -1
+                rememberStream(result)
+                if (current && result.key === current.key)
+                    engine.loadAudio(result.url, trackStart)
+            }, function (message) {
+                pendingRequest = -1
+                if (current && current.key === track.key)
+                    fail(message)
+            })
+            return
+        }
         // YouTube tracks already know their video; others were often looked up ahead of time.
         const known = track.youtubeId ? [track.youtubeId] : found[track.key]
         if (known && known.length > 0) {
@@ -236,9 +268,41 @@ QtObject {
 
     // Find a track's video ahead of time (songs you hover, the first song of an album).
     function lookAhead(track) {
-        if (!track || track.youtubeId || found[track.key])
+        if (!track || track.youtubeId || track.service === "soundcloud")
             return
-        Api.call(Backend.resolve(JSON.stringify(track)), remember)
+        if (track.service === "bandcamp") {
+            if (!streams[track.key])
+                Api.call(Backend.stream(JSON.stringify(track)), rememberStream)
+            return
+        }
+        if (!found[track.key])
+            Api.call(Backend.resolve(JSON.stringify(track)), remember)
+    }
+
+    // Bandcamp songs' audio links, kept for an hour (Bandcamp's expire after about a day).
+    property var streams: ({})
+    property string streamRetried: ""
+    function rememberStream(result) {
+        const map = Object.assign({}, streams)
+        map[result.key] = { url: result.url, at: Date.now() }
+        streams = map
+        streamExpiry.restart()
+    }
+    function forgetStream(key) {
+        const map = Object.assign({}, streams)
+        delete map[key]
+        streams = map
+    }
+    property Timer streamExpiry: Timer {
+        interval: 60 * 1000
+        repeat: true
+        onTriggered: {
+            const map = {}
+            for (const key in player.streams)
+                if (Date.now() - player.streams[key].at < 3600 * 1000)
+                    map[key] = player.streams[key]
+            player.streams = map
+        }
     }
 
     function fail(message) {

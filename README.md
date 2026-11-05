@@ -16,15 +16,18 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
 ## Features
 
 - **Home**: trending songs and albums, plus charts for 20+ genres and every decade from the 50s to the 2020s.
-- **Search**: songs, albums and artists, with a top result; a **YouTube** tab finds live sets, covers and anything
-  not in the catalogue.
+- **Search**: songs, albums and artists, with a top result, plus **YouTube**, **Bandcamp** and **SoundCloud** tabs
+  for live sets, covers, independent releases, mixes and anything not in the catalogue.
+- **Bandcamp**: browse Bandcamp's genres and sub-genres, or any tag, sorted by best-selling, new arrivals or at
+  random; every Bandcamp album lists its tags, and searches suggest matching tags.
 - **Albums**: full track lists with artwork, release date, label and running time. Play, shuffle, add the whole
   album to the queue or a playlist, or save it to **Your albums**.
 - **Artists**: popular songs and the complete discography (albums, singles and EPs).
 - **Reddit radio**: about 50 music subreddits (r/listentothis, r/indieheads, r/jazz, r/synthwave…) in groups. Songs
   play in the order the community ranks them; save any station as a playlist.
 - **Playlists**: create, rename, delete, reorder (Move up / Move down), filter, and add songs from any list with the
-  `···` menu. **Liked songs** collects everything you heart. Import a YouTube or YouTube Music playlist by link.
+  `···` menu. **Liked songs** collects everything you heart. Import a YouTube, YouTube Music or SoundCloud
+  playlist, or a Bandcamp album, by link.
 - **Queue**: play next, add to queue, remove, clear upcoming; shuffle and repeat (all / one).
 - Keyboard: Space play/pause, Ctrl+←/→ previous/next, Ctrl+F search, Ctrl+N new playlist, Ctrl+S shuffle,
   Ctrl+R repeat, Alt+← back, and the media keys while the window has focus.
@@ -39,6 +42,9 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
   Videos whose owners block embedded players play on youtube.com's own watch page instead, hidden the same way.
   Nothing is downloaded and no external programs are needed. For catalogue songs Earshot picks the best-matching
   video (official audio of the right length) and looks up the next songs ahead of time, so they start at once.
+- Bandcamp albums, songs and tags come from bandcamp.com's own pages and search; songs stream from Bandcamp
+  itself, as on its website. SoundCloud songs and playlists come from the API soundcloud.com's web app uses and play
+  in SoundCloud's own embedded player, hidden like YouTube's. Previews of paid-only SoundCloud tracks are left out.
 - The waveform is measured from what your speakers play, with the [cpal](https://github.com/RustAudio/cpal) audio
   library: loopback recording on Windows and macOS 14.6+, the PipeWire speaker monitor on Linux.
 - Your playlists, liked songs and saved albums live in `~/.local/share/earshot/library.json`.
