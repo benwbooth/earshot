@@ -11,10 +11,9 @@ Window {
     signal expandRequested()
 
     width: 420
-    height: 112
+    height: Math.max(112, miniText.implicitHeight + 28)
     minimumWidth: 320
     minimumHeight: 112
-    maximumHeight: 112
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     color: "transparent"
     title: Player.current ? Player.current.title + " — Earshot" : "Earshot"
@@ -69,6 +68,7 @@ Window {
             }
 
             ColumnLayout {
+                id: miniText
                 Layout.fillWidth: true
                 spacing: 2
                 Text {
@@ -77,14 +77,14 @@ Window {
                     color: Theme.text
                     font.pixelSize: Theme.fontBody + 1
                     font.weight: Font.DemiBold
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                 }
                 Text {
                     Layout.fillWidth: true
                     text: mini.track ? mini.track.artist : "Earshot"
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSmall + 1
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                 }
                 RowLayout {
                     spacing: 2

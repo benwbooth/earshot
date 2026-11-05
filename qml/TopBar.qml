@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtCore
 import Earshot
 
 // The unified title bar: app name, back, search and the window buttons, in
@@ -17,6 +18,48 @@ Rectangle {
     color: Theme.sidebar
 
     readonly property bool maximized: window.visibility === Window.Maximized
+    // "kde", "gnome", "windows" or "mac"; anything else gets the Qt/KDE look.
+    readonly property string buttonStyle: {
+        const desktop = Backend.desktop()
+        return ["gnome", "windows", "mac"].indexOf(desktop) >= 0 ? desktop : "kde"
+    }
+
+    // Search history, newest first, kept between runs.
+    Settings {
+        id: history
+        category: "search"
+        property string recent: "[]"
+    }
+    readonly property var historyItems: {
+        try { return JSON.parse(history.recent) } catch (error) { return [] }
+    }
+    readonly property var matchingHistory: {
+        const typed = search.text.trim().toLowerCase()
+        return historyItems.filter(item => typed === "" || (item.toLowerCase().indexOf(typed) >= 0 && item.toLowerCase() !== typed)).slice(0, 12)
+    }
+    function addHistory(query) {
+        query = (query || "").trim()
+        if (query.length < 2)
+            return
+        const items = historyItems.filter(item => item.toLowerCase() !== query.toLowerCase())
+        // A longer search replaces the half-typed one it grew from.
+        const kept = items.filter(item => !query.toLowerCase().startsWith(item.toLowerCase()))
+        history.recent = JSON.stringify([query].concat(kept).slice(0, 30))
+    }
+    function removeHistory(query) {
+        history.recent = JSON.stringify(historyItems.filter(item => item !== query))
+    }
+    function clearHistory() {
+        history.recent = "[]"
+    }
+    function pickHistory(query) {
+        if (!query)
+            return
+        search.text = query
+        Nav.search(query)
+        addHistory(query)
+        search.focus = false
+    }
 
     function toggleMaximized() {
         if (maximized)
@@ -44,9 +87,16 @@ Rectangle {
         anchors.rightMargin: 8
         spacing: 12
 
+        WindowButtons {
+            visible: bar.buttonStyle === "mac"
+            window: bar.window
+            style: "mac"
+            Layout.rightMargin: 8
+        }
+
         // Brand, as wide as the sidebar below it so the search lines up with the content
         RowLayout {
-            Layout.preferredWidth: 248 - 16
+            Layout.preferredWidth: 248 - 16 - (bar.buttonStyle === "mac" ? 60 : 0)
             spacing: 10
             Image {
                 source: Theme.icon("earshot-app")
@@ -91,9 +141,124 @@ Rectangle {
             color: Theme.text
             font.pixelSize: Theme.fontBody + 1
             selectByMouse: true
-            onTextEdited: Nav.search(text)
-            onAccepted: Nav.search(text)
+            onTextEdited: {
+                Nav.search(text)
+                remember.restart()
+            }
+            onAccepted: {
+                Nav.search(text)
+                bar.addHistory(text)
+            }
             Keys.onEscapePressed: { text = ""; focus = false }
+            Keys.onDownPressed: if (historyList.count > 0) historyList.forceActiveFocus()
+
+            // A search typed and left alone for a moment counts as a search worth keeping.
+            Timer {
+                id: remember
+                interval: 2000
+                onTriggered: bar.addHistory(search.text)
+            }
+
+            // Recent searches, each with an ×, under the box while it has focus.
+            Popup {
+                id: historyPopup
+                y: search.height + 6
+                width: search.width
+                padding: 6
+                focus: false
+                closePolicy: Popup.NoAutoClose
+                visible: (search.activeFocus || historyList.activeFocus) && bar.matchingHistory.length > 0
+                background: Rectangle {
+                    color: Theme.surfaceRaised
+                    radius: 12
+                    border.color: Theme.border
+                }
+                contentItem: Column {
+                    spacing: 2
+                    Item {
+                        width: parent.width
+                        height: 30
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "RECENT SEARCHES"
+                            color: Theme.textFaint
+                            font.pixelSize: Theme.fontSmall - 1
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1
+                        }
+                        Text {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Clear all"
+                            color: clearMouse.containsMouse ? Theme.text : Theme.textMuted
+                            font.pixelSize: Theme.fontSmall + 1
+                            font.weight: Font.DemiBold
+                            MouseArea {
+                                id: clearMouse
+                                anchors.fill: parent
+                                anchors.margins: -6
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: bar.clearHistory()
+                            }
+                        }
+                    }
+                    ListView {
+                        id: historyList
+                        width: parent.width
+                        height: Math.min(contentHeight, 360)
+                        clip: true
+                        model: bar.matchingHistory
+                        keyNavigationEnabled: true
+                        Keys.onReturnPressed: bar.pickHistory(bar.matchingHistory[currentIndex])
+                        Keys.onUpPressed: currentIndex > 0 ? decrementCurrentIndex() : search.forceActiveFocus()
+                        Keys.onEscapePressed: search.forceActiveFocus()
+                        delegate: Rectangle {
+                            id: entry
+                            required property string modelData
+                            required property int index
+                            width: ListView.view.width
+                            height: 36
+                            radius: 8
+                            color: entryHover.hovered || (historyList.activeFocus && historyList.currentIndex === index) ? Theme.surfaceHover : "transparent"
+                            HoverHandler { id: entryHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: bar.pickHistory(entry.modelData) }
+                            Icon {
+                                id: clock
+                                anchors.left: parent.left
+                                anchors.leftMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "history"
+                                size: 15
+                                color: Theme.textMuted
+                            }
+                            Text {
+                                anchors.left: clock.right
+                                anchors.leftMargin: 10
+                                anchors.right: removeButton.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: entry.modelData
+                                color: Theme.text
+                                font.pixelSize: Theme.fontBody
+                                wrapMode: Text.Wrap
+                            }
+                            IconButton {
+                                id: removeButton
+                                anchors.right: parent.right
+                                anchors.rightMargin: 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                iconName: "close"
+                                iconSize: 13
+                                tip: "Remove from history"
+                                onClicked: bar.removeHistory(entry.modelData)
+                            }
+                        }
+                    }
+                }
+            }
             background: Rectangle {
                 radius: height / 2
                 color: search.activeFocus ? Theme.surfaceRaised : Theme.surface
@@ -122,45 +287,13 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        // Window buttons
-        Repeater {
-            model: [
-                { icon: "minimize", tip: "Minimize" },
-                { icon: bar.maximized ? "restore" : "maximize", tip: bar.maximized ? "Restore" : "Maximize" },
-                { icon: "close", tip: "Close" },
-            ]
-            delegate: AbstractButton {
-                id: winButton
-                required property var modelData
-                required property int index
-                implicitWidth: 44
-                implicitHeight: 36
-                hoverEnabled: true
-                focusPolicy: Qt.NoFocus
-                ToolTip.visible: hovered
-                ToolTip.text: modelData.tip
-                ToolTip.delay: 700
-                background: Rectangle {
-                    radius: 8
-                    color: !winButton.hovered ? "transparent" : (winButton.index === 2 ? "#e5484d" : Qt.rgba(1, 1, 1, 0.08))
-                }
-                contentItem: Item {
-                    Icon {
-                        anchors.centerIn: parent
-                        name: winButton.modelData.icon
-                        size: 16
-                        color: winButton.hovered ? "#ffffff" : Theme.textMuted
-                    }
-                }
-                onClicked: {
-                    if (index === 0)
-                        bar.window.showMinimized()
-                    else if (index === 1)
-                        bar.toggleMaximized()
-                    else
-                        bar.window.close()
-                }
-            }
+        // Window buttons in the desktop's own style (macOS puts them on the left).
+        WindowButtons {
+            visible: bar.buttonStyle !== "mac"
+            window: bar.window
+            style: bar.buttonStyle
+            barHeight: bar.height
+            Layout.rightMargin: bar.buttonStyle === "windows" ? -8 : 0
         }
     }
 }

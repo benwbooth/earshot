@@ -79,6 +79,19 @@ ApplicationWindow {
         miniPlayer.raise()
     }
 
+    // The corner card when a new song starts while you're in another window.
+    NowPlayingPopup {
+        id: nowPlaying
+        onOpenRequested: window.showWindow()
+    }
+    Connections {
+        target: Player
+        function onStartedChanged() {
+            if (Player.started && Player.current && !window.active && !miniPlayer.active)
+                nowPlaying.announce(Player.current)
+        }
+    }
+
     MiniPlayer {
         id: miniPlayer
         onExpandRequested: window.showWindow()
@@ -109,16 +122,18 @@ ApplicationWindow {
         menu: Platform.Menu {
             Platform.MenuItem {
                 text: Player.current ? Player.current.title + " — " + Player.current.artist : "Nothing playing"
+                icon.name: "audio-x-generic"
                 enabled: false
             }
             Platform.MenuSeparator {}
-            Platform.MenuItem { text: Player.playing ? "Pause" : "Play"; enabled: Player.current !== null; onTriggered: Player.toggle() }
-            Platform.MenuItem { text: "Next"; enabled: Player.hasNext; onTriggered: Player.next(false) }
-            Platform.MenuItem { text: "Previous"; enabled: Player.current !== null; onTriggered: Player.previous() }
+            Platform.MenuItem { text: Player.playing ? "Pause" : "Play"; icon.name: Player.playing ? "media-playback-pause" : "media-playback-start"; enabled: Player.current !== null; onTriggered: Player.toggle() }
+            Platform.MenuItem { text: "Next"; icon.name: "media-skip-forward"; enabled: Player.hasNext; onTriggered: Player.next(false) }
+            Platform.MenuItem { text: "Previous"; icon.name: "media-skip-backward"; enabled: Player.current !== null; onTriggered: Player.previous() }
+            Platform.MenuItem { text: Player.shuffle ? "Shuffle is on" : "Shuffle"; icon.name: "media-playlist-shuffle"; checkable: true; checked: Player.shuffle; onTriggered: Player.setShuffle(!Player.shuffle) }
             Platform.MenuSeparator {}
-            Platform.MenuItem { text: window.visible ? "Hide Earshot" : "Show Earshot"; onTriggered: window.visible ? window.hide() : window.showWindow() }
-            Platform.MenuItem { text: miniPlayer.visible ? "Full window" : "Mini player"; onTriggered: miniPlayer.visible ? window.showWindow() : window.enterMini() }
-            Platform.MenuItem { text: "Quit"; onTriggered: window.quitApp() }
+            Platform.MenuItem { text: window.visible ? "Hide Earshot" : "Show Earshot"; icon.name: window.visible ? "window-minimize" : "window-restore"; onTriggered: window.visible ? window.hide() : window.showWindow() }
+            Platform.MenuItem { text: miniPlayer.visible ? "Full window" : "Mini player"; icon.name: miniPlayer.visible ? "view-fullscreen" : "view-restore"; onTriggered: miniPlayer.visible ? window.showWindow() : window.enterMini() }
+            Platform.MenuItem { text: "Quit"; icon.name: "application-exit"; onTriggered: window.quitApp() }
         }
     }
 

@@ -112,8 +112,6 @@ Flickable {
                     font.weight: Font.Black
                     font.letterSpacing: -1
                     wrapMode: Text.WordWrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
                 }
                 RowLayout {
                     spacing: 6

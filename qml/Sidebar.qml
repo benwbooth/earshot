@@ -21,7 +21,7 @@ Rectangle {
         readonly property bool selected: Nav.current === page && (page !== "playlist" || Nav.currentArgs.id === args.id)
 
         Layout.fillWidth: true
-        implicitHeight: 40
+        implicitHeight: Math.max(40, itemRow.implicitHeight + 16)
         radius: 8
         color: selected ? Theme.surfaceRaised : (hover.hovered ? Theme.surface : "transparent")
 
@@ -29,6 +29,7 @@ Rectangle {
         TapHandler { onTapped: Nav.open(item.page, item.args) }
 
         RowLayout {
+            id: itemRow
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 12
@@ -44,7 +45,7 @@ Rectangle {
                 color: item.selected || hover.hovered ? Theme.text : Theme.textMuted
                 font.pixelSize: Theme.fontBody
                 font.weight: item.selected ? Font.DemiBold : Font.Medium
-                elide: Text.ElideRight
+                wrapMode: Text.Wrap
             }
             Text {
                 visible: item.detail !== ""

@@ -105,7 +105,7 @@ Flickable {
                     font.pixelSize: page.playlist && page.playlist.name.length > 24 ? 40 : 56
                     font.weight: Font.Black
                     font.letterSpacing: -1
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                     MouseArea {
                         anchors.fill: parent
                         enabled: !page.special

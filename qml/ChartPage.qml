@@ -79,7 +79,7 @@ Flickable {
                     font.pixelSize: 56
                     font.weight: Font.Black
                     font.letterSpacing: -1.2
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                 }
                 Text {
                     text: page.data_ ? page.data_.subtitle + " · " + page.data_.tracks.length + " songs" : ""

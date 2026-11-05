@@ -18,6 +18,8 @@ fn main() {
         QmlFile::from("qml/MiniPlayer.qml"),
         QmlFile::from("qml/Waveform.qml"),
         QmlFile::from("qml/YouTubeEngine.qml"),
+        QmlFile::from("qml/WindowButtons.qml"),
+        QmlFile::from("qml/NowPlayingPopup.qml"),
         QmlFile::from("qml/PlayerBar.qml"),
         QmlFile::from("qml/Icon.qml"),
         QmlFile::from("qml/IconButton.qml"),
@@ -50,6 +52,10 @@ fn main() {
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "svg"))
         .map(|path| path.to_string_lossy().into_owned())
+        .chain([
+            // Loaded on demand: needs KDE's layer-shell module, which only exists on Linux/Wayland.
+            "qml/NotificationLayerShell.qml".to_owned(),
+        ])
         .collect();
 
     CxxQtBuilder::new_qml_module(module)

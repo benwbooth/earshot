@@ -19,7 +19,7 @@
           qtwebengine
           qtwebchannel
           qtpositioning
-        ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.qt6.qtwayland ];
+        ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.qt6.qtwayland pkgs.kdePackages.layer-shell-qt ];
         qtEnv = pkgs.symlinkJoin { name = "earshot-qt-env"; paths = qtModules; };
         # cxx-qt asks qmake where Qt lives; answer with the merged module tree
         # so QtQml/QtQuick headers and tools from every module are found.
@@ -47,8 +47,8 @@
           };
           cargoLock.lockFile = ./Cargo.lock;
 
-          nativeBuildInputs = [ qmake pkgs.pkg-config pkgs.qt6.wrapQtAppsHook ];
-          buildInputs = qtModules ++ [ pkgs.libglvnd ];
+          nativeBuildInputs = [ qmake pkgs.pkg-config pkgs.qt6.wrapQtAppsHook pkgs.rustPlatform.bindgenHook ];
+          buildInputs = qtModules ++ [ pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib ];
 
           QMAKE = "${qmake}/bin/earshot-qmake6";
           QT_VERSION_MAJOR = "6";
@@ -83,13 +83,14 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.pkg-config pkgs.libglvnd pkgs.clang pkgs.mold qmake qtEnv ];
+          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.clang pkgs.mold qmake qtEnv ];
           hardeningDisable = [ "fortify" ];
           shellHook = ''
             export QMAKE=${qmake}/bin/earshot-qmake6
             export QT_VERSION_MAJOR=6
             unset QML2_IMPORT_PATH
             export QT_FORCE_STDERR_LOGGING=1
+            export LIBCLANG_PATH=${pkgs.llvmPackages.libclang.lib}/lib
             export QT_PLUGIN_PATH=${qtEnv}/${pkgs.qt6.qtbase.qtPluginPrefix}
             export QML_IMPORT_PATH=${qtEnv}/${pkgs.qt6.qtbase.qtQmlPrefix}
           '';

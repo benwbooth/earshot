@@ -64,7 +64,7 @@ Item {
         color: Theme.text
         font.pixelSize: Theme.fontBody + 1
         font.weight: Font.DemiBold
-        elide: Text.ElideRight
+        wrapMode: Text.Wrap
         horizontalAlignment: card.round ? Text.AlignHCenter : Text.AlignLeft
     }
     Text {
@@ -75,7 +75,7 @@ Item {
         text: card.subtitle
         color: Theme.textMuted
         font.pixelSize: Theme.fontSmall + 1
-        elide: Text.ElideRight
+        wrapMode: Text.Wrap
         horizontalAlignment: card.round ? Text.AlignHCenter : Text.AlignLeft
     }
 }

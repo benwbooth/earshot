@@ -4,6 +4,7 @@ mod library;
 mod native;
 mod net;
 mod radio;
+mod visualizer;
 mod youtube;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};

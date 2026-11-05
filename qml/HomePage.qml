@@ -95,7 +95,7 @@ Flickable {
                     required property int index
                     readonly property bool isCurrent: Player.current !== null && Player.current.key === modelData.key
                     Layout.fillWidth: true
-                    implicitHeight: 64
+                    implicitHeight: Math.max(64, quickText.implicitHeight + 16)
                     radius: 8
                     color: quickHover.hovered ? Theme.surfaceHover : Qt.rgba(1, 1, 1, 0.06)
                     HoverHandler { id: quickHover; cursorShape: Qt.PointingHandCursor }
@@ -111,10 +111,11 @@ Flickable {
                             seed: quick.modelData.key
                         }
                         ColumnLayout {
+                            id: quickText
                             Layout.fillWidth: true
                             spacing: 2
-                            Text { Layout.fillWidth: true; text: quick.modelData.title; color: quick.isCurrent ? Theme.accent : Theme.text; font.pixelSize: Theme.fontBody + 1; font.weight: Font.DemiBold; elide: Text.ElideRight }
-                            Text { Layout.fillWidth: true; text: quick.modelData.artist; color: Theme.textMuted; font.pixelSize: Theme.fontSmall + 1; elide: Text.ElideRight }
+                            Text { Layout.fillWidth: true; text: quick.modelData.title; color: quick.isCurrent ? Theme.accent : Theme.text; font.pixelSize: Theme.fontBody + 1; font.weight: Font.DemiBold; wrapMode: Text.Wrap }
+                            Text { Layout.fillWidth: true; text: quick.modelData.artist; color: Theme.textMuted; font.pixelSize: Theme.fontSmall + 1; wrapMode: Text.Wrap }
                         }
                         IconButton {
                             Layout.rightMargin: 10

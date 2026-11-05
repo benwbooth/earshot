@@ -7,6 +7,7 @@ description = "A modern desktop music player: charts by genre and era, Reddit ra
 repository = "https://github.com/benwbooth/earshot"
 
 [dependencies]
+cpal = "0.18"
 cxx = "1.0"
 cxx-qt = "0.10.0"
 cxx-qt-lib = { version = "0.10.0", features = ["qt_gui", "qt_qml"] }
@@ -14,6 +15,10 @@ directories = "6.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ureq = { version = "3.1", features = ["json"] }
+
+# Linux: record the speakers through PipeWire's own API.
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18", features = ["pipewire"] }
 
 [build-dependencies]
 cxx-qt-build = "0.10.0"

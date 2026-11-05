@@ -52,6 +52,21 @@ QtObject {
         property real volume: 0.8
     }
 
+    // The waveform: six bar heights (0..1, bass first) measured from what the
+    // speakers are playing, refreshed about 30 times a second while music plays.
+    property var levels: [0, 0, 0, 0, 0, 0]
+    onPlayingChanged: {
+        Backend.setWaveformActive(playing)
+        if (!playing)
+            levels = [0, 0, 0, 0, 0, 0]
+    }
+    property Timer levelTimer: Timer {
+        interval: 33
+        repeat: true
+        running: player.playing
+        onTriggered: player.levels = Backend.waveformLevels().split(",").map(Number)
+    }
+
     onShuffleChanged: settings.shuffle = shuffle
     onRepeatChanged: settings.repeat = repeat
     onVolumeChanged: {
@@ -88,6 +103,7 @@ QtObject {
             player.next(true)
         }
         function onFailed(code, message) {
+            console.warn("YouTube player error", code, player.engine.videoId, message)
             if (!player.current)
                 return
             // Another upload of the same song may be allowed to play here.

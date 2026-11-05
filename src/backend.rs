@@ -52,6 +52,10 @@ pub mod qobject {
         fn remember_video(self: Pin<&mut Backend>, key: &QString, video: &QString);
         #[qinvokable]
         fn desktop(self: &Backend) -> QString;
+        #[qinvokable]
+        fn set_waveform_active(self: &Backend, active: bool);
+        #[qinvokable]
+        fn waveform_levels(self: &Backend) -> QString;
 
         #[qinvokable]
         fn playlists(self: &Backend) -> QString;
@@ -223,9 +227,23 @@ impl qobject::Backend {
         self.spawn(move || youtube::playlist(&url))
     }
 
+    /// Listens to the speakers while music plays, for the waveform.
+    pub fn set_waveform_active(&self, active: bool) {
+        crate::visualizer::set_active(active);
+    }
+
+    /// The six waveform bar heights (0..1, bass first), comma-separated.
+    pub fn waveform_levels(&self) -> QString {
+        let text = crate::visualizer::levels().iter().map(|level| format!("{level:.3}")).collect::<Vec<_>>().join(",");
+        QString::from(&text)
+    }
+
     /// Which desktop the app runs on, to draw matching window buttons:
     /// "windows", "mac", "gnome", "kde" or "other".
     pub fn desktop(&self) -> QString {
+        if let Ok(forced) = std::env::var("EARSHOT_WINDOW_BUTTONS") {
+            return QString::from(&forced);
+        }
         let name = if cfg!(target_os = "windows") {
             "windows".to_owned()
         } else if cfg!(target_os = "macos") {

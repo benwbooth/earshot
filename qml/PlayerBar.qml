@@ -6,7 +6,7 @@ import Earshot
 // The now-playing bar along the bottom of the window.
 Rectangle {
     id: bar
-    implicitHeight: 92
+    implicitHeight: Math.max(92, songColumn.implicitHeight + 28)
     color: Theme.sidebar
 
     readonly property var track: Player.current
@@ -40,6 +40,7 @@ Rectangle {
                 }
             }
             ColumnLayout {
+                id: songColumn
                 Layout.fillWidth: true
                 spacing: 3
                 RowLayout {
@@ -57,7 +58,7 @@ Rectangle {
                         font.pixelSize: Theme.fontBody + 1
                         font.weight: Font.DemiBold
                         font.underline: titleMouse.containsMouse && bar.track !== null
-                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
                         MouseArea {
                             id: titleMouse
                             anchors.fill: parent
@@ -76,7 +77,7 @@ Rectangle {
                     text: bar.track ? bar.track.artist : "Pick a song, album or radio station"
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSmall + 1
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                     MouseArea {
                         anchors.fill: parent
                         enabled: bar.track !== null && !!bar.track.artistId
@@ -90,7 +91,7 @@ Rectangle {
                     text: "From " + Player.context
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                 }
             }
             IconButton {
@@ -213,7 +214,7 @@ Rectangle {
                 text: Player.error
                 color: Theme.danger
                 font.pixelSize: Theme.fontSmall - 1
-                elide: Text.ElideRight
+                wrapMode: Text.Wrap
                 Layout.maximumWidth: 560
             }
         }

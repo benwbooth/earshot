@@ -49,7 +49,7 @@ Rectangle {
             color: "#ffffff"
             font.pixelSize: Theme.fontLarge + 2
             font.weight: Font.Bold
-            elide: Text.ElideRight
+            wrapMode: Text.Wrap
         }
         Text {
             width: parent.width
@@ -58,8 +58,6 @@ Rectangle {
             color: Qt.rgba(1, 1, 1, 0.75)
             font.pixelSize: Theme.fontSmall + 1
             wrapMode: Text.WordWrap
-            maximumLineCount: 2
-            elide: Text.ElideRight
         }
     }
 }

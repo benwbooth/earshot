@@ -291,7 +291,7 @@ Flickable {
                             color: Theme.text
                             font.pixelSize: 28
                             font.weight: Font.Bold
-                            elide: Text.ElideRight
+                            wrapMode: Text.Wrap
                         }
                         Text {
                             text: topResult.showArtist ? "Artist" : (topResult.album ? "Album · " + topResult.album.artist : "")

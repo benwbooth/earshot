@@ -17,7 +17,7 @@ Rectangle {
     signal activated()
     signal menuRequested(Item anchor)
 
-    implicitHeight: 56
+    implicitHeight: Math.max(56, rowLayout.implicitHeight + 16)
     radius: 8
     color: hover.hovered ? Theme.surfaceHover : "transparent"
 
@@ -38,6 +38,7 @@ Rectangle {
     }
 
     RowLayout {
+        id: rowLayout
         anchors.fill: parent
         anchors.leftMargin: 12
         anchors.rightMargin: 8
@@ -112,7 +113,7 @@ Rectangle {
                 color: row.isCurrent ? Theme.accent : Theme.text
                 font.pixelSize: Theme.fontBody + 1
                 font.weight: Font.Medium
-                elide: Text.ElideRight
+                wrapMode: Text.Wrap
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -129,7 +130,7 @@ Rectangle {
                     color: artistMouse.containsMouse && row.track.artistId ? Theme.text : Theme.textMuted
                     font.pixelSize: Theme.fontSmall + 1
                     font.underline: artistMouse.containsMouse && !!row.track.artistId
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                     MouseArea {
                         id: artistMouse
                         anchors.fill: parent
@@ -150,7 +151,7 @@ Rectangle {
             color: albumMouse.containsMouse ? Theme.text : Theme.textMuted
             font.pixelSize: Theme.fontSmall + 1
             font.underline: albumMouse.containsMouse
-            elide: Text.ElideRight
+            wrapMode: Text.Wrap
             MouseArea {
                 id: albumMouse
                 anchors.fill: parent
