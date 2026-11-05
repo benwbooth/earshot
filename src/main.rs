@@ -15,6 +15,8 @@ fn main() {
         unsafe { std::env::set_var("QT_QUICK_CONTROLS_STYLE", "Basic") };
     }
 
+    // YouTube's player runs in Qt WebEngine, which has to be set up first.
+    native::init_web_engine();
     let mut app = QGuiApplication::new();
     QGuiApplication::set_desktop_file_name(&QString::from("earshot"));
     native::set_window_icon(&QString::from(":/qt/qml/Earshot/qml/icons/earshot-app.svg"));

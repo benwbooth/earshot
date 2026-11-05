@@ -241,6 +241,14 @@ ApplicationWindow {
         }
     }
 
+    // YouTube's player, tucked behind everything (it has to stay in a shown
+    // window, since browsers pause media in hidden pages).
+    YouTubeEngine {
+        id: youtube
+        z: -1
+        Component.onCompleted: Player.engine = youtube
+    }
+
     ResizeEdges { window: window }
 
     // Short notices ("Added to playlist", errors)

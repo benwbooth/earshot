@@ -16,10 +16,11 @@ QtObject {
     function playAlbum(id, title, shuffle) {
         Nav.notify("Loading " + (title || "album") + "…")
         call(Backend.album(id), function (album) {
+            const route = { page: "album", args: { id: id } }
             if (shuffle)
-                Player.shuffleTracks(album.tracks, album.title)
+                Player.shuffleTracks(album.tracks, album.title, route)
             else
-                Player.playTracks(album.tracks, 0, album.title)
+                Player.playTracks(album.tracks, 0, album.title, route)
         }, function (message) { Nav.notify(message) })
     }
 

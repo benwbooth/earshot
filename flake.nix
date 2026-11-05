@@ -16,6 +16,9 @@
           qtdeclarative
           qtmultimedia
           qtsvg
+          qtwebengine
+          qtwebchannel
+          qtpositioning
         ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.qt6.qtwayland ];
         qtEnv = pkgs.symlinkJoin { name = "earshot-qt-env"; paths = qtModules; };
         # cxx-qt asks qmake where Qt lives; answer with the merged module tree
@@ -33,8 +36,7 @@
           fi
           exec ${qtEnv}/bin/qmake6 "$@"
         '';
-        runtimePath = lib.makeBinPath [ pkgs.yt-dlp ];
-      in
+              in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "earshot";
@@ -65,7 +67,7 @@
           '';
 
           postFixup = ''
-            wrapQtApp $out/bin/earshot --prefix PATH : ${runtimePath}
+            wrapQtApp $out/bin/earshot
           '';
 
           meta = {
@@ -81,7 +83,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.pkg-config pkgs.yt-dlp pkgs.libglvnd pkgs.clang pkgs.mold qmake qtEnv ];
+          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.pkg-config pkgs.libglvnd pkgs.clang pkgs.mold qmake qtEnv ];
           hardeningDisable = [ "fortify" ];
           shellHook = ''
             export QMAKE=${qmake}/bin/earshot-qmake6

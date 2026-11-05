@@ -41,6 +41,21 @@ pub fn get_json(url: &str) -> Result<Value, String> {
     Ok(value)
 }
 
+/// POSTs a JSON body and reads a JSON answer.
+pub fn post_json(url: &str, body: &Value) -> Result<Value, String> {
+    let text = agent()
+        .post(url)
+        .header("Content-Type", "application/json")
+        .send(body.to_string())
+        .map_err(|error| describe(url, error))?
+        .body_mut()
+        .with_config()
+        .limit(32 * 1024 * 1024)
+        .read_to_string()
+        .map_err(|error| describe(url, error))?;
+    serde_json::from_str(&text).map_err(|error| format!("Unexpected reply from {}: {error}", host(url)))
+}
+
 fn describe(url: &str, error: ureq::Error) -> String {
     match error {
         ureq::Error::StatusCode(429) => format!("{} is rate limiting requests right now. Try again in a minute.", host(url)),

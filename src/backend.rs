@@ -49,6 +49,11 @@ pub mod qobject {
         fn import_playlist(self: Pin<&mut Backend>, url: &QString) -> i32;
 
         #[qinvokable]
+        fn remember_video(self: Pin<&mut Backend>, key: &QString, video: &QString);
+        #[qinvokable]
+        fn desktop(self: &Backend) -> QString;
+
+        #[qinvokable]
         fn playlists(self: &Backend) -> QString;
         #[qinvokable]
         fn playlist(self: &Backend, id: &QString) -> QString;
@@ -100,7 +105,7 @@ impl Default for BackendRust {
     fn default() -> Self {
         Self {
             library_revision: 0,
-            can_play: youtube::available(),
+            can_play: true,
             next_request: 0,
             library: Arc::new(Mutex::new(Library::load())),
         }
@@ -203,15 +208,39 @@ impl qobject::Backend {
         let library = self.rust().library.clone();
         self.spawn(move || {
             let known = library.lock().unwrap().videos.get(&key).cloned();
-            let (video, url) = youtube::resolve(&track, known)?;
-            library.lock().unwrap().remember_video(&key, &video);
-            Ok(json!({ "key": key, "url": url, "videoId": video }))
+            let videos = youtube::find_videos(&track, known)?;
+            Ok(json!({ "key": key, "videos": videos }))
         })
+    }
+
+    /// Remembers which video played for a track, so it's found instantly next time.
+    pub fn remember_video(self: Pin<&mut Self>, key: &QString, video: &QString) {
+        self.library().remember_video(&key.to_string(), &video.to_string());
     }
 
     pub fn import_playlist(self: Pin<&mut Self>, url: &QString) -> i32 {
         let url = url.to_string().trim().to_owned();
         self.spawn(move || youtube::playlist(&url))
+    }
+
+    /// Which desktop the app runs on, to draw matching window buttons:
+    /// "windows", "mac", "gnome", "kde" or "other".
+    pub fn desktop(&self) -> QString {
+        let name = if cfg!(target_os = "windows") {
+            "windows".to_owned()
+        } else if cfg!(target_os = "macos") {
+            "mac".to_owned()
+        } else {
+            let session = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+            if session.contains("kde") || session.contains("plasma") || session.contains("lxqt") {
+                "kde".to_owned()
+            } else if session.contains("gnome") || session.contains("unity") || session.contains("pantheon") || session.contains("cinnamon") || session.contains("budgie") {
+                "gnome".to_owned()
+            } else {
+                "other".to_owned()
+            }
+        };
+        QString::from(&name)
     }
 
     pub fn playlists(&self) -> QString {

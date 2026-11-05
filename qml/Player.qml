@@ -1,13 +1,14 @@
 pragma Singleton
 import QtQuick
 import QtCore
-import QtMultimedia
 import Earshot
 
-// Playback: the queue, shuffle and repeat, and the audio player itself.
+// Playback: the queue, shuffle and repeat, driving YouTube's own player
+// (YouTubeEngine, created by the main window and handed over as `engine`).
 QtObject {
     id: player
 
+    property var engine: null
     property var queue: []
     property var originalQueue: []
     property int index: -1
@@ -21,21 +22,25 @@ QtObject {
     property string error: ""
     property int failures: 0
     property int pendingRequest: -1
-    property string pendingKey: ""
-    property bool retried: false
-    // The YouTube video whose audio is loaded, so chapters of one long video
-    // play on from the same file instead of reloading it.
-    property string loadedVideo: ""
-    property real seekPending: -1
+    // The YouTube videos that may play the current track, best first; the
+    // next one is tried if YouTube won't play a video inside the app.
+    property var candidates: []
+    property int candidate: 0
+    // Track key -> videos found earlier, so upcoming songs start instantly.
+    property var found: ({})
+    property bool started: false   // the current track has begun playing
+    property bool wantPlaying: false
 
-    // A track can be a chapter of a longer video: it starts and ends inside the file.
+    // A track can be a chapter of a longer video: it starts and ends inside it.
     readonly property real trackStart: current && current.start ? current.start : 0
     readonly property real trackEnd: current && current.end ? current.end : 0
+    readonly property string loadedVideo: engine ? engine.videoId : ""
 
-    readonly property bool playing: media.playbackState === MediaPlayer.PlayingState
-    readonly property real position: Math.max(0, media.position / 1000 - trackStart)
+    readonly property bool playing: engine !== null && engine.playing
+    readonly property bool seekable: true
+    readonly property real position: engine ? Math.max(0, engine.position - trackStart) : 0
     readonly property real length: trackEnd > 0 ? trackEnd - trackStart
-                                  : media.duration > 0 ? media.duration / 1000 - trackStart
+                                  : engine && engine.duration > 0 ? engine.duration - trackStart
                                   : (current ? current.duration : 0)
     readonly property bool hasNext: index + 1 < queue.length || (repeat === 1 && queue.length > 0)
     readonly property bool hasPrevious: index > 0 || position > 3
@@ -47,42 +52,53 @@ QtObject {
         property real volume: 0.8
     }
 
-    property AudioOutput output: AudioOutput {
-        volume: player.muted ? 0 : Math.pow(player.volume, 2)
+    onShuffleChanged: settings.shuffle = shuffle
+    onRepeatChanged: settings.repeat = repeat
+    onVolumeChanged: {
+        settings.volume = volume
+        applyVolume()
+    }
+    onMutedChanged: applyVolume()
+    onEngineChanged: applyVolume()
+
+    function applyVolume() {
+        if (engine)
+            engine.setVolume(muted ? 0 : Math.pow(volume, 2) * 100)
     }
 
-    property MediaPlayer media: MediaPlayer {
-        audioOutput: player.output
-        onMediaStatusChanged: {
-            if (mediaStatus === MediaPlayer.EndOfMedia)
-                player.next(true)
-            else if (mediaStatus === MediaPlayer.BufferedMedia || mediaStatus === MediaPlayer.LoadedMedia) {
+    property Connections engineEvents: Connections {
+        target: player.engine
+        function onPlayerStateChanged() {
+            if (player.engine.playing && player.current && !player.started) {
+                player.started = true
                 player.loading = false
-                player.applyPendingSeek()
+                player.failures = 0
+                const video = player.engine.videoId
+                if (!player.current.youtubeId)
+                    Backend.rememberVideo(player.current.key, video)
+                player.prefetch()
             }
         }
-        onSeekableChanged: player.applyPendingSeek()
-        // A chapter ends before the file does: move on at its end time.
-        onPositionChanged: {
-            if (player.trackEnd > 0 && position / 1000 >= player.trackEnd - 0.05 && player.seekPending < 0)
+        // A chapter ends before the video does: move on at its end time.
+        function onPositionChanged() {
+            if (player.trackEnd > 0 && player.started && player.engine.position >= player.trackEnd - 0.2)
                 player.next(true)
         }
-        onErrorOccurred: (code, message) => {
+        function onEnded() {
+            player.next(true)
+        }
+        function onFailed(code, message) {
             if (!player.current)
                 return
-            if (!player.retried) {
-                // Stream links expire; look the song up once more.
-                player.retried = true
-                player.resolveCurrent(true)
+            // Another upload of the same song may be allowed to play here.
+            if (player.candidate + 1 < player.candidates.length) {
+                player.candidate += 1
+                player.engine.load(player.candidates[player.candidate], player.trackStart)
                 return
             }
             player.fail("Couldn't play \"" + player.current.title + "\": " + message)
         }
     }
-
-    onShuffleChanged: settings.shuffle = shuffle
-    onRepeatChanged: settings.repeat = repeat
-    onVolumeChanged: settings.volume = volume
 
     function copy(tracks) {
         return (tracks || []).filter(t => t && t.key).map(t => Object.assign({}, t))
@@ -97,10 +113,15 @@ QtObject {
         return out
     }
 
-    function playTracks(tracks, start, contextName) {
+    // Where the playing music came from (the album, playlist, chart, station
+    // or search page), so the player bar can take you back there.
+    property var contextRoute: null
+
+    function playTracks(tracks, start, contextName, route) {
         let list = copy(tracks)
         if (list.length === 0)
             return
+        contextRoute = route || { page: Nav.current, args: Object.assign({}, Nav.currentArgs) }
         start = Math.max(0, Math.min(start || 0, list.length - 1))
         originalQueue = list.slice()
         if (shuffle) {
@@ -114,59 +135,66 @@ QtObject {
         jump(start)
     }
 
-    function shuffleTracks(tracks, contextName) {
+    function shuffleTracks(tracks, contextName, route) {
         shuffle = true
         const list = copy(tracks)
-        playTracks(list, Math.floor(Math.random() * list.length), contextName)
+        playTracks(list, Math.floor(Math.random() * list.length), contextName, route)
+    }
+
+    // Open the album, playlist or page the music is playing from.
+    function openSource() {
+        if (contextRoute && contextRoute.page)
+            Nav.open(contextRoute.page, contextRoute.args)
+        else if (current && current.albumId)
+            Nav.album(current.albumId)
+        else
+            Nav.open("queue")
     }
 
     function jump(i) {
         if (i < 0 || i >= queue.length)
             return
         index = i
-        retried = false
-        resolveCurrent(false)
+        resolveCurrent()
     }
 
-    function applyPendingSeek() {
-        if (seekPending >= 0 && media.seekable) {
-            media.position = seekPending * 1000
-            seekPending = -1
-        }
+    function startVideos(videos) {
+        candidates = videos
+        candidate = 0
+        engine.load(videos[0], trackStart)
     }
 
-    function resolveCurrent(force) {
+    function resolveCurrent() {
         const track = current
-        if (!track)
+        if (!track || !engine)
             return
-        // Another chapter of the video that's already loaded: just move there.
-        if (!force && track.youtubeId && track.youtubeId === loadedVideo && media.source.toString() !== "" && error === "") {
-            if (Math.abs(media.position / 1000 - trackStart) > 1.5)
-                media.position = trackStart * 1000
-            if (!playing)
-                media.play()
-            loading = false
+        error = ""
+        wantPlaying = true
+        // Another chapter of the video that's already playing: just move there.
+        if (track.youtubeId && track.youtubeId === loadedVideo && started) {
+            if (Math.abs(engine.position - trackStart) > 1.5)
+                engine.seek(trackStart)
+            engine.play()
             prefetch()
             return
         }
-        media.stop()
-        loadedVideo = ""
-        error = ""
+        started = false
         loading = true
         if (pendingRequest >= 0)
             Api.cancel(pendingRequest)
-        pendingKey = track.key
+        // YouTube tracks already know their video; others were often looked up ahead of time.
+        const known = track.youtubeId ? [track.youtubeId] : found[track.key]
+        if (known && known.length > 0) {
+            startVideos(known)
+            return
+        }
+        engine.stop()
         pendingRequest = Api.call(Backend.resolve(JSON.stringify(track)), function (result) {
             pendingRequest = -1
+            remember(result)
             if (!current || result.key !== current.key)
                 return
-            failures = 0
-            loadedVideo = result.videoId || track.youtubeId || ""
-            seekPending = trackStart > 0 ? trackStart : -1
-            media.source = result.url
-            media.play()
-            applyPendingSeek()
-            prefetch()
+            startVideos(result.videos)
         }, function (message) {
             pendingRequest = -1
             if (current && current.key === track.key)
@@ -174,10 +202,23 @@ QtObject {
         })
     }
 
+    function remember(result) {
+        const map = Object.assign({}, found)
+        map[result.key] = result.videos
+        found = map
+    }
+
+    // Look up the next songs' videos while this one plays, so they start at once.
     function prefetch() {
-        const upcoming = queue[index + 1]
-        if (upcoming && !(upcoming.youtubeId && upcoming.youtubeId === loadedVideo))
-            Backend.resolve(JSON.stringify(upcoming))
+        for (let i = index + 1; i <= index + 2 && i < queue.length; ++i)
+            lookAhead(queue[i])
+    }
+
+    // Find a track's video ahead of time (songs you hover, the first song of an album).
+    function lookAhead(track) {
+        if (!track || track.youtubeId || found[track.key])
+            return
+        Api.call(Backend.resolve(JSON.stringify(track)), remember)
     }
 
     function fail(message) {
@@ -195,15 +236,17 @@ QtObject {
     }
 
     function toggle() {
-        if (!current) {
+        if (!current || !engine)
             return
+        if (playing) {
+            wantPlaying = false
+            engine.pause()
+        } else if (!started || error !== "") {
+            resolveCurrent()
+        } else {
+            wantPlaying = true
+            engine.play()
         }
-        if (playing)
-            media.pause()
-        else if (media.source.toString() === "" || error !== "")
-            resolveCurrent(false)
-        else
-            media.play()
     }
 
     function next(automatic) {
@@ -211,7 +254,7 @@ QtObject {
             return
         if (automatic && repeat === 2) {
             seek(0)
-            media.play()
+            engine.play()
             return
         }
         if (index + 1 < queue.length)
@@ -219,7 +262,7 @@ QtObject {
         else if (repeat === 1)
             jump(0)
         else if (automatic) {
-            media.stop()
+            engine.pause()
             loading = false
         }
     }
@@ -234,7 +277,8 @@ QtObject {
 
     // Seconds from the start of the current track (which may be a chapter).
     function seek(seconds) {
-        media.position = (trackStart + Math.max(0, seconds)) * 1000
+        if (engine)
+            engine.seek(trackStart + Math.max(0, seconds))
     }
 
     function setShuffle(on) {

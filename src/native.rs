@@ -9,7 +9,10 @@ pub mod ffi {
         include!("earshot/native.h");
         #[cxx_name = "earshotSetWindowIcon"]
         fn set_window_icon(resource: &QString);
+
+        #[cxx_name = "earshotInitWebEngine"]
+        fn init_web_engine();
     }
 }
 
-pub use ffi::set_window_icon;
+pub use ffi::{init_web_engine, set_window_icon};

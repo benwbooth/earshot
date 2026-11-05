@@ -22,6 +22,12 @@ Rectangle {
     color: hover.hovered ? Theme.surfaceHover : "transparent"
 
     HoverHandler { id: hover }
+    // Pointing at a song looks up its video, so a click starts it right away.
+    Timer {
+        interval: 450
+        running: hover.hovered
+        onTriggered: Player.lookAhead(row.track)
+    }
     TapHandler {
         acceptedButtons: Qt.LeftButton
         onDoubleTapped: row.activated()
@@ -51,10 +57,17 @@ Rectangle {
             }
             Icon {
                 anchors.centerIn: parent
-                visible: hover.hovered || row.isCurrent
-                name: row.isCurrent && Player.playing && !hover.hovered ? "volume" : (row.isCurrent && Player.playing ? "pause" : "play")
+                visible: hover.hovered || (row.isCurrent && !Player.playing)
+                name: row.isCurrent && Player.playing ? "pause" : "play"
                 size: 16
                 color: row.isCurrent ? Theme.accent : Theme.text
+            }
+            Waveform {
+                anchors.centerIn: parent
+                visible: row.isCurrent && Player.playing && !hover.hovered
+                height: 14
+                barWidth: 2.5
+                gap: 1.5
             }
             MouseArea {
                 anchors.fill: parent

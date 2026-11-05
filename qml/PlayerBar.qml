@@ -36,19 +36,40 @@ Rectangle {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: bar.track && bar.track.albumId ? Nav.album(bar.track.albumId) : Nav.open("queue")
+                    onClicked: Player.openSource()
                 }
             }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 3
-                Text {
+                RowLayout {
                     Layout.fillWidth: true
-                    text: bar.track ? bar.track.title : "Nothing playing"
-                    color: Theme.text
-                    font.pixelSize: Theme.fontBody + 1
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
+                    spacing: 8
+                    Waveform {
+                        visible: bar.track !== null
+                        Layout.preferredHeight: 14
+                    }
+                    // Click the song to open the album, playlist or page it's playing from.
+                    Text {
+                        Layout.fillWidth: true
+                        text: bar.track ? bar.track.title : "Nothing playing"
+                        color: Theme.text
+                        font.pixelSize: Theme.fontBody + 1
+                        font.weight: Font.DemiBold
+                        font.underline: titleMouse.containsMouse && bar.track !== null
+                        elide: Text.ElideRight
+                        MouseArea {
+                            id: titleMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            enabled: bar.track !== null
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Player.openSource()
+                        }
+                        ToolTip.visible: titleMouse.containsMouse && Player.context !== ""
+                        ToolTip.text: "Go to " + Player.context
+                        ToolTip.delay: 600
+                    }
                 }
                 Text {
                     Layout.fillWidth: true

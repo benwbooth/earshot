@@ -1,42 +1,73 @@
-//! YouTube search and audio streams, through the `yt-dlp` program.
-
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::SystemTime;
+//! YouTube through its own web API (the one youtube.com itself uses):
+//! search, playlists and the chapter timestamps of long videos. Nothing is
+//! downloaded; songs play in YouTube's own player inside the app.
 
 use serde_json::{Value, json};
 
-pub fn program() -> String {
-    std::env::var("EARSHOT_YTDLP").unwrap_or_else(|_| "yt-dlp".to_owned())
+use crate::net::post_json;
+
+const CLIENT_VERSION: &str = "2.20251101.00.00";
+
+/// Calls one of youtube.com's own API endpoints.
+fn innertube(endpoint: &str, mut body: Value) -> Result<Value, String> {
+    body["context"] = json!({
+        "client": { "clientName": "WEB", "clientVersion": CLIENT_VERSION, "hl": "en", "gl": "US" }
+    });
+    let answer = post_json(&format!("https://www.youtube.com/youtubei/v1/{endpoint}?prettyPrint=false"), &body)?;
+    if let Some(error) = answer.get("error") {
+        let message = error.get("message").and_then(Value::as_str).unwrap_or("request failed");
+        return Err(format!("YouTube: {message}"));
+    }
+    Ok(answer)
 }
 
-pub fn available() -> bool {
-    let program = program();
-    if program.contains('/') {
-        return std::path::Path::new(&program).is_file();
+/// Every object stored under one of `keys`, in page order (matches aren't searched inside).
+fn collect<'a>(value: &'a Value, keys: &[&'static str], out: &mut Vec<(&'static str, &'a Value)>) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if let Some(found) = keys.iter().find(|wanted| **wanted == key.as_str()) {
+                    out.push((found, child));
+                } else {
+                    collect(child, keys, out);
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| collect(item, keys, out)),
+        _ => {}
     }
-    std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(&program).is_file()))
-        .unwrap_or(false)
 }
 
-fn run(args: &[&str]) -> Result<String, String> {
-    let output = Command::new(program())
-        .args(["--no-warnings", "--socket-timeout", "15", "--ignore-config"])
-        .args(args)
-        .output()
-        .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound => "Earshot plays music through yt-dlp, which isn't installed. Install yt-dlp and restart.".to_owned(),
-            _ => format!("Couldn't start yt-dlp: {error}"),
-        })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let line = stderr.lines().rev().find(|line| line.contains("ERROR")).unwrap_or("yt-dlp failed");
-        return Err(line.trim_start_matches("ERROR: ").to_owned());
+/// The first object stored under `key`, searching depth-first.
+fn first<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    match value {
+        Value::Object(map) => map.get(key).or_else(|| map.values().find_map(|child| first(child, key))),
+        Value::Array(items) => items.iter().find_map(|item| first(item, key)),
+        _ => None,
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The readable text of a YouTube text object (simpleText, runs or content).
+fn text(value: &Value) -> String {
+    if let Some(simple) = value.get("simpleText").and_then(Value::as_str) {
+        return simple.to_owned();
+    }
+    if let Some(content) = value.get("content").and_then(Value::as_str) {
+        return content.to_owned();
+    }
+    value
+        .get("runs")
+        .and_then(Value::as_array)
+        .map(|runs| runs.iter().filter_map(|run| run.get("text").and_then(Value::as_str)).collect::<String>())
+        .unwrap_or_default()
+}
+
+/// "1:30:03" -> 5403 seconds.
+fn parse_clock(clock: &str) -> u64 {
+    if !clock.contains(':') {
+        return 0;
+    }
+    clock.trim().split(':').fold(0, |total, part| total * 60 + part.trim().parse::<u64>().unwrap_or(0))
 }
 
 /// Splits "Artist - Title (Official Video)" into its parts.
@@ -65,19 +96,10 @@ pub fn thumbnail(id: &str) -> String {
     format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg")
 }
 
-fn entry_track(entry: &Value) -> Option<Value> {
-    let id = entry.get("id")?.as_str()?;
-    if id.len() != 11 {
-        return None;
-    }
-    let raw_title = entry.get("title").and_then(Value::as_str).unwrap_or("");
-    let channel = entry
-        .get("channel")
-        .or_else(|| entry.get("uploader"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
+/// A video as a playable track.
+fn video_track(id: &str, raw_title: &str, channel: &str, duration: u64) -> Value {
     let (artist, title) = split_title(raw_title, channel);
-    Some(json!({
+    json!({
         "key": format!("yt:{id}"),
         "youtubeId": id,
         "title": title,
@@ -87,113 +109,138 @@ fn entry_track(entry: &Value) -> Option<Value> {
         "artistId": "",
         "cover": thumbnail(id),
         "coverBig": thumbnail(id),
-        "duration": entry.get("duration").and_then(Value::as_f64).unwrap_or(0.0) as u64,
+        "duration": duration,
         "channel": channel,
         "rawTitle": raw_title,
-    }))
+    })
 }
 
-fn flat(target: &str) -> Result<Value, String> {
-    let text = run(&["--flat-playlist", "-J", "--", target])?;
-    serde_json::from_str(&text).map_err(|error| format!("Unexpected answer from yt-dlp: {error}"))
+fn from_video_renderer(video: &Value) -> Option<Value> {
+    let id = video.get("videoId")?.as_str()?;
+    let duration = video.get("lengthText").map(|t| parse_clock(&text(t))).unwrap_or(0);
+    let channel = video.get("ownerText").or_else(|| video.get("longBylineText")).map(text).unwrap_or_default();
+    Some(video_track(id, &text(video.get("title")?), &channel, duration))
 }
 
-pub fn search(query: &str, count: usize) -> Result<Vec<Value>, String> {
-    let found = flat(&format!("ytsearch{count}:{query}"))?;
-    Ok(found
-        .get("entries")
+/// Text parts of a lockup's metadata rows, e.g. [["GBelair"], ["88K views", "14 years ago"]].
+fn lockup_rows(lockup: &Value) -> Vec<Vec<String>> {
+    lockup
+        .pointer("/metadata/lockupMetadataViewModel/metadata/contentMetadataViewModel/metadataRows")
         .and_then(Value::as_array)
-        .map(|entries| entries.iter().filter_map(entry_track).collect())
-        .unwrap_or_default())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    row.get("metadataParts")
+                        .and_then(Value::as_array)
+                        .map(|parts| parts.iter().filter_map(|part| part.get("text").map(text)).collect())
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-pub fn playlist(url: &str) -> Result<Value, String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("Paste a YouTube playlist link that starts with https://".to_owned());
-    }
-    let found = flat(url)?;
-    let tracks: Vec<Value> = found
-        .get("entries")
-        .and_then(Value::as_array)
-        .map(|entries| entries.iter().filter_map(entry_track).collect())
-        .unwrap_or_default();
-    if tracks.is_empty() {
-        return Err("That link has no playable videos.".to_owned());
-    }
-    Ok(json!({
-        "title": found.get("title").and_then(Value::as_str).unwrap_or("Imported playlist"),
-        "tracks": tracks,
-    }))
+fn lockup_badge(lockup: &Value) -> String {
+    first(lockup, "thumbnailBadgeViewModel").and_then(|badge| badge.get("text")).and_then(Value::as_str).unwrap_or("").to_owned()
 }
 
-/// The best thumbnail a flat entry lists (playlists carry their own).
-fn entry_thumbnail(entry: &Value) -> String {
-    entry
-        .get("thumbnails")
+fn lockup_image(lockup: &Value) -> String {
+    first(lockup, "sources")
         .and_then(Value::as_array)
-        .and_then(|list| list.last())
-        .and_then(|thumb| thumb.get("url"))
+        .and_then(|sources| sources.first())
+        .and_then(|source| source.get("url"))
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_owned()
 }
 
+enum Lockup {
+    Video(Value),
+    Playlist(Value),
+}
+
+fn from_lockup(lockup: &Value) -> Option<Lockup> {
+    let id = lockup.get("contentId")?.as_str()?;
+    let kind = lockup.get("contentType").and_then(Value::as_str).unwrap_or("");
+    let title = lockup.pointer("/metadata/lockupMetadataViewModel/title").map(text).unwrap_or_default();
+    let rows = lockup_rows(lockup);
+    let channel = rows.first().and_then(|row| row.first()).cloned().unwrap_or_default();
+    match kind {
+        "LOCKUP_CONTENT_TYPE_VIDEO" => Some(Lockup::Video(video_track(id, &title, &channel, parse_clock(&lockup_badge(lockup))))),
+        "LOCKUP_CONTENT_TYPE_PLAYLIST" => {
+            // "RD…" lists are YouTube's endless auto-generated mixes, not albums.
+            if id.starts_with("RD") {
+                return None;
+            }
+            let count: u64 = lockup_badge(lockup).split_whitespace().next().and_then(|n| n.replace(',', "").parse().ok()).unwrap_or(0);
+            Some(Lockup::Playlist(json!({
+                "id": format!("yt:pl:{id}"),
+                "title": title,
+                "artist": channel,
+                "artistId": "",
+                "cover": lockup_image(lockup),
+                "coverBig": lockup_image(lockup),
+                "year": "",
+                "kind": "playlist",
+                "trackCount": count,
+            })))
+        }
+        _ => None,
+    }
+}
+
+/// What youtube.com shows for a search, in its order: videos and playlists.
+fn search_page(query: &str) -> Result<Vec<Lockup>, String> {
+    let answer = innertube("search", json!({ "query": query }))?;
+    let mut found = Vec::new();
+    collect(&answer, &["videoRenderer", "lockupViewModel"], &mut found);
+    Ok(found
+        .into_iter()
+        .filter_map(|(kind, item)| match kind {
+            "videoRenderer" => from_video_renderer(item).map(Lockup::Video),
+            _ => from_lockup(item),
+        })
+        .collect())
+}
+
+/// YouTube videos for a search, in YouTube's order.
+pub fn search(query: &str, count: usize) -> Result<Vec<Value>, String> {
+    Ok(search_page(query)?
+        .into_iter()
+        .filter_map(|item| match item {
+            Lockup::Video(video) => Some(video),
+            Lockup::Playlist(_) => None,
+        })
+        .take(count)
+        .collect())
+}
+
 /// Videos at least this long are offered as albums (full soundtracks, live sets).
 const ALBUM_VIDEO_SECONDS: u64 = 15 * 60;
 
-/// What youtube.com itself shows for a search, in its order: videos and
-/// playlists mixed, exactly as on the site.
-fn results_page(query: &str, count: usize) -> Result<Vec<Value>, String> {
-    let url = format!("https://www.youtube.com/results?search_query={}", crate::net::encode(query));
-    let text = run(&["--flat-playlist", "--playlist-end", &count.to_string(), "-J", "--", &url])?;
-    let found: Value = serde_json::from_str(&text).map_err(|error| format!("Unexpected answer from yt-dlp: {error}"))?;
-    Ok(found.get("entries").and_then(Value::as_array).cloned().unwrap_or_default())
-}
-
 /// A real YouTube search, kept in YouTube's order: playlists and full-length
-/// videos (soundtracks, full albums, live sets) come back as albums, shorter
-/// videos as songs.
+/// videos come back as albums, shorter videos as songs.
 pub fn search_albums(query: &str) -> Result<Value, String> {
     let mut albums = Vec::new();
     let mut tracks = Vec::new();
-    for entry in results_page(query, 40)? {
-        let url = entry.get("url").and_then(Value::as_str).unwrap_or("");
-        let id = entry.get("id").and_then(Value::as_str).unwrap_or("");
-        if url.contains("list=") {
-            // "RD…" lists are YouTube's endless auto-generated mixes, not albums.
-            if id.starts_with("RD") || id.is_empty() {
-                continue;
+    for item in search_page(query)? {
+        match item {
+            Lockup::Playlist(playlist) => albums.push(playlist),
+            Lockup::Video(video) if video["duration"].as_u64().unwrap_or(0) >= ALBUM_VIDEO_SECONDS => {
+                let id = video["youtubeId"].as_str().unwrap_or("");
+                albums.push(json!({
+                    "id": format!("yt:v:{id}"),
+                    "title": video["rawTitle"],
+                    "artist": video["channel"],
+                    "artistId": "",
+                    "cover": thumbnail(id),
+                    "coverBig": thumbnail(id),
+                    "year": "",
+                    "kind": "video",
+                    "duration": video["duration"],
+                }));
             }
-            let channel = entry.get("channel").or_else(|| entry.get("uploader")).and_then(Value::as_str).unwrap_or("");
-            albums.push(json!({
-                "id": format!("yt:pl:{id}"),
-                "title": entry.get("title").and_then(Value::as_str).unwrap_or("Playlist"),
-                "artist": channel,
-                "artistId": "",
-                "cover": entry_thumbnail(&entry),
-                "coverBig": entry_thumbnail(&entry),
-                "year": "",
-                "kind": "playlist",
-                "trackCount": entry.get("playlist_count").and_then(Value::as_u64).unwrap_or(0),
-            }));
-            continue;
-        }
-        let Some(video) = entry_track(&entry) else { continue };
-        if video["duration"].as_u64().unwrap_or(0) >= ALBUM_VIDEO_SECONDS {
-            let video_id = video["youtubeId"].as_str().unwrap_or("");
-            albums.push(json!({
-                "id": format!("yt:v:{video_id}"),
-                "title": video["rawTitle"],
-                "artist": video["channel"],
-                "artistId": "",
-                "cover": thumbnail(video_id),
-                "coverBig": thumbnail(video_id),
-                "year": "",
-                "kind": "video",
-                "duration": video["duration"],
-            }));
-        } else {
-            tracks.push(video);
+            Lockup::Video(video) => tracks.push(video),
         }
     }
     Ok(json!({ "albums": albums, "tracks": tracks }))
@@ -202,26 +249,16 @@ pub fn search_albums(query: &str) -> Result<Value, String> {
 /// A YouTube playlist ("yt:pl:ID") or a long video split at its chapters ("yt:v:ID"), as an album.
 pub fn album(id: &str) -> Result<Value, String> {
     if let Some(list) = id.strip_prefix("yt:pl:") {
-        let found = flat(&format!("https://www.youtube.com/playlist?list={list}"))?;
-        let title = found.get("title").and_then(Value::as_str).unwrap_or("Playlist").to_owned();
-        let channel = found.get("channel").or_else(|| found.get("uploader")).and_then(Value::as_str).unwrap_or("").to_owned();
-        let mut tracks: Vec<Value> = found
-            .get("entries")
-            .and_then(Value::as_array)
-            .map(|entries| entries.iter().filter_map(entry_track).collect())
-            .unwrap_or_default();
+        let (title, owner, mut tracks) = playlist_contents(list)?;
         for (index, track) in tracks.iter_mut().enumerate() {
             track["album"] = json!(title);
             track["albumId"] = json!(id);
             track["trackNumber"] = json!(index + 1);
         }
-        if tracks.is_empty() {
-            return Err("This playlist has no playable videos.".to_owned());
-        }
         let cover = tracks[0]["cover"].clone();
         let total: u64 = tracks.iter().filter_map(|t| t["duration"].as_u64()).sum();
         return Ok(json!({
-            "id": id, "title": title, "artist": channel, "artistId": "",
+            "id": id, "title": title, "artist": owner, "artistId": "",
             "cover": cover, "coverBig": cover, "year": "", "kind": "playlist",
             "trackCount": tracks.len(), "duration": total, "label": "YouTube playlist",
             "releaseDate": "", "genres": [], "tracks": tracks, "source": "youtube",
@@ -229,33 +266,48 @@ pub fn album(id: &str) -> Result<Value, String> {
     }
 
     let video = id.strip_prefix("yt:v:").ok_or("Unknown YouTube album")?;
-    let text = run(&["--skip-download", "--no-playlist", "-J", "--", &format!("https://www.youtube.com/watch?v={video}")])?;
-    let info: Value = serde_json::from_str(&text).map_err(|error| format!("Unexpected answer from yt-dlp: {error}"))?;
-    let title = info.get("title").and_then(Value::as_str).unwrap_or("Album").to_owned();
-    let channel = info.get("channel").or_else(|| info.get("uploader")).and_then(Value::as_str).unwrap_or("").to_owned();
-    let length = info.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
-    let date = info.get("upload_date").and_then(Value::as_str).unwrap_or("");
-    let cover = thumbnail(video);
-    let chapters: Vec<(f64, f64, String)> = info
-        .get("chapters")
-        .and_then(Value::as_array)
-        .map(|list| {
-            list.iter()
-                .map(|chapter| {
-                    (
-                        chapter.get("start_time").and_then(Value::as_f64).unwrap_or(0.0),
-                        chapter.get("end_time").and_then(Value::as_f64).unwrap_or(length),
-                        chapter.get("title").and_then(Value::as_str).unwrap_or("").trim().to_owned(),
-                    )
-                })
-                .collect()
-        })
+    let next = innertube("next", json!({ "videoId": video }))?;
+    let details = innertube("player", json!({ "videoId": video })).ok();
+    let detail = |field: &str| details.as_ref().and_then(|d| d.pointer(&format!("/videoDetails/{field}"))).and_then(Value::as_str).map(str::to_owned);
+    let title = first(&next, "videoPrimaryInfoRenderer")
+        .and_then(|info| info.get("title"))
+        .map(text)
+        .filter(|t| !t.is_empty())
+        .or_else(|| detail("title"))
+        .unwrap_or_else(|| "Album".to_owned());
+    let channel = first(&next, "videoOwnerRenderer")
+        .and_then(|owner| owner.get("title"))
+        .map(text)
+        .filter(|t| !t.is_empty())
+        .or_else(|| detail("author"))
         .unwrap_or_default();
-    let parts = if chapters.is_empty() { vec![(0.0, length, title.clone())] } else { chapters };
-    let tracks: Vec<Value> = parts
+    let length: f64 = detail("lengthSeconds").and_then(|s| s.parse().ok()).unwrap_or(0.0);
+    let date = first(&next, "videoPrimaryInfoRenderer").and_then(|info| info.get("dateText")).map(text).unwrap_or_default();
+    let year: String = date.chars().skip(date.chars().count().saturating_sub(4)).collect();
+    let year = if year.len() == 4 && year.chars().all(|c| c.is_ascii_digit()) { year } else { String::new() };
+
+    let mut markers = Vec::new();
+    collect(&next, &["chapterRenderer"], &mut markers);
+    let mut chapters: Vec<(f64, String)> = markers
+        .iter()
+        .filter_map(|(_, chapter)| {
+            let start = chapter.get("timeRangeStartMillis")?.as_f64()? / 1000.0;
+            Some((start, chapter.get("title").map(text).unwrap_or_default()))
+        })
+        .collect();
+    chapters.sort_by(|a, b| a.0.total_cmp(&b.0));
+    chapters.dedup_by(|a, b| a.0 == b.0);
+    if chapters.is_empty() {
+        chapters.push((0.0, title.clone()));
+    }
+
+    let cover = thumbnail(video);
+    let count = chapters.len();
+    let tracks: Vec<Value> = chapters
         .iter()
         .enumerate()
-        .map(|(index, (start, end, name))| {
+        .map(|(index, (start, name))| {
+            let end = chapters.get(index + 1).map(|next| next.0).unwrap_or(length);
             json!({
                 "key": format!("yt:{video}@{}", *start as u64),
                 "youtubeId": video,
@@ -268,20 +320,66 @@ pub fn album(id: &str) -> Result<Value, String> {
                 "coverBig": cover,
                 "duration": (end - start).max(0.0) as u64,
                 "start": start,
-                "end": if index + 1 == parts.len() { 0.0 } else { *end },
+                "end": if index + 1 == count { 0.0 } else { end },
                 "trackNumber": index + 1,
             })
         })
         .collect();
     Ok(json!({
         "id": id, "title": title, "artist": channel, "artistId": "",
-        "cover": cover, "coverBig": cover,
-        "year": date.get(..4).unwrap_or(""), "kind": "video",
+        "cover": cover, "coverBig": cover, "year": year, "kind": "video",
         "trackCount": tracks.len(), "duration": length as u64,
-        "label": if parts.len() > 1 { "One YouTube video, split at its chapters" } else { "One YouTube video" },
-        "releaseDate": if date.len() == 8 { format!("{}-{}-{}", &date[..4], &date[4..6], &date[6..]) } else { String::new() },
-        "genres": [], "tracks": tracks, "source": "youtube",
+        "label": if count > 1 { "One YouTube video, split at its chapters" } else { "One YouTube video" },
+        "releaseDate": date, "genres": [], "tracks": tracks, "source": "youtube",
     }))
+}
+
+/// A playlist's title, owner and videos (the first page, up to about 100).
+fn playlist_contents(list: &str) -> Result<(String, String, Vec<Value>), String> {
+    let answer = innertube("browse", json!({ "browseId": format!("VL{list}") }))?;
+    let title = first(&answer, "microformatDataRenderer")
+        .and_then(|micro| micro.get("title"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| first(&answer, "pageHeaderViewModel").and_then(|header| header.get("title")).map(text))
+        .unwrap_or_else(|| "Playlist".to_owned());
+    let owner = first(&answer, "pageHeaderViewModel")
+        .and_then(|header| first(header, "avatarStackViewModel"))
+        .and_then(|stack| stack.get("text"))
+        .map(text)
+        .map(|by| by.trim_start_matches("by ").to_owned())
+        .unwrap_or_default();
+    let mut found = Vec::new();
+    collect(&answer, &["lockupViewModel", "playlistVideoRenderer"], &mut found);
+    let tracks: Vec<Value> = found
+        .into_iter()
+        .filter_map(|(kind, item)| {
+            if kind == "lockupViewModel" {
+                return match from_lockup(item) {
+                    Some(Lockup::Video(video)) => Some(video),
+                    _ => None,
+                };
+            }
+            let id = item.get("videoId")?.as_str()?;
+            let seconds = item.get("lengthSeconds").and_then(Value::as_str).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let channel = item.get("shortBylineText").map(text).unwrap_or_default();
+            Some(video_track(id, &text(item.get("title")?), &channel, seconds))
+        })
+        .collect();
+    if tracks.is_empty() {
+        return Err("This playlist has no playable videos.".to_owned());
+    }
+    Ok((title, owner, tracks))
+}
+
+/// Imports a playlist from a YouTube link.
+pub fn playlist(url: &str) -> Result<Value, String> {
+    let list = url
+        .split(['?', '&'])
+        .find_map(|part| part.strip_prefix("list="))
+        .ok_or("Paste a YouTube playlist link (it contains \"list=\").")?;
+    let (title, _, tracks) = playlist_contents(list)?;
+    Ok(json!({ "title": title, "tracks": tracks }))
 }
 
 /// "12. Town" or "03 - Town" -> "Town".
@@ -333,110 +431,27 @@ fn score(candidate: &Value, artist: &str, title: &str, duration: u64) -> i64 {
     points
 }
 
-/// Where downloaded audio is kept so songs only download once.
-pub fn cache_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("EARSHOT_CACHE_DIR") {
-        return PathBuf::from(dir);
+/// The YouTube videos that best match a track, best first. Several come back
+/// so the player can move on if one can't be played inside the app.
+pub fn find_videos(track: &Value, known_video: Option<String>) -> Result<Vec<String>, String> {
+    if let Some(video) = track["youtubeId"].as_str().filter(|id| !id.is_empty()).map(str::to_owned) {
+        return Ok(vec![video]);
     }
-    directories::ProjectDirs::from("", "", "earshot")
-        .map(|dirs| dirs.cache_dir().join("audio"))
-        .unwrap_or_else(|| std::env::temp_dir().join("earshot-audio"))
-}
-
-const CACHE_LIMIT_BYTES: u64 = 3 * 1024 * 1024 * 1024;
-
-fn cached_file(dir: &Path, video: &str) -> Option<PathBuf> {
-    let prefix = format!("{video}.");
-    std::fs::read_dir(dir).ok()?.filter_map(Result::ok).map(|entry| entry.path()).find(|path| {
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        name.starts_with(&prefix) && !name.ends_with(".part") && !name.ends_with(".ytdl")
-    })
-}
-
-/// Removes the least recently used songs once the cache grows past its limit.
-fn trim_cache(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
-    let mut files: Vec<(PathBuf, u64, SystemTime)> = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let meta = entry.metadata().ok()?;
-            let used = meta.accessed().or_else(|_| meta.modified()).ok()?;
-            meta.is_file().then(|| (entry.path(), meta.len(), used))
-        })
-        .collect();
-    let mut total: u64 = files.iter().map(|(_, size, _)| size).sum();
-    files.sort_by_key(|(_, _, used)| *used);
-    for (path, size, _) in files {
-        if total <= CACHE_LIMIT_BYTES {
-            break;
-        }
-        if std::fs::remove_file(&path).is_ok() {
-            total -= size;
-        }
+    let artist = track["artist"].as_str().unwrap_or("");
+    let title = track["title"].as_str().unwrap_or("");
+    let duration = track["duration"].as_u64().unwrap_or(0);
+    let mut candidates = search(&format!("{artist} - {title}"), 10)?;
+    candidates.sort_by_key(|candidate| -score(candidate, artist, title, duration));
+    let mut videos: Vec<String> = candidates.iter().filter_map(|c| c["youtubeId"].as_str().map(str::to_owned)).take(4).collect();
+    // The video that worked last time goes first.
+    if let Some(known) = known_video {
+        videos.retain(|video| *video != known);
+        videos.insert(0, known);
     }
-}
-
-fn download_lock(video: &str) -> Arc<Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
-    LOCKS.get_or_init(Default::default).lock().unwrap().entry(video.to_owned()).or_default().clone()
-}
-
-/// Downloads a video's audio (once) and returns the local file.
-fn audio_file(video: &str) -> Result<PathBuf, String> {
-    let dir = cache_dir();
-    std::fs::create_dir_all(&dir).map_err(|error| format!("Couldn't create the audio cache: {error}"))?;
-    let lock = download_lock(video);
-    let _guard = lock.lock().unwrap();
-    if let Some(path) = cached_file(&dir, video) {
-        return Ok(path);
+    if videos.is_empty() {
+        return Err(format!("Couldn't find \"{title}\" on YouTube."));
     }
-    let template = dir.join("%(id)s.%(ext)s");
-    let output = run(&[
-        "-f",
-        "bestaudio[ext=m4a]/bestaudio/best",
-        "-N",
-        "4",
-        "--no-playlist",
-        "--no-mtime",
-        "-o",
-        &template.to_string_lossy(),
-        "--print",
-        "after_move:filepath",
-        "--",
-        &format!("https://www.youtube.com/watch?v={video}"),
-    ])?;
-    let path = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_file())
-        .or_else(|| cached_file(&dir, video))
-        .ok_or("yt-dlp didn't save any audio")?;
-    trim_cache(&dir);
-    Ok(path)
-}
-
-/// Finds the YouTube video for a track and returns a playable local audio file URL.
-pub fn resolve(track: &Value, known_video: Option<String>) -> Result<(String, String), String> {
-    let video = match known_video.or_else(|| track["youtubeId"].as_str().filter(|id| !id.is_empty()).map(str::to_owned)) {
-        Some(video) => video,
-        None => {
-            let artist = track["artist"].as_str().unwrap_or("");
-            let title = track["title"].as_str().unwrap_or("");
-            let duration = track["duration"].as_u64().unwrap_or(0);
-            let candidates = search(&format!("{artist} - {title}"), 6)?;
-            candidates
-                .iter()
-                .max_by_key(|candidate| score(candidate, artist, title, duration))
-                .and_then(|best| best["youtubeId"].as_str().map(str::to_owned))
-                .ok_or_else(|| format!("Couldn't find \"{title}\" on YouTube."))?
-        }
-    };
-    // YouTube's stream links only work for yt-dlp's own downloader now, so
-    // fetch the audio into the cache and play the file.
-    let file = audio_file(&video)?;
-    Ok((video, format!("file://{}", file.display())))
+    Ok(videos)
 }
 
 #[cfg(test)]
@@ -454,7 +469,13 @@ mod tests {
         assert_eq!(strip_track_number("1. Overture - Roto's Theme"), "Overture - Roto's Theme");
         assert_eq!(strip_track_number("03 - Town"), "Town");
         assert_eq!(strip_track_number("1999"), "1999");
-        assert_eq!(strip_track_number("Town"), "Town");
+    }
+
+    #[test]
+    fn reads_clock_times() {
+        assert_eq!(parse_clock("3:01"), 181);
+        assert_eq!(parse_clock("1:30:03"), 5403);
+        assert_eq!(parse_clock("26 videos"), 0);
     }
 
     #[test]

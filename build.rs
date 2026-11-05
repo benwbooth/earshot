@@ -16,6 +16,8 @@ fn main() {
         QmlFile::from("qml/ResizeEdges.qml"),
         QmlFile::from("qml/KineticScroll.qml"),
         QmlFile::from("qml/MiniPlayer.qml"),
+        QmlFile::from("qml/Waveform.qml"),
+        QmlFile::from("qml/YouTubeEngine.qml"),
         QmlFile::from("qml/PlayerBar.qml"),
         QmlFile::from("qml/Icon.qml"),
         QmlFile::from("qml/IconButton.qml"),
@@ -57,5 +59,6 @@ fn main() {
         .qrc_resources(icons)
         .qt_module("Network")
         .qt_module("Quick")
+        .qt_module("WebEngineQuick")
         .build();
 }

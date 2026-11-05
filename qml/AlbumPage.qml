@@ -21,6 +21,7 @@ Flickable {
         error = ""
         Api.call(Backend.album(args.id), function (result) {
             page.album = result
+            Player.lookAhead(result.tracks[0])
             page.loading = false
         }, function (message) {
             page.loading = false
