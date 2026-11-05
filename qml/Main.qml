@@ -352,7 +352,8 @@ ApplicationWindow {
     Shortcut { sequence: "Media Next"; onActivated: Player.next(false) }
     Shortcut { sequence: "Media Previous"; onActivated: Player.previous() }
 
-    // Testing aids: --page=album:123 opens a page; --screenshot=file.png saves the window and quits.
+    // Testing aids: --page=album:123 opens a page; --search=text [--search-tab=youtube] searches;
+    // --screenshot=file.png saves the window and quits.
     Component.onCompleted: {
         const args = Qt.application.arguments
         for (let i = 0; i < args.length; ++i) {
@@ -364,6 +365,9 @@ ApplicationWindow {
             } else if (arg.startsWith("--search=")) {
                 const q = arg.substring(9)
                 Qt.callLater(() => Nav.search(q))
+            } else if (arg.startsWith("--search-tab=")) {
+                const tab = arg.substring(13)
+                Qt.callLater(() => { if (stack.currentItem && stack.currentItem.pageName === "search") stack.currentItem.tab = tab })
             } else if (arg.startsWith("--play-first")) {
                 autoPlay.start()
             } else if (arg.startsWith("--screenshot=")) {

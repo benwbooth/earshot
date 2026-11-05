@@ -32,9 +32,7 @@ pub mod qobject {
         #[qinvokable]
         fn search(self: Pin<&mut Backend>, query: &QString) -> i32;
         #[qinvokable]
-        fn search_youtube(self: Pin<&mut Backend>, query: &QString) -> i32;
-        #[qinvokable]
-        fn search_youtube_albums(self: Pin<&mut Backend>, query: &QString) -> i32;
+        fn search_youtube_albums(self: Pin<&mut Backend>, query: &QString, next: &QString) -> i32;
         #[qinvokable]
         fn album(self: Pin<&mut Backend>, id: &QString) -> i32;
         #[qinvokable]
@@ -177,14 +175,10 @@ impl qobject::Backend {
         self.spawn(move || catalog::search(&query))
     }
 
-    pub fn search_youtube(self: Pin<&mut Self>, query: &QString) -> i32 {
-        let query = query.to_string();
-        self.spawn(move || youtube::search(&query, 25).map(|tracks| json!({ "tracks": tracks })))
-    }
-
-    pub fn search_youtube_albums(self: Pin<&mut Self>, query: &QString) -> i32 {
-        let query = query.to_string();
-        self.spawn(move || youtube::search_albums(&query))
+    /// One page of YouTube results; `next` is "" for the first page, then the token the previous page returned.
+    pub fn search_youtube_albums(self: Pin<&mut Self>, query: &QString, next: &QString) -> i32 {
+        let (query, next) = (query.to_string(), next.to_string());
+        self.spawn(move || youtube::search_albums(&query, &next))
     }
 
     pub fn album(self: Pin<&mut Self>, id: &QString) -> i32 {

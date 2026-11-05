@@ -12,12 +12,16 @@ Flickable {
     property string query: ""
     property string tab: "all"
     property bool loading: false
-    property bool youtubeLoading: false
     property string error: ""
     property string youtubeError: ""
     property int request: -1
     property var ytAlbums: null
     property bool ytAlbumsLoading: false
+    // YouTube's results come a page at a time, like youtube.com's endless list.
+    property string ytNext: ""
+    property bool ytMoreLoading: false
+    property int ytPages: 0
+    readonly property int ytMaxPages: 15
     // Real YouTube results come first, in YouTube's own order; the music
     // catalogue (for album details and artist pages) follows.
     readonly property bool youtubeFirst: true
@@ -33,7 +37,7 @@ Flickable {
                      && (section.host.ytAlbumsLoading || (section.host.ytAlbums && section.host.ytAlbums.length > 0))
             title: "On YouTube"
             action: section.host.tab === "all" ? "SEE ALL" : ""
-            onActionClicked: section.host.tab = "albums"
+            onActionClicked: section.host.tab = "youtube"
         }
         Text {
             visible: section.host.ytAlbumsLoading && section.host.tab !== "songs" && section.host.tab !== "artists"
@@ -63,7 +67,7 @@ Flickable {
             visible: section.host.tab === "all" && !!section.host.youtube && section.host.youtube.length > 0
             Layout.fillWidth: true
             tracks: section.host.youtube || []
-            limit: 5
+            limit: 8
             showHeader: false
             showAlbum: false
             showNumber: false
@@ -76,15 +80,22 @@ Flickable {
     // Playlists and full-length videos (soundtracks, live sets) that work as albums.
     function runYoutubeAlbums() {
         ytAlbums = null
+        ytNext = ""
+        ytPages = 0
+        ytMoreLoading = false
         if (query === "")
             return
         ytAlbumsLoading = true
         const q = query
-        Api.call(Backend.searchYoutubeAlbums(q), function (found) {
+        Api.call(Backend.searchYoutubeAlbums(q, ""), function (found) {
             if (q !== page.query) return
             page.ytAlbums = found.albums
             page.youtube = found.tracks
+            page.ytNext = found.next || ""
+            page.ytPages = 1
             page.ytAlbumsLoading = false
+            // YouTube's first page is short; fetch the second straight away.
+            page.loadMoreYoutube()
         }, function (message) {
             if (q !== page.query) return
             page.ytAlbums = []
@@ -94,10 +105,43 @@ Flickable {
         })
     }
 
+    // The next page of YouTube results, added after what's shown (repeats skipped).
+    function loadMoreYoutube() {
+        if (ytNext === "" || ytMoreLoading || ytAlbumsLoading || ytPages >= ytMaxPages)
+            return
+        ytMoreLoading = true
+        const q = query
+        Api.call(Backend.searchYoutubeAlbums(q, ytNext), function (found) {
+            if (q !== page.query) return
+            const seen = {}
+            for (const a of page.ytAlbums) seen[a.id] = true
+            for (const t of page.youtube) seen[t.key] = true
+            page.ytAlbums = page.ytAlbums.concat(found.albums.filter(a => !seen[a.id]))
+            page.youtube = page.youtube.concat(found.tracks.filter(t => !seen[t.key]))
+            page.ytNext = found.next || ""
+            page.ytPages += 1
+            page.ytMoreLoading = false
+            page.loadMoreIfNearEnd()
+        }, function (message) {
+            if (q !== page.query) return
+            page.ytMoreLoading = false
+            page.ytNext = ""
+        })
+    }
+
+    // The YouTube and Albums tabs keep going, like youtube.com, as you near the end.
+    function loadMoreIfNearEnd() {
+        if ((tab === "youtube" || tab === "albums") && contentY + height > contentHeight - 1200)
+            loadMoreYoutube()
+    }
+    onContentYChanged: loadMoreIfNearEnd()
+    onTabChanged: loadMoreIfNearEnd()
+
     function ytAlbumSubtitle(album) {
+        const by = album.artist ? album.artist + " · " : ""
         if (album.kind === "playlist")
-            return (album.artist ? album.artist + " · " : "") + "Playlist"
-        return (album.artist ? album.artist + " · " : "") + Theme.longDuration(album.duration)
+            return by + "Playlist" + (album.trackCount > 0 ? " · " + album.trackCount + " videos" : "")
+        return by + (album.trackCount > 1 ? album.trackCount + " tracks · " : "") + Theme.longDuration(album.duration)
     }
 
     function run(text) {
@@ -122,21 +166,6 @@ Flickable {
             page.error = message
         })
         runYoutubeAlbums()
-    }
-
-    function runYoutube() {
-        if (query === "" || youtubeLoading || youtube)
-            return
-        youtubeLoading = true
-        const q = query
-        Api.call(Backend.searchYoutube(q), function (found) {
-            if (q !== page.query) return
-            page.youtube = found.tracks
-            page.youtubeLoading = false
-        }, function (message) {
-            page.youtubeLoading = false
-            page.youtubeError = message
-        })
     }
 
 
@@ -409,6 +438,13 @@ Flickable {
             tracks: page.youtube || []
             showAlbum: false
             context: "YouTube: " + page.query
+        }
+
+        Text {
+            visible: (page.tab === "youtube" || page.tab === "albums") && page.ytMoreLoading
+            text: "Loading more from YouTube…"
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontBody
         }
     }
 }

@@ -119,7 +119,14 @@ fn from_video_renderer(video: &Value) -> Option<Value> {
     let id = video.get("videoId")?.as_str()?;
     let duration = video.get("lengthText").map(|t| parse_clock(&text(t))).unwrap_or(0);
     let channel = video.get("ownerText").or_else(|| video.get("longBylineText")).map(text).unwrap_or_default();
-    Some(video_track(id, &text(video.get("title")?), &channel, duration))
+    let mut track = video_track(id, &text(video.get("title")?), &channel, duration);
+    // Search results list a video's chapters (the strip of moments under it).
+    let mut chapters = Vec::new();
+    if let Some(expandable) = video.get("expandableMetadata") {
+        collect(expandable, &["macroMarkersListItemRenderer"], &mut chapters);
+    }
+    track["chapters"] = json!(chapters.len());
+    Some(track)
 }
 
 /// Text parts of a lockup's metadata rows, e.g. [["GBelair"], ["88K views", "14 years ago"]].
@@ -189,23 +196,38 @@ fn from_lockup(lockup: &Value) -> Option<Lockup> {
     }
 }
 
-/// What youtube.com shows for a search, in its order: videos and playlists.
-fn search_page(query: &str) -> Result<Vec<Lockup>, String> {
-    let answer = innertube("search", json!({ "query": query }))?;
+/// One page of what youtube.com shows for a search, in its order (videos and
+/// playlists), plus the token for the next page ("" after the last one). An
+/// empty `continuation` asks for the first page.
+fn search_page(query: &str, continuation: &str) -> Result<(Vec<Lockup>, String), String> {
+    let answer = if continuation.is_empty() {
+        innertube("search", json!({ "query": query }))?
+    } else {
+        innertube("search", json!({ "continuation": continuation }))?
+    };
     let mut found = Vec::new();
-    collect(&answer, &["videoRenderer", "lockupViewModel"], &mut found);
-    Ok(found
+    collect(&answer, &["videoRenderer", "lockupViewModel", "continuationItemRenderer"], &mut found);
+    let mut next = String::new();
+    let items = found
         .into_iter()
         .filter_map(|(kind, item)| match kind {
             "videoRenderer" => from_video_renderer(item).map(Lockup::Video),
+            "continuationItemRenderer" => {
+                if let Some(token) = item.pointer("/continuationEndpoint/continuationCommand/token").and_then(Value::as_str) {
+                    next = token.to_owned();
+                }
+                None
+            }
             _ => from_lockup(item),
         })
-        .collect())
+        .collect();
+    Ok((items, next))
 }
 
 /// YouTube videos for a search, in YouTube's order.
 pub fn search(query: &str, count: usize) -> Result<Vec<Value>, String> {
-    Ok(search_page(query)?
+    Ok(search_page(query, "")?
+        .0
         .into_iter()
         .filter_map(|item| match item {
             Lockup::Video(video) => Some(video),
@@ -218,15 +240,27 @@ pub fn search(query: &str, count: usize) -> Result<Vec<Value>, String> {
 /// Videos at least this long are offered as albums (full soundtracks, live sets).
 const ALBUM_VIDEO_SECONDS: u64 = 15 * 60;
 
-/// A real YouTube search, kept in YouTube's order: playlists and full-length
-/// videos come back as albums, shorter videos as songs.
-pub fn search_albums(query: &str) -> Result<Value, String> {
+/// Shorter videos still count as albums when they're split into chapters.
+const ALBUM_CHAPTERS: u64 = 3;
+const ALBUM_CHAPTERED_SECONDS: u64 = 5 * 60;
+
+fn is_album_video(video: &Value) -> bool {
+    let duration = video["duration"].as_u64().unwrap_or(0);
+    let chapters = video["chapters"].as_u64().unwrap_or(0);
+    duration >= ALBUM_VIDEO_SECONDS || (chapters >= ALBUM_CHAPTERS && duration >= ALBUM_CHAPTERED_SECONDS)
+}
+
+/// One page of a real YouTube search, kept in YouTube's order: playlists and
+/// full-length or chaptered videos come back as albums, other videos as songs.
+/// `next` is the token for the following page (pass it back as `continuation`).
+pub fn search_albums(query: &str, continuation: &str) -> Result<Value, String> {
     let mut albums = Vec::new();
     let mut tracks = Vec::new();
-    for item in search_page(query)? {
+    let (items, next) = search_page(query, continuation)?;
+    for item in items {
         match item {
             Lockup::Playlist(playlist) => albums.push(playlist),
-            Lockup::Video(video) if video["duration"].as_u64().unwrap_or(0) >= ALBUM_VIDEO_SECONDS => {
+            Lockup::Video(video) if is_album_video(&video) => {
                 let id = video["youtubeId"].as_str().unwrap_or("");
                 albums.push(json!({
                     "id": format!("yt:v:{id}"),
@@ -238,12 +272,13 @@ pub fn search_albums(query: &str) -> Result<Value, String> {
                     "year": "",
                     "kind": "video",
                     "duration": video["duration"],
+                    "trackCount": video["chapters"],
                 }));
             }
             Lockup::Video(video) => tracks.push(video),
         }
     }
-    Ok(json!({ "albums": albums, "tracks": tracks }))
+    Ok(json!({ "albums": albums, "tracks": tracks, "next": next }))
 }
 
 /// A YouTube playlist ("yt:pl:ID") or a long video split at its chapters ("yt:v:ID"), as an album.
