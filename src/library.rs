@@ -37,6 +37,11 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
+/// Earshot's data folder (where the library and saved stations live).
+pub fn data_dir() -> Option<PathBuf> {
+    default_path().and_then(|path| path.parent().map(PathBuf::from))
+}
+
 fn default_path() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("EARSHOT_DATA_DIR") {
         return Some(PathBuf::from(dir).join("library.json"));

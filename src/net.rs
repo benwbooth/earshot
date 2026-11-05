@@ -19,6 +19,43 @@ fn agent() -> &'static ureq::Agent {
     })
 }
 
+/// A page, or how many seconds the site asks us to wait first.
+pub enum Fetched {
+    Text(String),
+    Wait(u64),
+}
+
+/// Like get_text, but a site that's rate limiting (HTTP 429) gives
+/// Fetched::Wait with the seconds it asks for, instead of an error.
+pub fn get_text_or_wait(url: &str) -> Result<Fetched, String> {
+    static PATIENT: OnceLock<ureq::Agent> = OnceLock::new();
+    let patient = PATIENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(20)))
+            .user_agent(USER_AGENT)
+            .http_status_as_error(false)
+            .build()
+            .into()
+    });
+    let mut response = patient.get(url).call().map_err(|error| describe(url, error))?;
+    let status = response.status().as_u16();
+    if status == 429 {
+        let header = |name: &str| response.headers().get(name).and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<f64>().ok());
+        let seconds = header("retry-after").or_else(|| header("x-ratelimit-reset")).unwrap_or(60.0);
+        return Ok(Fetched::Wait(seconds.ceil().clamp(1.0, 600.0) as u64));
+    }
+    if status >= 400 {
+        return Err(format!("{} answered with HTTP {status}.", host(url)));
+    }
+    response
+        .body_mut()
+        .with_config()
+        .limit(16 * 1024 * 1024)
+        .read_to_string()
+        .map(Fetched::Text)
+        .map_err(|error| describe(url, error))
+}
+
 pub fn get_text(url: &str) -> Result<String, String> {
     read_text(agent(), url)
 }

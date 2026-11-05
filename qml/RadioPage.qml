@@ -16,10 +16,17 @@ Flickable {
 
     function firstTracks() { return tracks || [] }
 
+    // While Reddit asks for a pause: seconds left, and how old the saved list shown meanwhile is.
+    property int waitSeconds: 0
+    property int savedMinutesAgo: -1
+
     function load(name, force) {
         station = name
         Api.lastStation = name
         error = ""
+        waitSeconds = 0
+        savedMinutesAgo = -1
+        countdown.stop()
         if (Api.radioCache[name] && !force) {
             tracks = Api.radioCache[name]
             return
@@ -27,17 +34,39 @@ Flickable {
         tracks = null
         loading = true
         Api.call(Backend.radio(name), function (result) {
+            if (page.station !== name)
+                return
+            page.loading = false
+            if (result.retryIn) {
+                // Show the saved list (if any) and try again when Reddit allows.
+                page.tracks = result.tracks.length > 0 ? result.tracks : null
+                page.savedMinutesAgo = result.savedMinutesAgo !== undefined ? result.savedMinutesAgo : -1
+                page.waitSeconds = result.retryIn
+                countdown.restart()
+                return
+            }
             const cache = Object.assign({}, Api.radioCache)
             cache[name] = result.tracks
             Api.radioCache = cache
-            if (page.station === name)
-                page.tracks = result.tracks
-            page.loading = false
+            page.tracks = result.tracks
         }, function (message) {
             page.loading = false
             if (page.station === name)
                 page.error = message
         })
+    }
+
+    Timer {
+        id: countdown
+        interval: 1000
+        repeat: true
+        onTriggered: {
+            page.waitSeconds -= 1
+            if (page.waitSeconds <= 0) {
+                stop()
+                page.load(page.station, true)
+            }
+        }
     }
 
     function tuneIn() {
@@ -139,7 +168,7 @@ Flickable {
                     font.weight: Font.Bold
                 }
                 Text {
-                    text: page.tracks ? page.tracks.length + " songs in the hot list" : (page.loading ? "Tuning in…" : "")
+                    text: page.tracks && page.tracks.length > 0 ? page.tracks.length + " songs in the hot list" : (page.loading || page.waitSeconds > 0 ? "Tuning in…" : "")
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontBody
                 }
@@ -166,10 +195,31 @@ Flickable {
             }
         }
 
+        // Reddit lets apps without an account load about one station a minute.
+        Rectangle {
+            visible: page.waitSeconds > 0
+            Layout.fillWidth: true
+            implicitHeight: waitText.implicitHeight + 24
+            radius: Theme.radius
+            color: Theme.surface
+            border.color: Theme.border
+            Text {
+                id: waitText
+                anchors.fill: parent
+                anchors.margins: 12
+                wrapMode: Text.Wrap
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontBody
+                text: "Reddit lets apps load about one station a minute, so r/" + page.station + " will load in "
+                      + page.waitSeconds + " s." + (page.savedMinutesAgo >= 0 ? " Until then, here's the list from "
+                      + (page.savedMinutesAgo < 60 ? page.savedMinutesAgo + " min" : Math.round(page.savedMinutesAgo / 60) + " h") + " ago." : "")
+            }
+        }
+
         StatusView {
-            loading: page.loading
+            loading: page.loading && page.waitSeconds === 0
             error: page.error
-            empty: page.tracks && page.tracks.length === 0 ? "No songs in this station right now." : ""
+            empty: page.tracks && page.tracks.length === 0 && page.waitSeconds === 0 ? "No songs in this station right now." : ""
             onRetry: page.load(page.station, true)
         }
 

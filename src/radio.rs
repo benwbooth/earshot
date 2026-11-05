@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::net::{get_text, unescape_html};
+use crate::net::{Fetched, get_text_or_wait, unescape_html};
 use crate::youtube::{split_title, thumbnail};
 
 /// (group, subreddit, short description)
@@ -79,23 +79,88 @@ fn cache() -> &'static Mutex<HashMap<String, (Instant, Value)>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// How long a station's songs count as fresh.
+const FRESH: Duration = Duration::from_secs(15 * 60);
+
+/// Reddit lets apps without an account read about one feed a minute; when
+/// it says to wait, nothing is asked of it until then.
+fn reddit_free_at() -> &'static Mutex<Option<Instant>> {
+    static FREE_AT: Mutex<Option<Instant>> = Mutex::new(None);
+    &FREE_AT
+}
+
+fn saved_path(subreddit: &str) -> Option<std::path::PathBuf> {
+    crate::library::data_dir().map(|dir| dir.join("radio").join(format!("{}.json", subreddit.to_lowercase())))
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The station as last loaded (kept on disk), with when it was loaded.
+fn saved(subreddit: &str) -> Option<(u64, Value)> {
+    let text = std::fs::read_to_string(saved_path(subreddit)?).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    Some((value["savedAt"].as_u64()?, value["station"].clone()))
+}
+
+fn save(subreddit: &str, station: &Value) {
+    if let Some(path) = saved_path(subreddit) {
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+        let _ = std::fs::write(path, json!({ "savedAt": unix_now(), "station": station }).to_string());
+    }
+}
+
+/// A station's songs. While Reddit asks for a pause, the answer carries
+/// "retryIn" (seconds) and the last saved copy of the songs, if any, with its
+/// "savedMinutesAgo"; the radio page counts down and asks again.
 pub fn station(subreddit: &str) -> Result<Value, String> {
     if !subreddit.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || subreddit.is_empty() {
         return Err("That isn't a subreddit name.".to_owned());
     }
     if let Some((when, value)) = cache().lock().unwrap().get(subreddit) {
-        if when.elapsed() < Duration::from_secs(15 * 60) {
+        if when.elapsed() < FRESH {
             return Ok(value.clone());
         }
     }
-    let feed = get_text(&format!("https://www.reddit.com/r/{subreddit}/hot/.rss?limit=100"))?;
-    let tracks = parse_feed(&feed, subreddit);
-    if tracks.is_empty() {
-        return Err(format!("r/{subreddit} has no songs right now."));
+    let saved = saved(subreddit);
+    if let Some((at, value)) = &saved {
+        if unix_now().saturating_sub(*at) < FRESH.as_secs() {
+            return Ok(value.clone());
+        }
     }
-    let result = json!({ "title": format!("r/{subreddit}"), "tracks": tracks });
-    cache().lock().unwrap().insert(subreddit.to_owned(), (Instant::now(), result.clone()));
-    Ok(result)
+
+    let waiting = reddit_free_at().lock().unwrap().and_then(|free| free.checked_duration_since(Instant::now()));
+    let fetched = match waiting {
+        Some(left) => Fetched::Wait(left.as_secs().max(1)),
+        None => get_text_or_wait(&format!("https://www.reddit.com/r/{subreddit}/hot/.rss?limit=100"))?,
+    };
+    match fetched {
+        Fetched::Text(feed) => {
+            let tracks = parse_feed(&feed, subreddit);
+            if tracks.is_empty() {
+                return Err(format!("r/{subreddit} has no songs right now."));
+            }
+            let result = json!({ "title": format!("r/{subreddit}"), "tracks": tracks });
+            cache().lock().unwrap().insert(subreddit.to_owned(), (Instant::now(), result.clone()));
+            save(subreddit, &result);
+            Ok(result)
+        }
+        Fetched::Wait(seconds) => {
+            if waiting.is_none() {
+                *reddit_free_at().lock().unwrap() = Some(Instant::now() + Duration::from_secs(seconds));
+            }
+            let mut result = match saved {
+                Some((at, mut value)) => {
+                    value["savedMinutesAgo"] = json!(unix_now().saturating_sub(at) / 60);
+                    value
+                }
+                None => json!({ "title": format!("r/{subreddit}"), "tracks": [] }),
+            };
+            result["retryIn"] = json!(seconds);
+            Ok(result)
+        }
+    }
 }
 
 fn between<'a>(text: &'a str, open: &str, close: &str) -> Option<&'a str> {

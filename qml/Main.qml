@@ -152,7 +152,7 @@ ApplicationWindow {
     Platform.SystemTrayIcon {
         id: tray
         visible: true
-        icon.source: Qt.color(window.systemPalette.window).hslLightness > 0.5 ? Theme.icon("tray-dark") : Theme.icon("tray-light")
+        icon.source: Qt.styleHints.colorScheme === Qt.ColorScheme.Light ? Theme.icon("tray-dark") : Theme.icon("tray-light")
         tooltip: Player.current ? Player.current.title + " — " + Player.current.artist : "Earshot"
         onActivated: reason => {
             if (reason === Platform.SystemTrayIcon.Trigger || reason === Platform.SystemTrayIcon.DoubleClick) {
@@ -182,8 +182,6 @@ ApplicationWindow {
         }
     }
 
-    // The desktop's colours, to pick the tray glyph.
-    readonly property SystemPalette systemPalette: SystemPalette { colorGroup: SystemPalette.Active }
 
     readonly property var pages: ({
         home: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,

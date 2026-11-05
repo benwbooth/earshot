@@ -109,7 +109,8 @@ Environment variables: `EARSHOT_DATA_DIR` (where the library is kept), `EARSHOT_
 
 ## Notes
 
-- Reddit sometimes rate-limits requests from apps; if a station won't load, wait a minute and press Refresh.
+- Reddit lets apps without an account load about one station a minute. Earshot keeps each station's list on disk,
+  shows the saved list straight away, and loads the new one by itself when Reddit allows (a countdown shows how long).
 - Earshot is an independent project and is not affiliated with Headset, Deezer, YouTube or Reddit.
 
 ## License
