@@ -52,6 +52,10 @@ pub mod qobject {
         #[qinvokable]
         fn radio_more(self: Pin<&mut Backend>, track: &QString, video: &QString) -> i32;
         #[qinvokable]
+        fn record_play(self: Pin<&mut Backend>, track: &QString, video: &QString);
+        #[qinvokable]
+        fn for_you(self: Pin<&mut Backend>, refresh: bool) -> i32;
+        #[qinvokable]
         fn album(self: Pin<&mut Backend>, id: &QString) -> i32;
         #[qinvokable]
         fn artist(self: Pin<&mut Backend>, id: &QString) -> i32;
@@ -114,7 +118,7 @@ use cxx_qt_lib::QString;
 use serde_json::{Value, json};
 
 use crate::library::Library;
-use crate::{archive, bandcamp, catalog, mixcloud, radio, soundcloud, youtube};
+use crate::{archive, bandcamp, catalog, foryou, mixcloud, radio, soundcloud, youtube};
 
 pub struct BackendRust {
     library_revision: i32,
@@ -277,6 +281,19 @@ impl qobject::Backend {
             };
             Ok(json!({ "tracks": youtube::mix(&seed)? }))
         })
+    }
+
+    /// Notes a song as listened to (for Made for you); kept on this computer only.
+    pub fn record_play(self: Pin<&mut Self>, track: &QString, video: &QString) {
+        let mut library = self.library();
+        library.record_play(&parse(track), &video.to_string());
+        library.save();
+    }
+
+    /// Discover Weekly, Daily Mixes, Release Radar and Albums for you.
+    pub fn for_you(self: Pin<&mut Self>, refresh: bool) -> i32 {
+        let history = self.library().history.clone();
+        self.spawn(move || foryou::build(&history, refresh))
     }
 
     /// A Bandcamp song's audio link, fetched fresh since Bandcamp's links expire.

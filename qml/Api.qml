@@ -13,6 +13,7 @@ QtObject {
     property string lastSearch: ""
     property string lastStation: "listentothis"
     property var bandcampTags: null
+    property var forYouCache: null
     // Tags seen on Bandcamp albums opened this session, for the tag filter.
     property var seenBandcampTags: []
     function rememberBandcampTags(list) {

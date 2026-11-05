@@ -2,6 +2,7 @@ mod archive;
 mod backend;
 mod bandcamp;
 mod catalog;
+mod foryou;
 mod kde;
 mod library;
 mod mixcloud;

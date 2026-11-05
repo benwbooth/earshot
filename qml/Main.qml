@@ -190,7 +190,7 @@ ApplicationWindow {
     readonly property var pages: ({
         home: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
         artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage,
-        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage, service: servicePage
+        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage, service: servicePage, foryou: forYouPage
     })
 
     function navigate(page, args) {
@@ -201,7 +201,7 @@ ApplicationWindow {
         const top = stack.currentItem
         if (top && top.pageName === page && JSON.stringify(top.args) === JSON.stringify(args))
             return
-        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
+        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "foryou" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
             stack.replace(null, component, { args: args })
         else
             stack.push(component, { args: args })
@@ -251,6 +251,7 @@ ApplicationWindow {
     Component { id: bandcampPage; BandcampPage {} }
     Component { id: bandcampTagPage; BandcampTagPage {} }
     Component { id: servicePage; ServicePage {} }
+    Component { id: forYouPage; ForYouPage {} }
 
     ColumnLayout {
         id: shell

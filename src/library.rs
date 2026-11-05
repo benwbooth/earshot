@@ -29,6 +29,10 @@ pub struct Library {
     /// Track key -> YouTube video id, so a song only has to be looked up once.
     #[serde(default)]
     pub videos: HashMap<String, String>,
+    /// Songs listened to (each with "playedAt" and the "video" that played),
+    /// oldest first; Made for you is built from these. Never leaves this computer.
+    #[serde(default)]
+    pub history: Vec<Value>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -49,7 +53,22 @@ fn default_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "earshot").map(|dirs| dirs.data_dir().join("library.json"))
 }
 
+/// How many plays the history keeps.
+const HISTORY_LIMIT: usize = 3000;
+
 impl Library {
+    /// Notes that a song was listened to.
+    pub fn record_play(&mut self, track: &Value, video: &str) {
+        let mut entry = track.clone();
+        entry["playedAt"] = json!(now());
+        entry["video"] = json!(video);
+        self.history.push(entry);
+        if self.history.len() > HISTORY_LIMIT {
+            let extra = self.history.len() - HISTORY_LIMIT;
+            self.history.drain(..extra);
+        }
+    }
+
     pub fn load() -> Self {
         Self::load_from(default_path())
     }

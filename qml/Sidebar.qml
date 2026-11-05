@@ -64,6 +64,7 @@ Rectangle {
 
         NavItem { iconName: "home"; label: "Home"; page: "home" }
         NavItem { iconName: "search"; label: "Search"; page: "search" }
+        NavItem { iconName: "sparkle"; label: "Made for you"; page: "foryou" }
         NavItem { iconName: "youtube"; label: "YouTube"; page: "service"; args: ({ id: "youtube" }) }
         NavItem { iconName: "radio"; label: "Reddit radio"; page: "radio" }
         NavItem { iconName: "tag"; label: "Bandcamp"; page: "bandcamp" }

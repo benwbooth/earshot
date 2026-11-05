@@ -33,6 +33,20 @@ QtObject {
     // A new song has begun, including the next chapter of a video that's already playing.
     signal trackStarted(var track)
 
+    // Listening history (for Made for you): a song counts once it has played
+    // 30 seconds, or half of a shorter one, so skipped songs don't.
+    property var unrecordedPlay: null
+    onTrackStarted: track => unrecordedPlay = track
+    function recordIfListened() {
+        if (!unrecordedPlay || !current || unrecordedPlay.key !== current.key)
+            return
+        if (position < Math.min(30, Math.max(5, length / 2)))
+            return
+        const played = engine ? engine.videoId : ""
+        Backend.recordPlay(JSON.stringify(unrecordedPlay), played.indexOf(":") < 0 ? played : "")
+        unrecordedPlay = null
+    }
+
     // A track can be a chapter of a longer video: it starts and ends inside it.
     readonly property real trackStart: current && current.start ? current.start : 0
     readonly property real trackEnd: current && current.end ? current.end : 0
@@ -145,6 +159,7 @@ QtObject {
         }
         // A chapter ends before the video does: move on at its end time.
         function onPositionChanged() {
+            player.recordIfListened()
             if (player.trackEnd > 0 && player.started && player.engine.position >= player.trackEnd - 0.2)
                 player.next(true)
         }

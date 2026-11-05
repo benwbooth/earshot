@@ -43,6 +43,9 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
   `···` menu. **Liked songs** collects everything you heart. Import a YouTube, YouTube Music, SoundCloud or
   Mixcloud playlist, a Bandcamp album or an Internet Archive item by link.
 - **Queue**: play next, add to queue, remove, clear upcoming; shuffle and repeat (all / one).
+- **Made for you**: Discover Weekly (new songs like the ones you play, every Monday), three Daily Mixes (your top
+  artists plus similar songs, every day), Release Radar (new albums from your artists) and Albums for you (by related
+  artists). Built from a listening history kept only on your computer; a song counts after 30 seconds.
 - **Random radio** (the dice next to repeat): when the queue runs out, Earshot keeps playing songs like the last
   ones, from the same service where it has suggestions (SoundCloud's related tracks, Mixcloud's similar shows,
   Bandcamp's recommended albums, the Internet Archive's other recordings by the artist) and YouTube's own mix
