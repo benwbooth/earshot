@@ -61,6 +61,10 @@ Rectangle {
         search.focus = false
     }
 
+    function openSettings() {
+        settingsMenu.popup(settingsButton, settingsButton.width - settingsMenu.width, settingsButton.height)
+    }
+
     function toggleMaximized() {
         if (maximized)
             window.showNormal()
@@ -293,7 +297,47 @@ Rectangle {
             iconSize: 18
             tip: Api.albumList ? "Show albums as a grid" : "Show albums as a list"
             onClicked: Api.albumList = !Api.albumList
+        }
+
+        // Settings: when the now-playing card appears.
+        IconButton {
+            id: settingsButton
+            iconName: "settings"
+            iconSize: 18
+            tip: "Settings"
+            onClicked: bar.openSettings()
             Layout.rightMargin: 8
+        }
+        Menu {
+            id: settingsMenu
+            implicitWidth: 300
+            topPadding: 6
+            bottomPadding: 6
+            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
+            delegate: MenuItem {
+                id: settingItem
+                implicitHeight: 34
+                contentItem: RowLayout {
+                    spacing: 8
+                    Icon {
+                        name: "check"
+                        size: 14
+                        color: Theme.accent
+                        opacity: settingItem.checked ? 1 : 0
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: settingItem.text
+                        color: settingItem.enabled ? Theme.text : Theme.textMuted
+                        font.pixelSize: Theme.fontBody
+                    }
+                }
+                background: Rectangle { color: settingItem.highlighted && settingItem.enabled ? Theme.surfaceHover : "transparent"; radius: 6; anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6 }
+            }
+            MenuItem { text: "Now-playing card when a song starts:"; enabled: false }
+            MenuItem { text: "Always"; checkable: true; checked: Api.nowPlayingCard === "always"; onTriggered: Api.nowPlayingCard = "always" }
+            MenuItem { text: "Only when Earshot isn't in front"; checkable: true; checked: Api.nowPlayingCard === "background"; onTriggered: Api.nowPlayingCard = "background" }
+            MenuItem { text: "Never"; checkable: true; checked: Api.nowPlayingCard === "never"; onTriggered: Api.nowPlayingCard = "never" }
         }
 
         // Window buttons in the desktop's own style (macOS puts them on the left).

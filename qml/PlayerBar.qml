@@ -22,8 +22,8 @@ Rectangle {
 
         // Song
         RowLayout {
-            Layout.preferredWidth: (bar.width - 32) * 0.3
-            Layout.maximumWidth: 380
+            Layout.preferredWidth: (bar.width - 32) * 0.33
+            Layout.maximumWidth: 480
             Layout.fillHeight: true
             spacing: 14
             Cover {
@@ -51,14 +51,14 @@ Rectangle {
                         Layout.preferredHeight: 14
                     }
                     // Click the song to open the album, playlist or page it's playing from.
-                    Text {
+                    // Long titles glide sideways rather than making the bar taller.
+                    Marquee {
                         Layout.fillWidth: true
                         text: bar.track ? bar.track.title : "Nothing playing"
                         color: Theme.text
                         font.pixelSize: Theme.fontBody + 1
                         font.weight: Font.DemiBold
                         font.underline: titleMouse.containsMouse && bar.track !== null
-                        wrapMode: Text.Wrap
                         MouseArea {
                             id: titleMouse
                             anchors.fill: parent
@@ -67,17 +67,16 @@ Rectangle {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: Player.openSource()
                         }
-                        ToolTip.visible: titleMouse.containsMouse && Player.context !== ""
-                        ToolTip.text: "Go to " + Player.context
+                        ToolTip.visible: titleMouse.containsMouse && bar.track !== null
+                        ToolTip.text: bar.track ? bar.track.title + (Player.context !== "" ? "\nGo to " + Player.context : "") : ""
                         ToolTip.delay: 600
                     }
                 }
-                Text {
+                Marquee {
                     Layout.fillWidth: true
                     text: bar.track ? bar.track.artist : "Pick a song, album or radio station"
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSmall + 1
-                    wrapMode: Text.Wrap
                     MouseArea {
                         anchors.fill: parent
                         enabled: bar.track !== null && !!bar.track.artistId
@@ -85,13 +84,12 @@ Rectangle {
                         onClicked: Nav.artist(bar.track.artistId)
                     }
                 }
-                Text {
+                Marquee {
                     Layout.fillWidth: true
                     visible: Player.context !== "" && bar.track !== null
                     text: "From " + Player.context
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall
-                    wrapMode: Text.Wrap
                 }
             }
             IconButton {

@@ -25,6 +25,9 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
 - **Open on the web**: any song or album can be opened on YouTube, Bandcamp, SoundCloud, Mixcloud, the Internet
   Archive or Deezer in your browser.
 - **Grid or list**: show albums as covers or as a compact list (the button in the top bar).
+- **Now-playing card**: a small card in the corner when a song starts. Choose always, only when Earshot isn't the
+  window in front (the default) or never, from the settings menu (the gear in the top bar, or Ctrl+,).
+- Long titles in the player bar and mini player glide sideways instead of making them taller.
 - Only one Earshot runs at a time: launching it again brings the open window forward (or out of the tray).
 - Earshot reopens where you left it. On KDE Plasma (Wayland), where apps can't place their own windows, it adds a
   window rule once so KDE remembers the spot (System Settings › Window Rules › "Earshot: remember where its window

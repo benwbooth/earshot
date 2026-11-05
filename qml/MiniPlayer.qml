@@ -72,20 +72,21 @@ Window {
                 id: miniText
                 Layout.fillWidth: true
                 spacing: 2
-                Text {
+                // Long titles glide sideways rather than making the mini player taller.
+                Marquee {
                     Layout.fillWidth: true
                     text: mini.track ? mini.track.title : "Nothing playing"
                     color: Theme.text
+                    fadeColor: Theme.surface
                     font.pixelSize: Theme.fontBody + 1
                     font.weight: Font.DemiBold
-                    wrapMode: Text.Wrap
                 }
-                Text {
+                Marquee {
                     Layout.fillWidth: true
                     text: mini.track ? mini.track.artist : "Earshot"
                     color: Theme.textMuted
+                    fadeColor: Theme.surface
                     font.pixelSize: Theme.fontSmall + 1
-                    wrapMode: Text.Wrap
                 }
                 RowLayout {
                     spacing: 2

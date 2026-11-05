@@ -25,9 +25,13 @@ QtObject {
 
     // Albums shown as a list instead of a grid of covers (remembered).
     property bool albumList: false
+    // The now-playing card when a song starts: "always", "background" (only
+    // while Earshot isn't the window in front) or "never".
+    property string nowPlayingCard: "background"
     property Settings view: Settings {
         category: "view"
         property alias albumList: api.albumList
+        property alias nowPlayingCard: api.nowPlayingCard
     }
 
     // Where a song lives on the web: its YouTube video (at its chapter), or its

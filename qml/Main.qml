@@ -133,8 +133,10 @@ ApplicationWindow {
     }
     Connections {
         target: Player
+        // The now-playing card, as chosen in the settings menu.
         function onTrackStarted(track) {
-            if (!window.active && !miniPlayer.active)
+            if (Api.nowPlayingCard === "always"
+                    || (Api.nowPlayingCard === "background" && !window.active && !miniPlayer.active))
                 nowPlaying.announce(track)
         }
     }
@@ -414,6 +416,7 @@ ApplicationWindow {
 
     Shortcut { sequences: ["Ctrl+F", "Ctrl+L"]; onActivated: topBar.searchField.forceActiveFocus() }
     Shortcut { sequence: "Ctrl+Q"; context: Qt.ApplicationShortcut; onActivated: window.quitApp() }
+    Shortcut { sequence: "Ctrl+,"; onActivated: topBar.openSettings() }
     Shortcut { sequence: "Ctrl+M"; context: Qt.ApplicationShortcut; onActivated: Nav.toggleMini() }
     Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (stack.depth > 1) stack.pop() }
     Shortcut { sequence: "Ctrl+Right"; onActivated: Player.next(false) }
@@ -456,6 +459,8 @@ ApplicationWindow {
             } else if (arg.startsWith("--play-track=")) {
                 const track = JSON.parse(arg.substring(13))
                 Qt.callLater(() => Player.playTracks([track], 0, "Test"))
+            } else if (arg.startsWith("--settings-menu")) {
+                Qt.callLater(() => topBar.openSettings())
             } else if (arg.startsWith("--test-notification")) {
                 testNotification.start()
             } else if (arg.startsWith("--play-first")) {
