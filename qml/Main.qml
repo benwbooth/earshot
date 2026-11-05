@@ -112,6 +112,8 @@ ApplicationWindow {
 
     function showWindow() {
         miniPlayer.hide()
+        if (window.visibility === Window.Minimized)
+            window.showNormal()
         window.show()
         window.raise()
         window.requestActivate()

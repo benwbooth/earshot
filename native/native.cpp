@@ -3,8 +3,12 @@
 #include <string>
 #include <vector>
 
+#include <QtCore/QDir>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
 #include <QtGui/QIcon>
+#include <QtNetwork/QLocalServer>
+#include <QtNetwork/QLocalSocket>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QtWidgets/QApplication>
@@ -29,6 +33,23 @@ void earshotInitWebEngine()
     QtWebEngineQuick::initialize();
 }
 
+// Where the running Earshot listens for "show yourself" from a second launch.
+static QString instanceAddress()
+{
+#ifdef Q_OS_WIN
+    return QStringLiteral("earshot-") + qEnvironmentVariable("USERNAME");
+#else
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    // Flatpak gives each launch its own /tmp; this folder is shared between them.
+    const QString flatpak = qEnvironmentVariable("FLATPAK_ID");
+    if (!flatpak.isEmpty() && !dir.isEmpty())
+        dir += QStringLiteral("/app/") + flatpak;
+    if (dir.isEmpty())
+        dir = QDir::tempPath();
+    return dir + QStringLiteral("/earshot.socket");
+#endif
+}
+
 int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, const QString& icon, const QString& qml)
 {
     // Qt keeps pointers to argc and argv for the application's whole life.
@@ -48,10 +69,47 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     QGuiApplication::setDesktopFileName(desktopId);
     QGuiApplication::setWindowIcon(QIcon(icon));
 
+    // Only one Earshot at a time: a second launch asks the running one to show
+    // its window, then quits. (Runs with their own EARSHOT_DATA_DIR, like
+    // tests, are separate libraries and may run alongside.)
+    const bool single = qEnvironmentVariableIsEmpty("EARSHOT_DATA_DIR");
+    const QString address = instanceAddress();
+    if (single) {
+        QLocalSocket running;
+        running.connectToServer(address);
+        if (running.waitForConnected(500)) {
+            // Pass on the desktop's permission to bring a window forward (Wayland).
+            running.write("show " + qgetenv("XDG_ACTIVATION_TOKEN") + "\n");
+            running.waitForBytesWritten(1000);
+            running.disconnectFromServer();
+            return 0;
+        }
+    }
+    QLocalServer server;
+    if (single) {
+        QLocalServer::removeServer(address); // left over from a crash
+        server.setSocketOptions(QLocalServer::UserAccessOption);
+        server.listen(address);
+    }
+
     // Declared after the application, so it's torn down first.
     QQmlApplicationEngine engine;
     engine.load(QUrl(qml));
     if (engine.rootObjects().isEmpty())
         return 1;
+
+    QObject* window = engine.rootObjects().first();
+    QObject::connect(&server, &QLocalServer::newConnection, &server, [&server, window]() {
+        while (QLocalSocket* other = server.nextPendingConnection()) {
+            QObject::connect(other, &QLocalSocket::disconnected, other, &QObject::deleteLater);
+            QObject::connect(other, &QLocalSocket::readyRead, other, [other, window]() {
+                const QByteArray message = other->readAll();
+                const QByteArray token = message.startsWith("show ") ? message.mid(5).trimmed() : QByteArray();
+                if (!token.isEmpty())
+                    qputenv("XDG_ACTIVATION_TOKEN", token);
+                QMetaObject::invokeMethod(window, "showWindow");
+            });
+        }
+    });
     return app.exec();
 }
