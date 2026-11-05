@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::net::{get_text, post_json, unescape_html};
+use crate::net::{get_text_as_browser as get_text, post_json, unescape_html};
 
 /// Cover art in a size Bandcamp serves: 2 is 350 px, 16 is 700 px.
 fn art(art_id: u64, size: u32) -> String {
@@ -276,6 +276,15 @@ mod tests {
         assert!(!album["tracks"].as_array().unwrap().is_empty());
         assert!(stream(&album["tracks"][0]).unwrap().starts_with("https://"));
         assert!(stream(&found["tracks"][0]).unwrap().starts_with("https://"));
+    }
+
+    /// Artists on their own domains: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_custom_domain() {
+        let album = album("bc:https://din.org.uk/album/fracture-din28").unwrap();
+        assert!(!album["tracks"].as_array().unwrap().is_empty());
+        assert!(stream(&album["tracks"][0]).unwrap().starts_with("https://"));
     }
 
     #[test]

@@ -67,6 +67,8 @@ pub mod qobject {
         #[qinvokable]
         fn desktop(self: &Backend) -> QString;
         #[qinvokable]
+        fn remember_window_with_kde(self: &Backend) -> bool;
+        #[qinvokable]
         fn set_waveform_active(self: &Backend, active: bool);
         #[qinvokable]
         fn waveform_levels(self: &Backend) -> QString;
@@ -315,6 +317,27 @@ impl qobject::Backend {
     pub fn waveform_levels(&self) -> QString {
         let text = crate::visualizer::levels().iter().map(|level| format!("{level:.3}")).collect::<Vec<_>>().join(",");
         QString::from(&text)
+    }
+
+    /// On KDE Plasma (Wayland), where apps can't place their own windows: adds
+    /// a window rule so KDE remembers where Earshot's window was. True the first
+    /// time, when the rule is added. Not in Flatpak, whose sandbox can't (and
+    /// shouldn't) change KDE's settings.
+    pub fn remember_window_with_kde(&self) -> bool {
+        if std::env::var_os("FLATPAK_ID").is_some() {
+            return false;
+        }
+        match crate::kde::add_window_rule("earshot") {
+            Ok(true) => {
+                crate::native::reload_kwin_rules();
+                true
+            }
+            Ok(false) => false,
+            Err(error) => {
+                eprintln!("{error}");
+                false
+            }
+        }
     }
 
     /// Which desktop the app runs on, to draw matching window buttons:

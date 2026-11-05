@@ -62,7 +62,7 @@ fn main() {
         ])
         .collect();
 
-    CxxQtBuilder::new_qml_module(module)
+    let mut builder = CxxQtBuilder::new_qml_module(module)
         .files(["src/backend.rs", "src/native.rs"])
         .crate_include_root(Some("native".to_owned()))
         .cpp_file("native/native.cpp")
@@ -70,8 +70,12 @@ fn main() {
         .qt_module("Network")
         .qt_module("Quick")
         .qt_module("Widgets")
-        .qt_module("WebEngineQuick")
-        .build();
+        .qt_module("WebEngineQuick");
+    // D-Bus: telling KDE's window manager to reload Earshot's window rule.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
+        builder = builder.qt_module("DBus");
+    }
+    builder.build();
 
     // The icon Windows shows for earshot.exe in Explorer and the taskbar.
     #[cfg(windows)]

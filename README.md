@@ -24,6 +24,9 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
 - **Open on the web**: any song or album can be opened on YouTube, Bandcamp, SoundCloud, Mixcloud, the Internet
   Archive or Deezer in your browser.
 - **Grid or list**: show albums as covers or as a compact list (the button in the top bar).
+- Earshot reopens where you left it. On KDE Plasma (Wayland), where apps can't place their own windows, it adds a
+  window rule once so KDE remembers the spot (System Settings › Window Rules › "Earshot: remember where its window
+  was").
 - **Bandcamp**: browse Bandcamp's genres and sub-genres, or any tag, sorted by best-selling, new arrivals or at
   random; every Bandcamp album lists its tags, and searches suggest matching tags.
 - **Albums**: full track lists with artwork, release date, label and running time. Play, shuffle, add the whole

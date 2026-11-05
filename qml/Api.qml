@@ -13,6 +13,15 @@ QtObject {
     property string lastSearch: ""
     property string lastStation: "listentothis"
     property var bandcampTags: null
+    // Tags seen on Bandcamp albums opened this session, for the tag filter.
+    property var seenBandcampTags: []
+    function rememberBandcampTags(list) {
+        const known = {}
+        for (const tag of seenBandcampTags) known[tag.slug] = true
+        const added = (list || []).filter(tag => !known[tag.slug])
+        if (added.length > 0)
+            seenBandcampTags = seenBandcampTags.concat(added)
+    }
 
     // Albums shown as a list instead of a grid of covers (remembered).
     property bool albumList: false

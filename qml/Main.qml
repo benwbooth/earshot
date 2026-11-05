@@ -39,11 +39,54 @@ ApplicationWindow {
     }
 
     Settings {
+        id: windowSettings
         category: "window"
         property alias width: window.width
         property alias height: window.height
         property alias sidebarWidth: sidebar.width
+        property int x: -100000
+        property int y: -100000
+        property bool maximized: false
+        property bool askedKde: false
     }
+
+    // Where the window was last time. Windows, macOS and X11 let an app put
+    // its window back; KDE on Wayland doesn't, but remembers it with a window
+    // rule, which Earshot adds once.
+    readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
+    function restorePlace() {
+        if (wayland) {
+            if (!windowSettings.askedKde && Backend.desktop() === "kde") {
+                windowSettings.askedKde = true
+                if (Backend.rememberWindowWithKde())
+                    Nav.notify("KDE will now remember where Earshot's window is (System Settings › Window Rules)")
+            }
+            return
+        }
+        const x = windowSettings.x, y = windowSettings.y
+        // Only if that spot is still on a screen (a monitor may have gone).
+        const onScreen = Qt.application.screens.some(s => x + 80 >= s.virtualX && x + 80 < s.virtualX + s.width
+                                                          && y + 20 >= s.virtualY && y + 20 < s.virtualY + s.height)
+        if (onScreen) {
+            window.x = x
+            window.y = y
+        }
+        if (windowSettings.maximized)
+            window.showMaximized()
+    }
+    function savePlace() {
+        if (wayland || !window.visible)
+            return
+        windowSettings.maximized = window.visibility === Window.Maximized
+        if (window.visibility === Window.Windowed) {
+            windowSettings.x = window.x
+            windowSettings.y = window.y
+        }
+    }
+    onXChanged: placeTimer.restart()
+    onYChanged: placeTimer.restart()
+    onVisibilityChanged: placeTimer.restart()
+    Timer { id: placeTimer; interval: 400; onTriggered: window.savePlace() }
 
     // Closing the window keeps the music playing in the tray; quit from the tray menu.
     property bool quitting: false
@@ -61,6 +104,7 @@ ApplicationWindow {
     // Qt 6 asks every window to close before quitting, and closing normally
     // hides to the tray, so mark the quit as real first.
     function quitApp() {
+        savePlace()
         quitting = true
         miniPlayer.close()
         Qt.quit()
@@ -392,6 +436,7 @@ ApplicationWindow {
     // --play-video=ID plays one YouTube video; --play-track=JSON plays one song;
     // --screenshot=file.png saves the window and quits.
     Component.onCompleted: {
+        restorePlace()
         const args = Qt.application.arguments
         for (let i = 0; i < args.length; ++i) {
             const arg = args[i]

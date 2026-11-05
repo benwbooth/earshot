@@ -16,7 +16,8 @@ Window {
     minimumHeight: 112
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     color: "transparent"
-    title: Player.current ? Player.current.title + " — Earshot" : "Earshot"
+    // Its own title (not the main window's), so window rules can tell them apart.
+    title: Player.current ? Player.current.title + " — Earshot mini player" : "Earshot mini player"
 
     Settings {
         category: "mini"

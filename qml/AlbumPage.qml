@@ -30,6 +30,7 @@ Flickable {
         error = ""
         Api.call(Backend.album(args.id), function (result) {
             page.album = result
+            Api.rememberBandcampTags(result.tags)
             Player.lookAhead(result.tracks[0])
             page.loading = false
         }, function (message) {

@@ -37,7 +37,39 @@ Flickable {
             Nav.open("bandcamp-tag", { tag: words, label: words.toLowerCase() })
     }
 
-    Component.onCompleted: load()
+    // Typing in the tag box filters every known tag (Bandcamp's genres and
+    // styles, plus tags seen on albums you've opened); the words themselves
+    // are always offered as a tag too.
+    readonly property string filter: tagField.text.trim().toLowerCase()
+    readonly property var matches: {
+        if (filter === "")
+            return []
+        const known = (tags ? tags.genres.concat(tags.subgenres) : []).concat(Api.seenBandcampTags)
+        const seen = {}
+        const found = []
+        const typed = filter.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "")
+        if (typed !== "") {
+            found.push({ slug: typed, label: filter })
+            seen[typed] = true
+        }
+        const words = filter.split(/\s+/)
+        const hits = known.filter(t => words.every(w => t.label.toLowerCase().indexOf(w) >= 0 || t.slug.indexOf(w) >= 0))
+        hits.sort((a, b) => (a.label.toLowerCase().indexOf(filter) === 0 ? 0 : 1) - (b.label.toLowerCase().indexOf(filter) === 0 ? 0 : 1)
+                            || a.label.length - b.label.length)
+        for (const tag of hits) {
+            if (!seen[tag.slug]) {
+                seen[tag.slug] = true
+                found.push(tag)
+            }
+        }
+        return found.slice(0, 60)
+    }
+
+    Component.onCompleted: {
+        load()
+        if (args.id)
+            tagField.text = args.id
+    }
 
     contentWidth: width
     contentHeight: content.implicitHeight + 64
@@ -93,7 +125,7 @@ Flickable {
             Layout.maximumWidth: 520
             implicitHeight: 44
             leftPadding: 44
-            placeholderText: "Any tag: chiptune, vaporwave, koichi sugiyama…"
+            placeholderText: "Filter tags, or type any tag: chiptune, vaporwave…"
             placeholderTextColor: Theme.textFaint
             color: Theme.text
             font.pixelSize: Theme.fontBody + 1
@@ -120,9 +152,20 @@ Flickable {
             onRetry: page.load()
         }
 
-        SectionHeader { visible: !!page.tags; title: "Genres" }
+        // While filtering: the matching tags, the typed words first.
+        SectionHeader {
+            visible: page.filter !== ""
+            title: page.matches.length > 1 ? "Tags matching \"" + page.filter + "\"" : "Tag"
+        }
+        TagChips {
+            visible: page.filter !== ""
+            prefix: ""
+            tags: page.matches
+        }
+
+        SectionHeader { visible: !!page.tags && page.filter === ""; title: "Genres" }
         GridLayout {
-            visible: !!page.tags
+            visible: !!page.tags && page.filter === ""
             Layout.fillWidth: true
             columns: Math.max(1, Math.floor(width / 240))
             columnSpacing: 16
@@ -146,7 +189,7 @@ Flickable {
             delegate: ColumnLayout {
                 required property var modelData
                 Layout.fillWidth: true
-                visible: page.subgenres(modelData.slug).length > 0
+                visible: page.filter === "" && page.subgenres(modelData.slug).length > 0
                 spacing: 10
                 SectionHeader { title: modelData.label }
                 TagChips {

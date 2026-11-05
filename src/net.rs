@@ -20,7 +20,26 @@ fn agent() -> &'static ureq::Agent {
 }
 
 pub fn get_text(url: &str) -> Result<String, String> {
-    agent()
+    read_text(agent(), url)
+}
+
+/// Like get_text, but presenting as a web browser. Some sites (Bandcamp
+/// artists on their own domains) bounce other clients around in a loop of
+/// redirects.
+pub fn get_text_as_browser(url: &str) -> Result<String, String> {
+    static BROWSER: OnceLock<ureq::Agent> = OnceLock::new();
+    let browser = BROWSER.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(20)))
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36")
+            .build()
+            .into()
+    });
+    read_text(browser, url)
+}
+
+fn read_text(agent: &ureq::Agent, url: &str) -> Result<String, String> {
+    agent
         .get(url)
         .call()
         .map_err(|error| describe(url, error))?

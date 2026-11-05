@@ -13,3 +13,6 @@ void earshotInitWebEngine();
 // tray icon and its menu can fall back to Qt Widgets where the desktop has no
 // native ones (Windows, or GNOME without a tray extension).
 int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, const QString& icon, const QString& qml);
+
+// Asks KDE's window manager to reload its window rules (Linux only).
+void earshotReloadKWinRules();

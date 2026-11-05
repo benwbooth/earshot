@@ -8,6 +8,18 @@
 #include <QtQml/QQmlApplicationEngine>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QtWidgets/QApplication>
+#ifdef Q_OS_LINUX
+#include <QtDBus/QDBusConnection>
+#include <QtDBus/QDBusMessage>
+#endif
+
+void earshotReloadKWinRules()
+{
+#ifdef Q_OS_LINUX
+    QDBusConnection::sessionBus().send(QDBusMessage::createMethodCall(
+        QStringLiteral("org.kde.KWin"), QStringLiteral("/KWin"), QStringLiteral("org.kde.KWin"), QStringLiteral("reconfigure")));
+#endif
+}
 
 void earshotInitWebEngine()
 {
