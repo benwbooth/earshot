@@ -41,7 +41,9 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
   Mixcloud playlist, a Bandcamp album or an Internet Archive item by link.
 - **Queue**: play next, add to queue, remove, clear upcoming; shuffle and repeat (all / one).
 - **Random radio** (the dice next to repeat): when the queue runs out, Earshot keeps playing songs like the last
-  ones, using YouTube's own mix for the song that was playing.
+  ones, from the same service where it has suggestions (SoundCloud's related tracks, Mixcloud's similar shows,
+  Bandcamp's recommended albums, the Internet Archive's other recordings by the artist) and YouTube's own mix
+  otherwise.
 - Keyboard: Space play/pause, Ctrl+←/→ previous/next, Ctrl+F search, Ctrl+N new playlist, Ctrl+S shuffle,
   Ctrl+R repeat, Alt+← back, and the media keys while the window has focus.
 

@@ -245,11 +245,25 @@ impl qobject::Backend {
         self.spawn(move || bandcamp::tag(&tag, &slice, &next))
     }
 
-    /// Random radio: songs like `track` (YouTube's mix for its video, or for
-    /// the best match on YouTube when it came from elsewhere).
+    /// Random radio: songs like `track`, from its own service where that has
+    /// suggestions (SoundCloud's related tracks, Mixcloud's similar shows,
+    /// Bandcamp's recommended albums, the Internet Archive's other recordings
+    /// by the artist), otherwise YouTube's mix for its video.
     pub fn radio_more(self: Pin<&mut Self>, track: &QString, video: &QString) -> i32 {
         let (track, video) = (parse(track), video.to_string());
         self.spawn(move || {
+            let own = match track["service"].as_str() {
+                Some("soundcloud") => track["soundcloudId"].as_u64().map(soundcloud::related),
+                Some("mixcloud") => track["mixcloudKey"].as_str().map(mixcloud::similar),
+                Some("bandcamp") => Some(bandcamp::related(&track)),
+                Some("archive") => Some(archive::related(&track)),
+                _ => None,
+            };
+            if let Some(Ok(tracks)) = own {
+                if !tracks.is_empty() {
+                    return Ok(json!({ "tracks": tracks }));
+                }
+            }
             let seed = if !video.is_empty() {
                 video
             } else if let Some(id) = track["youtubeId"].as_str() {

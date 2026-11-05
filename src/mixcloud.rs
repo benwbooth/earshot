@@ -38,6 +38,12 @@ pub fn search(query: &str) -> Result<Value, String> {
     Ok(json!({ "albums": [], "tracks": mixes(&answer) }))
 }
 
+/// Shows Mixcloud finds similar to one (for Random radio).
+pub fn similar(key: &str) -> Result<Vec<Value>, String> {
+    let key = if key.ends_with('/') { key.to_owned() } else { format!("{key}/") };
+    Ok(mixes(&get_json(&format!("{API}{key}similar/?limit=20"))?))
+}
+
 /// Popular shows with a genre or tag, for browsing.
 pub fn browse(tag: &str) -> Result<Value, String> {
     let slug: String = tag

@@ -234,6 +234,36 @@ pub fn album(id: &str) -> Result<Value, String> {
     }))
 }
 
+/// The albums a Bandcamp page recommends ("If you like this, you may also like").
+fn recommended(page: &str) -> Vec<String> {
+    let mut urls: Vec<String> = Vec::new();
+    for (at, _) in page.match_indices("class=\"album-link\" href=\"") {
+        let rest = &page[at + "class=\"album-link\" href=\"".len()..];
+        let url: String = rest.chars().take_while(|c| *c != '?' && *c != '"').collect();
+        if url.starts_with("http") && !urls.contains(&url) {
+            urls.push(url);
+        }
+    }
+    urls
+}
+
+/// Songs like one (for Random radio): a couple of random tracks from each of
+/// a few albums its page recommends.
+pub fn related(track: &Value) -> Result<Vec<Value>, String> {
+    let page_url = track["pageUrl"].as_str().ok_or("This song has no Bandcamp page.")?;
+    let mut albums = recommended(&get_text(page_url)?);
+    crate::random::shuffle(&mut albums);
+    let mut songs = Vec::new();
+    for url in albums.iter().take(4) {
+        let Ok(album) = album(&format!("bc:{url}")) else { continue };
+        let mut tracks = album["tracks"].as_array().cloned().unwrap_or_default();
+        crate::random::shuffle(&mut tracks);
+        songs.extend(tracks.into_iter().take(2));
+    }
+    crate::random::shuffle(&mut songs);
+    Ok(songs)
+}
+
 /// A fresh stream link for one song (Bandcamp's links expire after a while).
 pub fn stream(track: &Value) -> Result<String, String> {
     let page = track["pageUrl"].as_str().ok_or("This song has no Bandcamp page.")?;

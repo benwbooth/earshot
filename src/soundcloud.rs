@@ -133,6 +133,12 @@ pub fn browse(tag: &str) -> Result<Value, String> {
     }))
 }
 
+/// Tracks SoundCloud suggests after one (for Random radio).
+pub fn related(track_id: u64) -> Result<Vec<Value>, String> {
+    let answer = api(&format!("/tracks/{track_id}/related?limit=30"))?;
+    Ok(answer["collection"].as_array().map(|items| items.iter().filter_map(track).collect()).unwrap_or_default())
+}
+
 /// Playlists only list the first few tracks in full; fetch the rest by id.
 fn full_tracks(items: &[Value]) -> Result<Vec<Value>, String> {
     let missing: Vec<u64> = items.iter().filter(|t| t["title"].is_null()).filter_map(|t| t["id"].as_u64()).collect();

@@ -8,6 +8,7 @@ mod mixcloud;
 mod native;
 mod net;
 mod radio;
+mod random;
 mod soundcloud;
 mod visualizer;
 mod youtube;

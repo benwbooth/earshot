@@ -134,6 +134,28 @@ pub fn album(id: &str) -> Result<Value, String> {
     }))
 }
 
+/// Songs like one (for Random radio): random tracks from other well-loved
+/// recordings by the same artist.
+pub fn related(track: &Value) -> Result<Vec<Value>, String> {
+    let identifier = track["key"].as_str().and_then(|key| key.strip_prefix("ia:")).and_then(|rest| rest.split('/').next()).unwrap_or("");
+    let artist = track["artist"].as_str().unwrap_or("").replace(['(', ')', ':', '"'], " ");
+    if artist.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let found = items(&format!("creator:(\"{}\") AND mediatype:(audio OR etree) AND NOT identifier:({identifier})", artist.trim()))?;
+    let mut others: Vec<String> = found["albums"].as_array().map(|a| a.iter().filter_map(|x| x["id"].as_str().map(str::to_owned)).collect()).unwrap_or_default();
+    crate::random::shuffle(&mut others);
+    let mut songs = Vec::new();
+    for id in others.iter().take(2) {
+        let Ok(item) = album(id) else { continue };
+        let mut tracks = item["tracks"].as_array().cloned().unwrap_or_default();
+        crate::random::shuffle(&mut tracks);
+        songs.extend(tracks.into_iter().take(6));
+    }
+    crate::random::shuffle(&mut songs);
+    Ok(songs)
+}
+
 /// An archive.org item link (".../details/<identifier>"), imported as a playlist.
 pub fn import(url: &str) -> Result<Value, String> {
     let identifier = url
