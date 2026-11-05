@@ -36,6 +36,7 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
   youtube.com's order. Playlists and full-length videos (soundtracks, full albums) open as albums, with long videos
   split into tracks at their timestamps.
 - Songs play in YouTube's own embedded player, hosted out of sight in Qt WebEngine (as the original Headset did).
+  Videos whose owners block embedded players play on youtube.com's own watch page instead, hidden the same way.
   Nothing is downloaded and no external programs are needed. For catalogue songs Earshot picks the best-matching
   video (official audio of the right length) and looks up the next songs ahead of time, so they start at once.
 - The waveform is measured from what your speakers play, with the [cpal](https://github.com/RustAudio/cpal) audio

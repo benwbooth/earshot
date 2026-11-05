@@ -353,6 +353,7 @@ ApplicationWindow {
     Shortcut { sequence: "Media Previous"; onActivated: Player.previous() }
 
     // Testing aids: --page=album:123 opens a page; --search=text [--search-tab=youtube] searches;
+    // --play-video=ID plays one YouTube video;
     // --screenshot=file.png saves the window and quits.
     Component.onCompleted: {
         const args = Qt.application.arguments
@@ -368,6 +369,9 @@ ApplicationWindow {
             } else if (arg.startsWith("--search-tab=")) {
                 const tab = arg.substring(13)
                 Qt.callLater(() => { if (stack.currentItem && stack.currentItem.pageName === "search") stack.currentItem.tab = tab })
+            } else if (arg.startsWith("--play-video=")) {
+                const id = arg.substring(13)
+                Qt.callLater(() => Player.playTracks([{ key: "yt:" + id, youtubeId: id, title: "Test video " + id, artist: "YouTube", duration: 0, cover:"https://i.ytimg.com/vi/" + id + "/hqdefault.jpg" }], 0, "Test"))
             } else if (arg.startsWith("--test-notification")) {
                 testNotification.start()
             } else if (arg.startsWith("--play-first")) {
