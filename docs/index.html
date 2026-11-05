@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earshot · a Rust + Qt port of Headset</title>
+<style>
+  :root { --bg: #0d0f14; --surface: #151821; --text: #f2f3f7; --muted: #9aa1b5; --accent: #ff5f7e; --accent2: #7a5cff; --border: #262b3a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 Inter, "Noto Sans", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 64px 0 32px; display: flex; gap: 20px; align-items: center; }
+  header img { width: 72px; height: 72px; }
+  h1 { margin: 0; font-size: 48px; letter-spacing: -1px; }
+  .lead { color: var(--muted); font-size: 18px; max-width: 720px; margin: 0 0 32px; }
+  .shot { width: 100%; border-radius: 12px; border: 1px solid var(--border); display: block; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  h2 { font-size: 28px; margin: 56px 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  ol { color: var(--muted); padding-left: 20px; }
+  footer { color: var(--muted); font-size: 14px; padding: 48px 0; }
+  @media (max-width: 760px) { .pair, .grid { grid-template-columns: 1fr; } h1 { font-size: 36px; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header><img src="./earshot.svg" alt=""><div><h1>Earshot</h1></div></header>
+  <p class="lead">A modern desktop music player written in Rust and Qt Quick (cxx-qt), porting the Headset Electron app: popular music by genre and era, a radio made of songs people share on Reddit, and YouTube as the music source, now with real albums, artist pages and playlists.</p>
+  <img class="shot" src="./home.png" alt="Earshot's home screen">
+  <div class="pair"><img class="shot" src="./album.png" alt="An album page"><img class="shot" src="./radio.png" alt="Reddit radio"></div>
+  <h2>What it does</h2>
+  <div class="grid"><div class="card"><h3>Charts by genre and era</h3><p>Trending songs and albums, charts for 20+ genres and the hits of every decade from the 50s to the 2020s.</p></div><div class="card"><h3>Reddit radio</h3><p>About 50 music subreddits in groups. Songs play in the order the community ranks them; save any station as a playlist.</p></div><div class="card"><h3>Albums</h3><p>Full track lists with artwork, release date, label and running time. Play, shuffle, queue or save any album.</p></div><div class="card"><h3>Artists</h3><p>Popular songs and the full discography: albums, singles and EPs.</p></div><div class="card"><h3>Playlists</h3><p>Create, rename, reorder and filter playlists, keep liked songs, and import a YouTube playlist from a link.</p></div><div class="card"><h3>Search</h3><p>Songs, albums and artists, plus a YouTube tab for live sets, covers and anything not in the catalogue.</p></div></div>
+  <h2>How it works</h2>
+  <ol>
+    <li>Song, album and artist details and artwork come from Deezer's public catalogue.</li>
+    <li>When a song plays, Earshot finds the matching YouTube video and downloads its audio with yt-dlp into a cache, pre-loading the next song.</li>
+    <li>Playlists, liked songs and saved albums are kept on your computer.</li>
+  </ol>
+  <footer>Earshot is an independent project, not affiliated with Headset, Deezer, YouTube or Reddit. MIT licence.</footer>
+</main>
+</body>
+</html>

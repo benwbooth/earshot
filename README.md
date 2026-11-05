@@ -5,6 +5,8 @@ It's a fresh take on the ideas of the (no longer maintained) [Headset](https://g
 Electron app: popular music by genre and era, a radio made of songs people share on Reddit, and YouTube as the
 music source. Earshot adds real **albums**, **artist pages** and **playlists**.
 
+Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from `docs/`).
+
 ![Home](docs/home.png)
 
 | Album | Reddit radio |
