@@ -21,7 +21,7 @@ Flickable {
         if (!album)
             return ""
         const kind = { single: "SINGLE", ep: "EP", compile: "COMPILATION", playlist: "PLAYLIST" }[album.kind] || "ALBUM"
-        const where = { youtube: " ON YOUTUBE", soundcloud: " ON SOUNDCLOUD", bandcamp: " ON BANDCAMP" }[album.source] || ""
+        const where = { youtube: " ON YOUTUBE", soundcloud: " ON SOUNDCLOUD", bandcamp: " ON BANDCAMP", archive: " ON THE INTERNET ARCHIVE" }[album.source] || ""
         return kind + where
     }
 
@@ -179,6 +179,14 @@ Flickable {
                 iconSize: 20
                 tip: "Add the whole album to the queue or a playlist"
                 onClicked: menu.openFor(page.album.tracks, moreButton)
+            }
+            IconButton {
+                readonly property string web: Api.albumPage(page.album)
+                visible: web !== ""
+                iconName: "external"
+                iconSize: 20
+                tip: "Open on " + Api.siteName(web)
+                onClicked: Api.openWeb(web)
             }
         }
 

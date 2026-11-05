@@ -287,6 +287,15 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
+        // Albums as a grid of covers or as a list.
+        IconButton {
+            iconName: Api.albumList ? "grid" : "list"
+            iconSize: 18
+            tip: Api.albumList ? "Show albums as a grid" : "Show albums as a list"
+            onClicked: Api.albumList = !Api.albumList
+            Layout.rightMargin: 8
+        }
+
         // Window buttons in the desktop's own style (macOS puts them on the left).
         WindowButtons {
             visible: bar.buttonStyle !== "mac"

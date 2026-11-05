@@ -47,6 +47,7 @@ fn main() {
         QmlFile::from("qml/TagChips.qml"),
         QmlFile::from("qml/BandcampPage.qml"),
         QmlFile::from("qml/BandcampTagPage.qml"),
+        QmlFile::from("qml/ServicePage.qml"),
     ]);
 
     let icons: Vec<String> = std::fs::read_dir("qml/icons")

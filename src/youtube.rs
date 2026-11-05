@@ -330,6 +330,14 @@ pub fn album(id: &str) -> Result<Value, String> {
             Some((start, chapter.get("title").map(text).unwrap_or_default()))
         })
         .collect();
+    // No chapters from YouTube: many soundtrack uploads list their songs with
+    // times in the description instead ("0:02:07 - Abandoned Castle").
+    if chapters.len() < 2 {
+        let listed = description_chapters(&detail("shortDescription").unwrap_or_default(), length);
+        if listed.len() >= 2 {
+            chapters = listed;
+        }
+    }
     chapters.sort_by(|a, b| a.0.total_cmp(&b.0));
     chapters.dedup_by(|a, b| a.0 == b.0);
     if chapters.is_empty() {
@@ -417,6 +425,48 @@ pub fn playlist(url: &str) -> Result<Value, String> {
     Ok(json!({ "title": title, "tracks": tracks }))
 }
 
+/// "1:02:03" or "02:07" (also in brackets) as seconds, if the word is a time.
+fn timestamp(word: &str) -> Option<f64> {
+    let word = word.trim_matches(|c: char| "()[]{}<>.,;".contains(c));
+    let parts: Vec<&str> = word.split(':').collect();
+    if !(2..=3).contains(&parts.len()) || parts.iter().any(|p| p.is_empty() || p.len() > 2 || !p.chars().all(|c| c.is_ascii_digit())) {
+        return None;
+    }
+    if parts[1..].iter().any(|p| p.len() != 2) {
+        return None;
+    }
+    Some(parts.iter().fold(0.0, |total, part| total * 60.0 + part.parse::<f64>().unwrap_or(0.0)))
+}
+
+/// Songs listed with their start times in a video's description, one per
+/// line, the time before or after the name. Needs at least three, in order,
+/// all within the video.
+fn description_chapters(description: &str, length: f64) -> Vec<(f64, String)> {
+    let separators: &[char] = &['-', '–', '—', '|', ':', '.', '•', '~', '·', ' ', '\t'];
+    let mut found: Vec<(f64, String)> = Vec::new();
+    for line in description.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let Some(at) = words.iter().position(|word| timestamp(word).is_some()) else { continue };
+        // Only a time at the start or the end of the line marks a song.
+        if at != 0 && at != words.len() - 1 && !(at == 1 && words[0].trim_end_matches(['.', ')']).chars().all(|c| c.is_ascii_digit())) {
+            continue;
+        }
+        let start = timestamp(words[at]).unwrap_or(0.0);
+        let mut rest: Vec<&str> = words.clone();
+        rest.remove(at);
+        let name = rest.join(" ").trim_matches(separators).to_owned();
+        if name.is_empty() || (length > 0.0 && start >= length) {
+            continue;
+        }
+        found.push((start, name));
+    }
+    let in_order = found.windows(2).all(|pair| pair[0].0 < pair[1].0);
+    if found.len() < 3 || !in_order {
+        return Vec::new();
+    }
+    found
+}
+
 /// "12. Town" or "03 - Town" -> "Town".
 fn strip_track_number(name: &str) -> String {
     let rest = name.trim_start_matches(|c: char| c.is_ascii_digit());
@@ -497,6 +547,30 @@ mod tests {
     fn splits_titles() {
         assert_eq!(split_title("Daft Punk - Around The World (Official Music Video)", "Daft Punk"), ("Daft Punk".into(), "Around The World".into()));
         assert_eq!(split_title("Harder Better", "Daft Punk - Topic"), ("Daft Punk".into(), "Harder Better".into()));
+    }
+
+    #[test]
+    fn reads_song_lists_in_descriptions() {
+        let description = "Music from the games...\nFor more: https://youtu.be/x?t=1:00\n\n\
+            0:00:00 - A Fleeting Respite\n0:02:07 - Abandoned Castle\n0:07:43 - After Confession\n\
+            1. Bloody Tears (12:30)\n[1:00:59] Emerald Mist";
+        let songs = description_chapters(description, 3.0 * 3600.0);
+        assert_eq!(songs.len(), 5);
+        assert_eq!(songs[1], (127.0, "Abandoned Castle".to_owned()));
+        assert_eq!(songs[3], (750.0, "1. Bloody Tears".to_owned()));
+        assert_eq!(songs[4], (3659.0, "Emerald Mist".to_owned()));
+        // Times inside sentences, or too few, aren't a song list.
+        assert!(description_chapters("We met at 10:30 and left at 11:45.\n0:00 Intro", 600.0).is_empty());
+    }
+
+    /// Talks to YouTube: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_description_album() {
+        let album = album("yt:v:pmUpdxXlqiY").unwrap();
+        let tracks = album["tracks"].as_array().unwrap();
+        assert!(tracks.len() > 40, "{} songs", tracks.len());
+        assert_eq!(tracks[1]["title"], "Abandoned Castle");
     }
 
     #[test]

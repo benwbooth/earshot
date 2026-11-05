@@ -79,20 +79,38 @@ Flickable {
 
     function firstTracks() { return results ? results.tracks : [] }
 
-    // Bandcamp and SoundCloud: { albums, tracks (, tags) } each, or null while loading.
+    // Bandcamp, SoundCloud, Mixcloud and the Internet Archive: { albums, tracks (, tags) } each, or null while loading.
     property var bandcamp: null
     property var soundcloud: null
+    property var mixcloud: null
+    property var archive: null
     property string bandcampError: ""
     property string soundcloudError: ""
+    property string mixcloudError: ""
+    property string archiveError: ""
 
     function runServices() {
         bandcamp = null
         soundcloud = null
+        mixcloud = null
+        archive = null
         bandcampError = ""
         soundcloudError = ""
+        mixcloudError = ""
+        archiveError = ""
         if (query === "")
             return
         const q = query
+        Api.call(Backend.searchMixcloud(q), function (found) {
+            if (q === page.query) page.mixcloud = found
+        }, function (message) {
+            if (q === page.query) { page.mixcloud = { albums: [], tracks: [] }; page.mixcloudError = message }
+        })
+        Api.call(Backend.searchArchive(q), function (found) {
+            if (q === page.query) page.archive = found
+        }, function (message) {
+            if (q === page.query) { page.archive = { albums: [], tracks: [] }; page.archiveError = message }
+        })
         Api.call(Backend.searchBandcamp(q), function (found) {
             if (q === page.query) page.bandcamp = found
         }, function (message) {
@@ -344,7 +362,7 @@ Flickable {
             Layout.fillWidth: true
             spacing: 8
             Repeater {
-                model: [["all", "All"], ["songs", "Songs"], ["albums", "Albums"], ["artists", "Artists"], ["youtube", "YouTube"], ["bandcamp", "Bandcamp"], ["soundcloud", "SoundCloud"]]
+                model: [["all", "All"], ["songs", "Songs"], ["albums", "Albums"], ["artists", "Artists"], ["youtube", "YouTube"], ["bandcamp", "Bandcamp"], ["soundcloud", "SoundCloud"], ["mixcloud", "Mixcloud"], ["archive", "Internet Archive"]]
                 delegate: PillButton {
                     required property var modelData
                     text: modelData[1]
@@ -557,6 +575,20 @@ Flickable {
             name: "SoundCloud"
             found: page.soundcloud
             failure: page.soundcloudError
+        }
+        ServiceSection {
+            host: page
+            key: "mixcloud"
+            name: "Mixcloud"
+            found: page.mixcloud
+            failure: page.mixcloudError
+        }
+        ServiceSection {
+            host: page
+            key: "archive"
+            name: "the Internet Archive"
+            found: page.archive
+            failure: page.archiveError
         }
     }
 }

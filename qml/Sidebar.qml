@@ -18,7 +18,7 @@ Rectangle {
         property var args: ({})
         property string detail: ""
         property string coverSeed: ""
-        readonly property bool selected: Nav.current === page && (page !== "playlist" || Nav.currentArgs.id === args.id)
+        readonly property bool selected: Nav.current === page && ((page !== "playlist" && page !== "service") || Nav.currentArgs.id === args.id)
 
         Layout.fillWidth: true
         implicitHeight: Math.max(40, itemRow.implicitHeight + 16)
@@ -66,6 +66,9 @@ Rectangle {
         NavItem { iconName: "search"; label: "Search"; page: "search" }
         NavItem { iconName: "radio"; label: "Reddit radio"; page: "radio" }
         NavItem { iconName: "tag"; label: "Bandcamp"; page: "bandcamp" }
+        NavItem { iconName: "cloud"; label: "SoundCloud"; page: "service"; args: ({ id: "soundcloud" }) }
+        NavItem { iconName: "mix"; label: "Mixcloud"; page: "service"; args: ({ id: "mixcloud" }) }
+        NavItem { iconName: "archive"; label: "Internet Archive"; page: "service"; args: ({ id: "archive" }) }
         NavItem { iconName: "queue"; label: "Queue"; page: "queue"; detail: Player.queue.length > 0 ? (Player.queue.length - Player.index - 1 > 0 ? Player.queue.length - Player.index - 1 : "") : "" }
 
         Text {

@@ -1,7 +1,9 @@
+mod archive;
 mod backend;
 mod bandcamp;
 mod catalog;
 mod library;
+mod mixcloud;
 mod native;
 mod net;
 mod radio;

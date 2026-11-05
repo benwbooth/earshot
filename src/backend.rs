@@ -38,6 +38,12 @@ pub mod qobject {
         #[qinvokable]
         fn search_soundcloud(self: Pin<&mut Backend>, query: &QString) -> i32;
         #[qinvokable]
+        fn search_mixcloud(self: Pin<&mut Backend>, query: &QString) -> i32;
+        #[qinvokable]
+        fn search_archive(self: Pin<&mut Backend>, query: &QString) -> i32;
+        #[qinvokable]
+        fn browse(self: Pin<&mut Backend>, service: &QString, tag: &QString) -> i32;
+        #[qinvokable]
         fn bandcamp_tags(self: Pin<&mut Backend>) -> i32;
         #[qinvokable]
         fn bandcamp_tag(self: Pin<&mut Backend>, tag: &QString, slice: &QString, next: &QString) -> i32;
@@ -104,7 +110,7 @@ use cxx_qt_lib::QString;
 use serde_json::{Value, json};
 
 use crate::library::Library;
-use crate::{bandcamp, catalog, radio, soundcloud, youtube};
+use crate::{archive, bandcamp, catalog, mixcloud, radio, soundcloud, youtube};
 
 pub struct BackendRust {
     library_revision: i32,
@@ -201,6 +207,27 @@ impl qobject::Backend {
         self.spawn(move || soundcloud::search(&query))
     }
 
+    pub fn search_mixcloud(self: Pin<&mut Self>, query: &QString) -> i32 {
+        let query = query.to_string();
+        self.spawn(move || mixcloud::search(&query))
+    }
+
+    pub fn search_archive(self: Pin<&mut Self>, query: &QString) -> i32 {
+        let query = query.to_string();
+        self.spawn(move || archive::search(&query))
+    }
+
+    /// SoundCloud, Mixcloud or the Internet Archive by genre or tag: { albums, tracks }.
+    pub fn browse(self: Pin<&mut Self>, service: &QString, tag: &QString) -> i32 {
+        let (service, tag) = (service.to_string(), tag.to_string());
+        self.spawn(move || match service.as_str() {
+            "soundcloud" => soundcloud::browse(&tag),
+            "mixcloud" => mixcloud::browse(&tag),
+            "archive" => archive::browse(&tag),
+            other => Err(format!("Can't browse {other}")),
+        })
+    }
+
     /// Bandcamp's genres and sub-genres, for browsing.
     pub fn bandcamp_tags(self: Pin<&mut Self>) -> i32 {
         self.spawn(bandcamp::tags)
@@ -227,6 +254,7 @@ impl qobject::Backend {
             Some("yt") => youtube::album(&id),
             Some("bc") => bandcamp::album(&id),
             Some("sc") => soundcloud::album(&id),
+            Some("ia") => archive::album(&id),
             _ => catalog::album_detail(&id),
         })
     }
@@ -268,6 +296,10 @@ impl qobject::Backend {
                 soundcloud::import(&url)
             } else if url.contains("bandcamp.com/") {
                 bandcamp::import(&url)
+            } else if url.contains("mixcloud.com/") {
+                mixcloud::import(&url)
+            } else if url.contains("archive.org/") {
+                archive::import(&url)
             } else {
                 youtube::playlist(&url)
             }

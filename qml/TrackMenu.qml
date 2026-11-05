@@ -13,6 +13,7 @@ Menu {
 
     readonly property var track: tracks.length === 1 ? tracks[0] : null
     readonly property bool liked: track ? (Backend.libraryRevision, Backend.isLiked(track.key)) : false
+    readonly property string webPage: Api.songPage(track)
 
     signal removed()
 
@@ -43,6 +44,12 @@ Menu {
 
     MenuItem { text: menu.tracks.length > 1 ? "Play all next" : "Play next"; onTriggered: Player.playNext(menu.tracks) }
     MenuItem { text: "Add to queue"; onTriggered: Player.enqueue(menu.tracks) }
+    MenuItem {
+        text: "Open on " + Api.siteName(menu.webPage)
+        visible: menu.webPage !== ""
+        height: visible ? implicitHeight : 0
+        onTriggered: Api.openWeb(menu.webPage)
+    }
 
     Menu {
         id: addMenu

@@ -73,6 +73,12 @@ Item {
         leaveWatchPage()
         call("earshotLoadSoundCloud(" + JSON.stringify(String(trackId)) + "," + (start || 0) + ")")
     }
+    // A show in Mixcloud's own embedded player.
+    function loadMixcloud(key, start) {
+        reset("mixcloud:" + key, start)
+        leaveWatchPage()
+        call("earshotLoadMixcloud(" + JSON.stringify(key) + "," + (start || 0) + ")")
+    }
     function play() { watchMode ? watchCall("p.playVideo()") : call("earshotPlay()") }
     function pause() { watchMode ? watchCall("p.pauseVideo()") : call("earshotPause()") }
     function stop() {
@@ -144,6 +150,7 @@ Item {
         + '  if(next!=="yt"&&ready)player.stopVideo();'
         + '  if(next!=="audio"&&audio.src){audio.pause();audio.removeAttribute("src");audio.load();}'
         + '  if(next!=="sc"&&sc)sc.pause();'
+        + '  if(next!=="mc"&&mc)mc.pause();'
         + '  mode=next;ended=false;lastError=0;}'
         + 'function earshotLoad(id,start){quiet("yt");if(!ready){pending={id:id,start:start};return;}'
         + '  player.loadVideoById({videoId:id,startSeconds:start||0,suggestedQuality:"small"});}'
@@ -160,7 +167,7 @@ Item {
         + 'var scLoaded=0;'
         + 'function earshotLoadSoundCloud(id,start){quiet("sc");scState=-1;scPos=(start||0)*1000;scDur=0;scStart=start||0;scLoaded=Date.now();'
         + '  if(typeof SC==="undefined"){lastError=1002;return;}'
-        + '  if(!sc){var f=document.createElement("iframe");f.allow="autoplay";f.width=160;f.height=90;f.style.border="0";'
+        + '  if(!sc){var f=document.createElement("iframe");f.allow="autoplay";f.style.cssText="position:fixed;left:0;top:0;width:160px;height:90px;border:0";'
         + '    f.src="https://w.soundcloud.com/player/?url="+encodeURIComponent(scUrl(id))+"&auto_play=true&visual=false";'
         + '    document.body.appendChild(f);sc=SC.Widget(f);var E=SC.Widget.Events;'
         + '    sc.bind(E.READY,scBegin);'
@@ -170,22 +177,42 @@ Item {
         + '    sc.bind(E.FINISH,function(){scState=0;if(mode==="sc")ended=true;});'
         + '    sc.bind(E.ERROR,function(){if(mode==="sc")lastError=1002;});'
         + '  }else{sc.load(scUrl(id),{auto_play:true,visual:false,callback:scBegin});}}'
+        // Mixcloud's widget, made the first time a Mixcloud show plays
+        + 'var mc=null,mcFrame=null,mcKey="",mcState=-1,mcPos=0,mcDur=0,mcStart=0,mcLoaded=0;'
+        + 'function mcBegin(){if(mode!=="mc"||!mc)return;if(mcStart>0)mc.seek(mcStart);mc.play();try{if(mc.setVolume)mc.setVolume(volume/100);}catch(e){}}'
+        + 'function earshotLoadMixcloud(key,start){quiet("mc");mcState=-1;mcPos=start||0;mcDur=0;mcStart=start||0;mcLoaded=Date.now();mcKey=key;'
+        + '  if(typeof Mixcloud==="undefined"){lastError=1003;return;}'
+        + '  if(!mcFrame){var first=key;mcFrame=document.createElement("iframe");mcFrame.allow="autoplay; encrypted-media";mcFrame.style.cssText="position:fixed;left:0;top:0;width:160px;height:90px;border:0";'
+        + '    mcFrame.src="https://player-widget.mixcloud.com/?hide_cover=1&mini=1&autoplay=1&feed="+encodeURIComponent(key);'
+        + '    mcFrame.onload=function(){mcFrame.onload=null;var w=Mixcloud.PlayerWidget(mcFrame);'
+        + '    w.ready.then(function(){mc=w;var E=w.events;'
+        + '      E.progress.on(function(p,d){mcPos=p;if(d)mcDur=d;if(mode==="mc"&&mcState!==2&&mcState!==0)mcState=1;});'
+        + '      E.play.on(function(){mcState=1;});'
+        + '      E.pause.on(function(){if(mcState!==0)mcState=2;});'
+        + '      E.buffering.on(function(){if(mcState!==2)mcState=3;});'
+        + '      E.ended.on(function(){mcState=0;if(mode==="mc")ended=true;});'
+        + '      E.error.on(function(e){if(mode==="mc")lastError=1003;});'
+        + '      if(mcKey!==first)mc.load(mcKey,true).then(mcBegin);else mcBegin();});};document.body.appendChild(mcFrame);'
+        + '  }else if(mc){mc.load(key,true).then(mcBegin);}}'
         // The same controls for whichever player is in use
-        + 'function earshotPlay(){if(mode==="audio")audio.play().catch(function(){});else if(mode==="sc"){if(sc)sc.play();}else if(ready)player.playVideo();}'
-        + 'function earshotPause(){if(mode==="audio")audio.pause();else if(mode==="sc"){if(sc)sc.pause();}else if(ready)player.pauseVideo();}'
-        + 'function earshotSeek(s){if(mode==="audio")audio.currentTime=s;else if(mode==="sc"){if(sc){sc.seekTo(s*1000);scPos=s*1000;}}else if(ready)player.seekTo(s,true);}'
+        + 'function earshotPlay(){if(mode==="audio")audio.play().catch(function(){});else if(mode==="sc"){if(sc)sc.play();}else if(mode==="mc"){if(mc)mc.play();}else if(ready)player.playVideo();}'
+        + 'function earshotPause(){if(mode==="audio")audio.pause();else if(mode==="sc"){if(sc)sc.pause();}else if(mode==="mc"){if(mc)mc.pause();}else if(ready)player.pauseVideo();}'
+        + 'function earshotSeek(s){if(mode==="audio")audio.currentTime=s;else if(mode==="sc"){if(sc){sc.seekTo(s*1000);scPos=s*1000;}}else if(mode==="mc"){if(mc){mc.seek(s);mcPos=s;}}else if(ready)player.seekTo(s,true);}'
         + 'function earshotStop(){var was=mode;quiet("none");mode=was;}'
-        + 'function earshotVolume(v){volume=v;if(ready)player.setVolume(v);audio.volume=v/100;if(sc)sc.setVolume(v);}'
+        + 'function earshotVolume(v){volume=v;if(ready)player.setVolume(v);audio.volume=v/100;if(sc)sc.setVolume(v);try{if(mc&&mc.setVolume)mc.setVolume(v/100);}catch(e){}}'
         + 'function earshotStatus(){var s;'
         + '  if(mode==="audio")s={ready:true,state:audio.ended?0:audio.paused?2:audio.readyState<3?3:1,time:audio.currentTime||0,duration:isFinite(audio.duration)?audio.duration:0};'
         + '  else if(mode==="sc"){s={ready:true,state:scState,time:scPos/1000,duration:scDur/1000};'
         + '    if(scState<1&&Date.now()-scLoaded>30000){scLoaded=Date.now();lastError=1002;}}'
+        + '  else if(mode==="mc"){s={ready:true,state:mcState,time:mcPos,duration:mcDur};'
+        + '    if(mcState<1&&mcState!==2&&Date.now()-mcLoaded>30000){mcLoaded=Date.now();lastError=1003;}}'
         + '  else if(!ready)return JSON.stringify({ready:false});'
         + '  else s={ready:true,state:player.getPlayerState(),time:player.getCurrentTime()||0,duration:player.getDuration()||0};'
         + '  s.ended=ended;s.error=lastError;ended=false;lastError=0;return JSON.stringify(s);}'
         + '</script>'
         + '<script src="https://www.youtube.com/iframe_api"></script>'
         + '<script src="https://w.soundcloud.com/player/api.js"></script>'
+        + '<script src="https://widget.mixcloud.com/media/js/widgetApi.js"></script>'
         + '</body></html>'
 
     // What the watch page's player is doing; ads count as still loading.
@@ -317,6 +344,7 @@ Item {
         case 153: return "This video's owner doesn't allow it to play outside youtube.com."
         case 1001: return "Bandcamp's audio stopped loading."
         case 1002: return "SoundCloud's player couldn't play this song."
+        case 1003: return "Mixcloud's player couldn't play this show."
         default: return "YouTube's player stopped (error " + code + ")."
         }
     }

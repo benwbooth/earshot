@@ -120,6 +120,19 @@ pub fn search(query: &str) -> Result<Value, String> {
     }))
 }
 
+/// Playlists and songs tagged with a genre or tag, for browsing.
+pub fn browse(tag: &str) -> Result<Value, String> {
+    // SoundCloud only matches tags in lower case.
+    let t = encode(&tag.trim().to_lowercase());
+    let playlists = api(&format!("/search/playlists?q=*&filter.genre_or_tag={t}&limit=24"))?;
+    let tracks = api(&format!("/search/tracks?q={t}&filter.genre_or_tag={t}&limit=40"))?;
+    let list = |value: &Value| value["collection"].as_array().cloned().unwrap_or_default();
+    Ok(json!({
+        "albums": list(&playlists).iter().filter(|p| p["track_count"].as_u64().unwrap_or(0) > 0).filter_map(playlist_card).collect::<Vec<_>>(),
+        "tracks": list(&tracks).iter().filter_map(track).collect::<Vec<_>>(),
+    }))
+}
+
 /// Playlists only list the first few tracks in full; fetch the rest by id.
 fn full_tracks(items: &[Value]) -> Result<Vec<Value>, String> {
     let missing: Vec<u64> = items.iter().filter(|t| t["title"].is_null()).filter_map(|t| t["id"].as_u64()).collect();

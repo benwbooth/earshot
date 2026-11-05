@@ -103,6 +103,14 @@ Rectangle {
                 tip: bar.liked ? "Remove from Liked songs" : "Add to Liked songs"
                 onClicked: Backend.setLiked(JSON.stringify(bar.track), !bar.liked)
             }
+            IconButton {
+                readonly property string page: Api.songPage(bar.track)
+                visible: bar.track !== null && page !== ""
+                iconName: "external"
+                iconSize: 17
+                tip: "Open on " + Api.siteName(page)
+                onClicked: Api.openWeb(page)
+            }
         }
 
         // Controls

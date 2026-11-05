@@ -215,6 +215,16 @@ QtObject {
             engine.loadSoundCloud(track.soundcloudId, trackStart)
             return
         }
+        // Mixcloud shows play in Mixcloud's own player.
+        if (track.service === "mixcloud") {
+            engine.loadMixcloud(track.mixcloudKey, trackStart)
+            return
+        }
+        // The Internet Archive's files stream straight from archive.org.
+        if (track.service === "archive") {
+            engine.loadAudio(track.streamUrl, trackStart)
+            return
+        }
         // Bandcamp songs stream from Bandcamp, with a link fetched just before.
         if (track.service === "bandcamp") {
             if (streams[track.key]) {
@@ -268,7 +278,7 @@ QtObject {
 
     // Find a track's video ahead of time (songs you hover, the first song of an album).
     function lookAhead(track) {
-        if (!track || track.youtubeId || track.service === "soundcloud")
+        if (!track || track.youtubeId || ["soundcloud", "mixcloud", "archive"].indexOf(track.service) >= 0)
             return
         if (track.service === "bandcamp") {
             if (!streams[track.key])

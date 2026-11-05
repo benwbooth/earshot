@@ -173,6 +173,7 @@ Flickable {
         SectionHeader { visible: !!page.data_; title: "Browse by era" }
         HorizontalShelf {
             id: eraShelf
+            albums: false
             visible: !!page.data_
             minCardWidth: 150
             spacing: 14
@@ -193,6 +194,7 @@ Flickable {
         SectionHeader { visible: !!page.data_; title: "Browse by genre" }
         HorizontalShelf {
             id: genreShelf
+            albums: false
             visible: !!page.data_
             minCardWidth: 200
             spacing: 14
@@ -218,6 +220,7 @@ Flickable {
         }
         HorizontalShelf {
             id: radioShelf
+            albums: false
             visible: !!page.data_
             minCardWidth: 200
             spacing: 14

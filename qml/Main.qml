@@ -144,7 +144,7 @@ ApplicationWindow {
     readonly property var pages: ({
         home: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
         artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage,
-        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage
+        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage, service: servicePage
     })
 
     function navigate(page, args) {
@@ -155,7 +155,7 @@ ApplicationWindow {
         const top = stack.currentItem
         if (top && top.pageName === page && JSON.stringify(top.args) === JSON.stringify(args))
             return
-        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
+        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
             stack.replace(null, component, { args: args })
         else
             stack.push(component, { args: args })
@@ -204,6 +204,7 @@ ApplicationWindow {
     Component { id: queuePage; QueuePage {} }
     Component { id: bandcampPage; BandcampPage {} }
     Component { id: bandcampTagPage; BandcampTagPage {} }
+    Component { id: servicePage; ServicePage {} }
 
     ColumnLayout {
         id: shell
@@ -388,7 +389,7 @@ ApplicationWindow {
     Shortcut { sequence: "Media Previous"; onActivated: Player.previous() }
 
     // Testing aids: --page=album:123 opens a page; --search=text [--search-tab=youtube] searches;
-    // --play-video=ID plays one YouTube video;
+    // --play-video=ID plays one YouTube video; --play-track=JSON plays one song;
     // --screenshot=file.png saves the window and quits.
     Component.onCompleted: {
         const args = Qt.application.arguments
@@ -407,6 +408,9 @@ ApplicationWindow {
             } else if (arg.startsWith("--play-video=")) {
                 const id = arg.substring(13)
                 Qt.callLater(() => Player.playTracks([{ key: "yt:" + id, youtubeId: id, title: "Test video " + id, artist: "YouTube", duration: 0, cover:"https://i.ytimg.com/vi/" + id + "/hqdefault.jpg" }], 0, "Test"))
+            } else if (arg.startsWith("--play-track=")) {
+                const track = JSON.parse(arg.substring(13))
+                Qt.callLater(() => Player.playTracks([track], 0, "Test"))
             } else if (arg.startsWith("--test-notification")) {
                 testNotification.start()
             } else if (arg.startsWith("--play-first")) {
