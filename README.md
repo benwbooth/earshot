@@ -32,9 +32,14 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
 ## How it works
 
 - Catalogue data and artwork come from Deezer's public API (no account or key needed).
-- When a song plays, Earshot finds the best-matching YouTube video (preferring official audio of the right length)
-  and downloads its audio with [yt-dlp](https://github.com/yt-dlp/yt-dlp) into a cache (`~/.cache/earshot/audio`,
-  capped at 3 GB). The next song in the queue downloads in the background so playback continues without a gap.
+- Search, playlists and the chapter timestamps of long videos come straight from YouTube's own web API, in
+  youtube.com's order. Playlists and full-length videos (soundtracks, full albums) open as albums, with long videos
+  split into tracks at their timestamps.
+- Songs play in YouTube's own embedded player, hosted out of sight in Qt WebEngine (as the original Headset did).
+  Nothing is downloaded and no external programs are needed. For catalogue songs Earshot picks the best-matching
+  video (official audio of the right length) and looks up the next songs ahead of time, so they start at once.
+- The waveform is measured from what your speakers play, with the [cpal](https://github.com/RustAudio/cpal) audio
+  library: loopback recording on Windows and macOS 14.6+, the PipeWire speaker monitor on Linux.
 - Your playlists, liked songs and saved albums live in `~/.local/share/earshot/library.json`.
 
 ## Build and run (Nix)
@@ -52,10 +57,12 @@ cargo run
 cargo test
 ```
 
-Without Nix you need Rust, Qt 6.8+ (Base, Declarative, Multimedia, Svg) and `yt-dlp` on your `PATH`; point `QMAKE`
-at Qt 6's `qmake` and run `cargo build --release`.
+Without Nix you need Rust and Qt 6.8+ (Base, Declarative, Svg, WebEngine), plus PipeWire and ALSA development files
+on Linux; point `QMAKE` at Qt 6's `qmake` and run `cargo build --release`. On Wayland/KDE the now-playing card uses
+`layer-shell-qt` when it's installed.
 
-Environment variables: `EARSHOT_YTDLP` (path to yt-dlp), `EARSHOT_DATA_DIR`, `EARSHOT_CACHE_DIR`.
+Environment variables: `EARSHOT_DATA_DIR` (where the library is kept), `EARSHOT_WINDOW_BUTTONS`
+(`kde`, `gnome`, `windows` or `mac`, to force a window-button style).
 
 ## Notes
 
