@@ -183,6 +183,15 @@ Rectangle {
                     tip: ["Repeat off", "Repeat all", "Repeat this song"][Player.repeat]
                     onClicked: Player.cycleRepeat()
                 }
+                // Random radio: keep playing songs like these when the queue runs out.
+                IconButton {
+                    iconName: "dice"
+                    iconSize: 18
+                    active: Player.radio
+                    tip: Player.radio ? "Random radio is on: songs like these keep playing when the queue ends"
+                                      : "Random radio: keep playing songs like these when the queue ends"
+                    onClicked: Player.radio = !Player.radio
+                }
             }
 
             RowLayout {

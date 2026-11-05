@@ -224,6 +224,30 @@ fn search_page(query: &str, continuation: &str) -> Result<(Vec<Lockup>, String),
     Ok((items, next))
 }
 
+/// YouTube's own "Mix" for a video: songs like it, the radio YouTube Music
+/// plays after it. Leaves out the video itself, live streams and long mixes.
+pub fn mix(video: &str) -> Result<Vec<Value>, String> {
+    let answer = innertube("next", json!({ "videoId": video, "playlistId": format!("RD{video}") }))?;
+    let mut found = Vec::new();
+    collect(&answer, &["playlistPanelVideoRenderer"], &mut found);
+    Ok(found
+        .iter()
+        .filter_map(|(_, item)| {
+            let id = item.get("videoId")?.as_str()?;
+            let duration = item.get("lengthText").map(|t| parse_clock(&text(t))).unwrap_or(0);
+            if id == video || duration == 0 || duration > ALBUM_VIDEO_SECONDS {
+                return None;
+            }
+            let channel = item
+                .pointer("/longBylineText/runs/0/text")
+                .or_else(|| item.pointer("/shortBylineText/runs/0/text"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            Some(video_track(id, &text(item.get("title")?), channel, duration))
+        })
+        .collect())
+}
+
 /// YouTube videos for a search, in YouTube's order.
 pub fn search(query: &str, count: usize) -> Result<Vec<Value>, String> {
     Ok(search_page(query, "")?
@@ -561,6 +585,15 @@ mod tests {
         assert_eq!(songs[4], (3659.0, "Emerald Mist".to_owned()));
         // Times inside sentences, or too few, aren't a song list.
         assert!(description_chapters("We met at 10:30 and left at 11:45.\n0:00 Intro", 600.0).is_empty());
+    }
+
+    /// Talks to YouTube: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_mix() {
+        let songs = mix("jx-kcjc_v00").unwrap();
+        assert!(songs.len() > 10, "{} songs", songs.len());
+        assert!(songs.iter().all(|s| s["youtubeId"] != "jx-kcjc_v00"));
     }
 
     /// Talks to YouTube: `cargo test -- --ignored`.

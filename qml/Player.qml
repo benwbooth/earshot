@@ -44,7 +44,18 @@ QtObject {
     readonly property real length: trackEnd > 0 ? trackEnd - trackStart
                                   : engine && engine.duration > 0 ? engine.duration - trackStart
                                   : (current ? current.duration : 0)
-    readonly property bool hasNext: index + 1 < queue.length || (repeat === 1 && queue.length > 0)
+    readonly property bool hasNext: index + 1 < queue.length || (repeat === 1 && queue.length > 0) || (radio && current !== null)
+
+    // Random radio: when the queue runs out, keep going with songs like the
+    // last ones (YouTube's own mix for the song playing), added a batch at a time.
+    property bool radio: settings.radio
+    property bool radioLoading: false
+    property bool radioWaiting: false   // the queue ended while more songs were on their way
+    onRadioChanged: {
+        settings.radio = radio
+        if (radio && current && index >= queue.length - 2)
+            extendRadio()
+    }
     readonly property bool hasPrevious: index > 0 || position > 3
 
     property Settings settings: Settings {
@@ -52,6 +63,41 @@ QtObject {
         property bool shuffle: false
         property int repeat: 0
         property real volume: 0.8
+        property bool radio: false
+    }
+
+    function extendRadio() {
+        if (!radio || radioLoading || !current)
+            return
+        const seed = current
+        // The video playing (or found) for it, so the mix starts from exactly this song.
+        const playingVideo = engine && engine.videoId && engine.videoId.indexOf(":") < 0 ? engine.videoId : ""
+        const video = seed.youtubeId || (found[seed.key] && found[seed.key][0]) || (seed.service ? "" : playingVideo)
+        radioLoading = true
+        Api.call(Backend.radioMore(JSON.stringify(seed), video), function (result) {
+            radioLoading = false
+            const seen = {}
+            for (const track of queue) {
+                seen[track.key] = true
+                if (track.youtubeId) seen["yt:" + track.youtubeId] = true
+            }
+            const added = result.tracks.filter(track => !seen[track.key]).slice(0, 15)
+            if (added.length > 0) {
+                queue = queue.concat(added)
+                originalQueue = originalQueue.concat(added)
+            }
+            if (radioWaiting) {
+                radioWaiting = false
+                if (index + 1 < queue.length)
+                    jump(index + 1)
+            }
+        }, function (message) {
+            radioLoading = false
+            if (radioWaiting) {
+                radioWaiting = false
+                Nav.notify("Random radio: " + message)
+            }
+        })
     }
 
     // The waveform: six bar heights (0..1, bass first) measured from what the
@@ -274,6 +320,9 @@ QtObject {
     function prefetch() {
         for (let i = index + 1; i <= index + 2 && i < queue.length; ++i)
             lookAhead(queue[i])
+        // Random radio: fetch more songs before the queue runs out.
+        if (radio && index >= queue.length - 2)
+            extendRadio()
     }
 
     // Find a track's video ahead of time (songs you hover, the first song of an album).
@@ -355,7 +404,12 @@ QtObject {
             jump(index + 1)
         else if (repeat === 1)
             jump(0)
-        else if (automatic) {
+        else if (radio) {
+            // More songs are on their way (or about to be fetched): play the first when they come.
+            radioWaiting = true
+            loading = true
+            extendRadio()
+        } else if (automatic) {
             engine.pause()
             loading = false
         }

@@ -50,6 +50,8 @@ pub mod qobject {
         #[qinvokable]
         fn stream(self: Pin<&mut Backend>, track: &QString) -> i32;
         #[qinvokable]
+        fn radio_more(self: Pin<&mut Backend>, track: &QString, video: &QString) -> i32;
+        #[qinvokable]
         fn album(self: Pin<&mut Backend>, id: &QString) -> i32;
         #[qinvokable]
         fn artist(self: Pin<&mut Backend>, id: &QString) -> i32;
@@ -241,6 +243,26 @@ impl qobject::Backend {
     pub fn bandcamp_tag(self: Pin<&mut Self>, tag: &QString, slice: &QString, next: &QString) -> i32 {
         let (tag, slice, next) = (bandcamp::tag_slug(&tag.to_string()), slice.to_string(), next.to_string());
         self.spawn(move || bandcamp::tag(&tag, &slice, &next))
+    }
+
+    /// Random radio: songs like `track` (YouTube's mix for its video, or for
+    /// the best match on YouTube when it came from elsewhere).
+    pub fn radio_more(self: Pin<&mut Self>, track: &QString, video: &QString) -> i32 {
+        let (track, video) = (parse(track), video.to_string());
+        self.spawn(move || {
+            let seed = if !video.is_empty() {
+                video
+            } else if let Some(id) = track["youtubeId"].as_str() {
+                id.to_owned()
+            } else {
+                let query = format!("{} - {}", track["artist"].as_str().unwrap_or(""), track["title"].as_str().unwrap_or(""));
+                youtube::search(&query, 1)?
+                    .first()
+                    .and_then(|found| found["youtubeId"].as_str().map(str::to_owned))
+                    .ok_or("Couldn't find songs like this one.")?
+            };
+            Ok(json!({ "tracks": youtube::mix(&seed)? }))
+        })
     }
 
     /// A Bandcamp song's audio link, fetched fresh since Bandcamp's links expire.
