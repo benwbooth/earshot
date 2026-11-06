@@ -36,8 +36,27 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
-  windows:
+  # The web version's interface (WebAssembly), built once with Nix and put
+  # next to the app in every package for Settings › Open the web version.
+  web:
     needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: cachix/install-nix-action@v31
+      - name: Build
+        run: |
+          nix build .#web
+          cp -rL result web-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: web-dist
+
+  windows:
+    needs: [version, web]
     runs-on: windows-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -69,6 +88,10 @@ jobs:
             Copy-Item "$env:SystemRoot\System32\$dll" $dir
           }
           Copy-Item README.md $dir
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: dist\Earshot\web
       - name: Portable zip
         shell: pwsh
         run: Compress-Archive -Path dist\Earshot -DestinationPath "Earshot-$env:VERSION-windows-x64-portable.zip"
@@ -85,7 +108,7 @@ jobs:
             Earshot-*-windows-x64-setup.exe
 
   macos:
-    needs: version
+    needs: [version, web]
     runs-on: macos-15
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -106,6 +129,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: QMAKE="$QT_ROOT_DIR/bin/qmake" cargo build --release --locked
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: dist/Earshot.app/Contents/MacOS/web
       - name: Make Earshot.app
         run: |
           app=dist/Earshot.app
@@ -132,7 +159,7 @@ jobs:
           path: Earshot-*-macos-arm64.dmg
 
   appimage:
-    needs: version
+    needs: [version, web]
     runs-on: ubuntu-22.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -158,6 +185,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: QMAKE="$QT_ROOT_DIR/bin/qmake" cargo build --release --locked
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: AppDir/usr/share/earshot/web
       - name: AppImage
         run: |
           base=https://github.com/linuxdeploy
@@ -185,7 +216,7 @@ jobs:
           path: Earshot-*-x86_64.AppImage
 
   flatpak:
-    needs: version
+    needs: [version, web]
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -195,6 +226,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: web-dist
       - name: Flatpak tools
         run: |
           sudo apt-get update

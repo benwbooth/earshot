@@ -460,6 +460,8 @@ ApplicationWindow {
             } else if (arg.startsWith("--play-track=")) {
                 const track = JSON.parse(arg.substring(13))
                 Qt.callLater(() => Player.playTracks([track], 0, "Test"))
+            } else if (arg.startsWith("--web-version")) {
+                Api.call(Backend.openWebUi(), result => console.info("Web version at", result.url), message => console.warn(message))
             } else if (arg.startsWith("--settings-menu")) {
                 Qt.callLater(() => topBar.openSettings())
             } else if (arg.startsWith("--test-notification")) {

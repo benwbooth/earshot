@@ -18,6 +18,21 @@ async fn main() -> std::io::Result<()> {
     eprintln!("Earshot's web version: http://{} (interface from {})", listener.local_addr()?, web.display());
     tokio::select! {
         result = earshot_server::serve(listener, core, web) => result,
-        _ = tokio::signal::ctrl_c() => Ok(()),
+        _ = stopped() => Ok(()),
     }
+}
+
+/// Ctrl+C, or Docker asking it to stop.
+async fn stopped() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
 }

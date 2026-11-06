@@ -338,6 +338,15 @@ Rectangle {
             MenuItem { text: "Always"; checkable: true; checked: Api.nowPlayingCard === "always"; onTriggered: Api.nowPlayingCard = "always" }
             MenuItem { text: "Only when Earshot isn't in front"; checkable: true; checked: Api.nowPlayingCard === "background"; onTriggered: Api.nowPlayingCard = "background" }
             MenuItem { text: "Never"; checkable: true; checked: Api.nowPlayingCard === "never"; onTriggered: Api.nowPlayingCard = "never" }
+            MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
+            // The same Earshot in a browser on this computer, sharing this window's playlists.
+            MenuItem {
+                text: "Open the web version"
+                onTriggered: Api.call(Backend.openWebUi(), function (result) {
+                    Api.openWeb(result.url)
+                    Nav.notify("The web version is open in your browser at " + result.url)
+                }, function (message) { Nav.notify(message) })
+            }
         }
 
         // Window buttons in the desktop's own style (macOS puts them on the left).

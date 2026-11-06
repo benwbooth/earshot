@@ -1,0 +1,8 @@
+/* The queue (qml/QueuePage.qml) */
+.queue-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.queue-head .hero { flex: 1; }
+.queue .track-list + .section-header { margin-top: 12px; }
+@media (max-width: 760px) {
+  .queue-head { gap: 8px; }
+  .queue-head .hero { flex-basis: 100%; }
+}

@@ -6,7 +6,7 @@ use std::cell::Cell;
 use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 /// Asks the server; the answer, or a message to show.
 pub async fn call(method: &str, args: Value) -> Result<Value, String> {
@@ -86,36 +86,4 @@ pub fn fetch(request: impl Fn() -> Option<(&'static str, Value)> + 'static) -> R
         });
     });
     state
-}
-
-/// The same as [`fetch`], keeping the last answer on screen while reloading.
-pub fn fetch_quietly(request: impl Fn() -> Option<(&'static str, Value)> + 'static) -> RwSignal<Load> {
-    let state = RwSignal::new(Load::Loading);
-    let latest = StoredValue::new(0u64);
-    Effect::new(move |_| {
-        let Some((method, args)) = request() else { return };
-        let generation = GENERATION.with(|g| {
-            g.set(g.get() + 1);
-            g.get()
-        });
-        latest.set_value(generation);
-        spawn_local(async move {
-            let result = call(method, args).await;
-            if latest.get_value() == generation {
-                state.set(match result {
-                    Ok(value) => Load::Ready(value),
-                    Err(message) => Load::Failed(message),
-                });
-            }
-        });
-    });
-    state
-}
-
-pub fn args(pairs: &[(&str, &str)]) -> Value {
-    let mut map = serde_json::Map::new();
-    for (name, value) in pairs {
-        map.insert((*name).to_owned(), json!(value));
-    }
-    Value::Object(map)
 }

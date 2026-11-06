@@ -97,6 +97,27 @@ Downloads are on the [releases page](https://github.com/benwbooth/earshot/releas
 
 New versions are built by GitHub Actions (`.github/workflows/release.yml`) whenever a `v*` tag is pushed.
 
+## Web version
+
+The same Earshot in a browser, on computers and phones (on phones the sidebar becomes tabs along the bottom). Its
+interface is Rust too, written with [Leptos](https://leptos.dev) and compiled to WebAssembly, with no JavaScript of
+its own; a small server answers it with the same Rust code the app uses (`crates/core`).
+
+- **From the app**: Settings (the gear, or Ctrl+,) › **Open the web version** starts it on this computer at
+  http://127.0.0.1:8790/ and opens it in your browser. It shares the app's playlists, liked songs and listening
+  history, and changes show up in both straight away.
+- **On its own**: `nix run github:benwbooth/earshot#server`, then open http://127.0.0.1:8790/. Set
+  `EARSHOT_LISTEN=0.0.0.0:8790` to reach it from phones on your network.
+- **Docker**: `nix build github:benwbooth/earshot#docker && docker load < result` gives the image `earshot:latest`.
+  It listens on port 8790 and keeps its library in `/data`:
+  ```sh
+  docker run -d -p 8788:8790 -v /srv/earshot:/data earshot:latest
+  ```
+
+Songs play through each site's own player, as in the app. Browsers don't let a page hear other sites' players, so
+the waveform keeps time on its own rather than following the music, and videos whose owners block embedded players
+move on to another upload instead of playing on youtube.com's page.
+
 ## Build and run (Nix)
 
 ```sh
@@ -109,8 +130,14 @@ Development:
 ```sh
 nix develop
 cargo run
-cargo test
+cargo test --workspace --exclude earshot-web
+# the web version: build its interface, then serve it
+scripts/build-web.sh target/web
+EARSHOT_WEB_DIR=target/web cargo run -p earshot-server
 ```
+
+The code is a Cargo workspace: the Qt app at the top, `crates/core` (the music services and library, shared by
+both), `crates/server` (the web version's server) and `crates/web` (its Leptos interface).
 
 Without Nix you need Rust and Qt 6.8+ (Base, Declarative, Svg, WebEngine), plus PipeWire and ALSA development files
 on Linux; point `QMAKE` at Qt 6's `qmake` and run `cargo build --release`. On Wayland/KDE the now-playing card uses

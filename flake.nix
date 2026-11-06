@@ -36,15 +36,76 @@
           fi
           exec ${qtEnv}/bin/qmake6 "$@"
         '';
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./build.rs ./src ./crates ./qml ./native ./packaging ./scripts ];
+        };
+
+        # The web version's interface: Rust compiled to WebAssembly, with its
+        # page, styles, the Qt app's icons and the Inter font.
+        web = pkgs.rustPlatform.buildRustPackage {
+          pname = "earshot-web";
+          version = "0.1.0";
+          inherit src;
+          cargoLock.lockFile = ./Cargo.lock;
+          nativeBuildInputs = [ pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 ];
+          buildPhase = ''
+            runHook preBuild
+            CARGO_OFFLINE=1 INTER_TTF=${pkgs.inter}/share/fonts/truetype/InterVariable.ttf \
+              bash scripts/build-web.sh $out --release
+            runHook postBuild
+          '';
+          installPhase = "runHook preInstall; runHook postInstall";
+          doCheck = false;
+        };
+
+        # The web version's server, which also serves the interface.
+        server = pkgs.rustPlatform.buildRustPackage {
+          pname = "earshot-server";
+          version = "0.1.0";
+          inherit src;
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = [ "-p" "earshot-server" ];
+          doCheck = false;
+          postInstall = ''
+            mkdir -p $out/share/earshot
+            ln -s ${web} $out/share/earshot/web
+          '';
+          meta = {
+            description = "Earshot's web version: the music player in a browser, on desktops and phones";
+            license = lib.licenses.mit;
+            mainProgram = "earshot-server";
+          };
+        };
               in
       {
+        packages.web = web;
+        packages.server = server;
+
+        # The server as a container image, for ~/src/home-services:
+        #   nix build .#docker && docker load < result
+        # The library lives in /data; it listens on port 8790.
+        packages.docker = pkgs.dockerTools.buildLayeredImage {
+          name = "earshot";
+          tag = "latest";
+          contents = [ pkgs.cacert ];
+          extraCommands = "mkdir -p data tmp && chmod 1777 tmp";
+          config = {
+            Cmd = [ "${server}/bin/earshot-server" ];
+            Env = [
+              "EARSHOT_LISTEN=0.0.0.0:8790"
+              "EARSHOT_DATA_DIR=/data"
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            ];
+            ExposedPorts."8790/tcp" = { };
+            Volumes."/data" = { };
+          };
+        };
+
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "earshot";
           version = "0.1.0";
-          src = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./build.rs ./src ./qml ./native ./packaging ];
-          };
+          inherit src;
           cargoLock.lockFile = ./Cargo.lock;
 
           nativeBuildInputs = [ qmake pkgs.pkg-config pkgs.qt6.wrapQtAppsHook pkgs.rustPlatform.bindgenHook ];
@@ -64,6 +125,9 @@
           postInstall = ''
             install -Dm644 packaging/earshot.desktop $out/share/applications/earshot.desktop
             install -Dm644 packaging/earshot.svg $out/share/icons/hicolor/scalable/apps/earshot.svg
+            # The web version, for "Open the web version" in the settings menu.
+            mkdir -p $out/share/earshot
+            ln -s ${web} $out/share/earshot/web
           '';
 
           postFixup = ''
@@ -80,6 +144,12 @@
         apps.default = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/earshot";
+        };
+
+        # The web version on this computer: nix run .#server, then open http://127.0.0.1:8790/
+        apps.server = {
+          type = "app";
+          program = "${server}/bin/earshot-server";
         };
 
         devShells.default = pkgs.mkShell {

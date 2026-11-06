@@ -1,0 +1,12 @@
+/* Saved albums (qml/LibraryAlbumsPage.qml) and the phone's Library tab */
+.albums-sort { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.albums-count { margin-right: 12px; }
+@media (max-width: 760px) {
+  /* Two covers a row on phones, rather than one huge one */
+  .albums .shelf:not(.list) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+}
+.library-list {display: flex; flex-direction: column; gap: 2px; }
+.library-list .nav-item { min-height: 48px; font-size: 15px; }
+.library-list .nav-item .detail { font-size: 13px; }
+.library-list .nav-heading { margin-left: 12px; }
+.library-list .sidebar-hint { margin: 12px; }

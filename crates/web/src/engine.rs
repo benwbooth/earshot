@@ -233,17 +233,17 @@ impl Engine {
         post("engine-yt", &json!({ "event": "command", "func": func, "args": args, "id": 1, "channel": "widget" }), "https://www.youtube.com");
     }
 
-    fn youtube_frame(&self) {
-        if frame("engine-yt").is_some() {
-            return;
-        }
+    /// Makes YouTube's player with its video in it (an empty player never answers).
+    fn youtube_frame(&self, id: &str, start: f64) {
         let document = window().document().expect("document");
         let f: HtmlIFrameElement = document.create_element("iframe").expect("iframe").unchecked_into();
         f.set_id("engine-yt");
         let _ = f.set_attribute("allow", "autoplay; encrypted-media");
         let o = encode(&origin());
         f.set_src(&format!(
-            "https://www.youtube.com/embed/?enablejsapi=1&autoplay=1&controls=0&disablekb=1&fs=0&playsinline=1&rel=0&iv_load_policy=3&origin={o}&widget_referrer={o}"
+            "https://www.youtube.com/embed/{}?enablejsapi=1&autoplay=1&start={}&controls=0&disablekb=1&fs=0&playsinline=1&rel=0&iv_load_policy=3&origin={o}&widget_referrer={o}",
+            encode(id),
+            start.floor()
         ));
         // The player answers once it knows someone is listening; keep asking until it does.
         let engine = *self;
@@ -268,7 +268,7 @@ impl Engine {
 
     fn on_youtube(&self, data: &Value) {
         match data["event"].as_str().unwrap_or("") {
-            "onReady" | "initialDelivery" => {
+            "onReady" | "initialDelivery" | "alreadyInitialized" => {
                 if !self.yt_ready.get_value() {
                     self.yt_ready.set_value(true);
                     self.yt_command("setVolume", json!([self.volume.get_value()]));
@@ -318,15 +318,17 @@ impl Engine {
         }
     }
 
+    /// A fresh player for every video: once YouTube's player has refused a
+    /// video (its owner blocks embedding) it won't take another one.
     pub fn load(&self, id: &str, start: f64) {
         self.switch(Mode::YouTube);
         self.reset(id.to_owned(), start);
-        self.youtube_frame();
-        if self.yt_ready.get_value() {
-            self.yt_command("loadVideoById", json!([{ "videoId": id, "startSeconds": start, "suggestedQuality": "small" }]));
-        } else {
-            self.yt_pending.set_value(Some((id.to_owned(), start)));
+        if let Some(old) = frame("engine-yt") {
+            old.remove();
         }
+        self.yt_ready.set_value(false);
+        self.yt_pending.set_value(None);
+        self.youtube_frame(id, start);
     }
 
     // Plain audio files (Bandcamp, the Internet Archive)
@@ -367,14 +369,6 @@ impl Engine {
             "https://w.soundcloud.com/player/?url={}&auto_play=true&visual=false",
             encode(&format!("https://api.soundcloud.com/tracks/{track_id}"))
         ));
-        let engine = *self;
-        let on_load = Closure::<dyn Fn()>::new(move || {
-            for event in ["ready", "play", "pause", "finish", "playProgress", "error"] {
-                engine.sc("addEventListener", json!(event));
-            }
-        });
-        f.set_onload(Some(on_load.as_ref().unchecked_ref()));
-        on_load.forget();
         let _ = host().append_child(&f);
     }
 
@@ -384,6 +378,10 @@ impl Engine {
         }
         match data["method"].as_str().unwrap_or("") {
             "ready" => {
+                // The widget only takes listeners once it's ready (it says so by itself).
+                for event in ["play", "pause", "finish", "playProgress", "error"] {
+                    self.sc("addEventListener", json!(event));
+                }
                 self.sc("setVolume", json!(self.volume.get_value()));
                 self.sc("getDuration", Value::Null);
                 let start = self.start.get_value();

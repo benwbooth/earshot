@@ -1,0 +1,17 @@
+/* Made for you (qml/ForYouPage.qml). The hero and blurb are in bandcamp.css. */
+.foryou .intro { display: flex; align-items: flex-end; gap: 16px; }
+.foryou .intro-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.foryou .intro .pill { flex: none; }
+.foryou .making, .foryou .note { color: var(--text-muted); font-size: var(--font-body); }
+
+/* The mixes, up to four across; the chosen one has a white edge */
+.foryou .mixes { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(min(244px, 100%), calc((100% - 48px) / 4)), 1fr)); gap: 16px; }
+.foryou .mix.selected .tile { outline: 2px solid var(--text); outline-offset: -2px; }
+
+.foryou .mix-songs, .foryou .album-section { display: flex; flex-direction: column; gap: 12px; }
+.foryou .album-section { margin-top: 16px; }
+.foryou .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+
+@media (max-width: 760px) {
+  .foryou .intro { flex-direction: column; align-items: flex-start; }
+}

@@ -134,18 +134,26 @@ pub fn tag(slug: &str, slice: &str, cursor: &str) -> Result<Value, String> {
         .unwrap_or_default()
         .iter()
         .filter_map(|item| {
-            let url = item["item_url"].as_str()?.split('?').next()?.to_owned();
-            let image = item.pointer("/primary_image/image_id").and_then(Value::as_u64).unwrap_or(0);
+            // Bandcamp has answered both with snake_case names and, lately, camelCase ones.
+            let field = |snake: &str, camel: &str| if item[snake].is_null() { item[camel].clone() } else { item[snake].clone() };
+            let url = field("item_url", "itemUrl").as_str()?.split('?').next()?.to_owned();
+            let image = item
+                .pointer("/primary_image/image_id")
+                .or_else(|| item.pointer("/primaryImage/imageId"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let artist = field("album_artist", "albumArtist");
+            let band = field("band_name", "bandName");
             Some(json!({
                 "id": format!("bc:{url}"),
                 "title": item["title"],
-                "artist": item["album_artist"].as_str().or(item["band_name"].as_str()).unwrap_or(""),
+                "artist": artist.as_str().filter(|a| !a.is_empty()).or(band.as_str()).unwrap_or(""),
                 "artistId": "",
                 "cover": art(image, 2),
                 "coverBig": art(image, 16),
                 "year": "",
                 "kind": "bandcamp",
-                "location": item["band_location"],
+                "location": field("band_location", "bandLocation"),
             }))
         })
         .collect();

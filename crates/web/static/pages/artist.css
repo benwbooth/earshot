@@ -1,0 +1,18 @@
+/* Artist (qml/ArtistPage.qml) */
+.artist-page { padding-top: 0; }
+.artist-hero { height: 340px; margin: 0 calc(-1 * var(--page-padding)) -12px; overflow: hidden; }
+.artist-photo { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.85; }
+.artist-shade { position: absolute; inset: 0; background: linear-gradient(rgba(0, 0, 0, 0.1), rgba(13, 15, 20, 0.6) 60%, var(--background)); }
+.artist-heading { position: absolute; left: var(--page-padding); right: var(--page-padding); bottom: 24px; display: flex; flex-direction: column; gap: 6px; }
+.artist-name { color: #fff; font-size: 64px; font-weight: 900; letter-spacing: -1.5px; line-height: 1.2; overflow-wrap: anywhere; }
+.artist-about { color: rgba(255, 255, 255, 0.8); font-size: 15px; }
+.artist-actions { display: flex; align-items: center; gap: 14px; }
+.see-more { align-self: flex-start; margin-left: 12px; color: var(--text-muted); font-weight: 600; }
+.see-more:hover { color: var(--text); }
+.artist-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 760px) {
+  .artist-hero { height: 260px; }
+  .artist-name { font-size: 40px; letter-spacing: -1px; }
+  .artist-page .shelf.albums:not(.list) { --min: 140px !important; --gap: 16px !important; }
+}

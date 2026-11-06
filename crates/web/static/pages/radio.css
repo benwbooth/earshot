@@ -1,0 +1,21 @@
+/* Reddit radio (qml/RadioPage.qml) */
+.page.radio { gap: 18px; }
+.radio .wash { height: 320px; }
+.radio .lead { margin-top: -10px; }
+.station-group { display: flex; flex-direction: column; gap: 8px; }
+.station-group-name { color: var(--text-faint); font-size: 11px; font-weight: 600; letter-spacing: 1.2px; }
+.stations { display: flex; flex-wrap: wrap; gap: 8px; }
+.station { display: inline-flex; }
+.radio-head { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
+.radio-title { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+.radio-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.radio-name .name { font-size: var(--font-title); font-weight: 700; overflow-wrap: anywhere; }
+.radio-actions { display: flex; flex-wrap: wrap; gap: 16px; }
+.radio-wait {
+  padding: 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-muted); font-size: var(--font-body);
+}
+@media (max-width: 760px) {
+  .radio-head { margin-top: 8px; }
+  .radio-actions { gap: 8px; }
+}

@@ -1,0 +1,37 @@
+/* Search (qml/SearchPage.qml) */
+.page.search { container: search / inline-size; }
+/* Measures the shelves' width; takes no room. */
+.page.search > .search-measure { position: absolute; left: var(--page-padding); right: var(--page-padding); top: 0; height: 0; }
+
+.search-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.search-note { color: var(--text-muted); font-size: var(--font-body); overflow-wrap: anywhere; }
+
+/* Top result beside the first songs */
+.top-and-songs { display: flex; align-items: flex-start; gap: 24px; }
+.top-and-songs .section-header { margin-top: 0; }
+.top-column { flex: none; width: 380px; display: flex; flex-direction: column; gap: 12px; }
+.songs-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.top-result {
+  position: relative; display: flex; flex-direction: column; gap: 10px; height: 240px; padding: 20px;
+  border-radius: var(--radius-large); background: var(--surface); transition: background-color 120ms;
+}
+.top-result:hover { background: var(--surface-hover); }
+.top-result > .cover { width: 100px; height: 100px; }
+.top-result .grow { flex: 1; }
+.top-result .top-name { font-size: 28px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.top-result .top-kind { color: var(--text-muted); font-size: var(--font-body); }
+.top-result .icon-button { position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 140ms; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.top-result:hover .icon-button { opacity: 1; }
+/* The Qt app shows the top result only when the page is wider than 980 px. */
+@container search (max-width: 916px) { .top-column { display: none; } }
+
+/* Bandcamp, SoundCloud, Mixcloud, the Internet Archive */
+.search-service { display: flex; flex-direction: column; gap: 16px; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Phones: the tabs scroll sideways on their own instead of taking four rows */
+@media (max-width: 760px) {
+  .search-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--page-padding)); padding: 0 var(--page-padding); }
+  .search-tabs::-webkit-scrollbar { display: none; }
+  .top-result .icon-button { opacity: 1; }
+}

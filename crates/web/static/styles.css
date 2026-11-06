@@ -204,7 +204,8 @@ h1, h2, h3, p { margin: 0; }
 }
 .nav-heading.with-buttons { margin-bottom: 4px; }
 .nav-heading span { flex: 1; }
-.playlists { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+.playlists { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.playlists:hover { scrollbar-color: var(--surface-hover) transparent; }
 .sidebar-hint { margin: 12px; color: var(--text-faint); font-size: 13px; }
 .sidebar-handle { position: absolute; top: 0; right: -3px; width: 6px; bottom: 0; cursor: col-resize; z-index: 5; }
 .sidebar-handle:hover, .sidebar-handle.active { background: rgba(255, 255, 255, 0.06); }
@@ -231,8 +232,8 @@ h1, h2, h3, p { margin: 0; }
   gap: calc(var(--gap) + 8px) var(--gap);
 }
 .shelf.list { grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); row-gap: 8px; }
-.shelf.one-row { grid-template-rows: auto; grid-auto-rows: 0; row-gap: 0; overflow: hidden; padding: 10px; margin: -10px; }
-.shelf.one-row > * { min-height: 0; }
+/* Phones: smaller album covers, two or more across (PHONE_CARD in components.rs) */
+@media (max-width: 760px) { .shelf.albums:not(.list) { --min: 140px !important; } }
 
 .album-card { position: relative; display: block; border-radius: 12px; padding: 10px; margin: -10px; transition: background-color 120ms; }
 .album-card:hover { background: var(--surface-hover); }
@@ -317,6 +318,7 @@ h1, h2, h3, p { margin: 0; }
 .row-album { flex: 2; min-width: 0; color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
 a.row-album:hover { color: var(--text); text-decoration: underline; }
 .track-header .row-album, .track-header .row-text { font-size: 11px; }
+.track-header .row-cover { height: auto; }
 .row-like { width: 32px; flex: none; }
 .track-row .row-like { opacity: 0; }
 .track-row:hover .row-like, .track-row .row-like.active, .track-row .row-like:has(.icon[style*="heart-filled"]) { opacity: 1; }
@@ -411,6 +413,8 @@ a.song-artist:hover { color: var(--text); }
   .brand { width: auto; }
   .brand span { display: none; }
   .search-box { max-width: none; }
+  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar .spacer { display: none; }
   .settings-anchor { margin-right: 0; }
   .page { padding-top: 24px; }
   .playerbar { grid-template-columns: 1fr auto; min-height: 64px; padding: 8px 8px 10px 10px; gap: 8px; }

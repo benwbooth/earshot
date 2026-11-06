@@ -210,6 +210,8 @@ pub struct App {
     navigate: StoredValue<Option<Callback<String>>>,
     /// The search box's text, kept so it matches the search page.
     pub query: RwSignal<String>,
+    /// Tags seen on Bandcamp albums opened this visit ({slug, name}), for the tag filter.
+    pub seen_bandcamp_tags: RwSignal<Vec<Value>>,
 }
 
 pub fn app() -> App {
@@ -233,6 +235,7 @@ impl App {
             player: Player::new(),
             navigate: StoredValue::new(None),
             query: RwSignal::new(String::new()),
+            seen_bandcamp_tags: RwSignal::new(Vec::new()),
         };
         // The library, again whenever it changes.
         Effect::new(move |_| {
@@ -353,6 +356,16 @@ impl App {
                     }
                 }
                 Err(message) => app.notify(message),
+            }
+        });
+    }
+
+    pub fn remember_bandcamp_tags(&self, tags: &[Value]) {
+        self.seen_bandcamp_tags.update(|seen| {
+            for tag in tags {
+                if !seen.iter().any(|known| known["slug"] == tag["slug"]) {
+                    seen.push(tag.clone());
+                }
             }
         });
     }

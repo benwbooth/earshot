@@ -1,0 +1,4 @@
+/* YouTube, SoundCloud, Mixcloud, the Internet Archive (qml/ServicePage.qml).
+   The hero, blurb and tag box are in bandcamp.css. */
+.service-page .genre-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.service-page .actions { display: flex; align-items: center; gap: 14px; }

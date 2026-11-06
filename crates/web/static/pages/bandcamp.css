@@ -1,0 +1,28 @@
+/* Bandcamp (qml/BandcampPage.qml, qml/BandcampTagPage.qml, qml/TagChips.qml) */
+/* These pages start a little lower, as in the Qt app */
+@media (min-width: 761px) { .bandcamp, .bandcamp-tag, .service-page, .foryou { padding-top: 56px; } }
+.bandcamp .hero, .service-page .hero, .foryou .hero { font-size: 48px; letter-spacing: -1px; overflow-wrap: anywhere; }
+.bandcamp-tag .hero { font-size: 56px; letter-spacing: -1.2px; overflow-wrap: anywhere; }
+.bandcamp .blurb, .bandcamp-tag .blurb, .service-page .blurb, .foryou .blurb { color: var(--text-muted); font-size: 15px; }
+
+/* The tag box: any tag at all */
+.tag-field { position: relative; display: block; width: 100%; max-width: 520px; height: 44px; }
+.tag-field > .icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.tag-field input {
+  width: 100%; height: 100%; padding: 0 16px 0 44px; border-radius: 22px; outline: none;
+  background: var(--surface); border: 1px solid var(--border); font-size: 15px; text-overflow: ellipsis;
+}
+.tag-field input::placeholder { color: var(--text-faint); }
+.tag-field input:focus { background: var(--surface-raised); border-color: var(--text); }
+
+.tag-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.genre-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(224px, 100%), 1fr)); gap: 16px; }
+.bandcamp .styles { display: flex; flex-direction: column; gap: 10px; }
+
+.bandcamp-tag .slices { display: flex; flex-wrap: wrap; gap: 8px; }
+.bandcamp-tag .more { color: var(--text-muted); font-size: var(--font-body); }
+
+@media (max-width: 760px) {
+  .bandcamp .hero, .service-page .hero, .foryou .hero { font-size: 34px; letter-spacing: -0.7px; }
+  .bandcamp-tag .hero { font-size: 38px; letter-spacing: -0.8px; }
+}

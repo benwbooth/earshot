@@ -202,8 +202,12 @@ pub fn SectionHeader(
     }
 }
 
+/// Album covers across a phone (narrower than the desktop's 168 px).
+pub const PHONE_CARD: f64 = 140.0;
+
 /// A responsive grid: as many columns as fit (`min` px per card). Album
-/// shelves follow the list view setting; `rows` limits it to that many rows.
+/// shelves follow the list view setting; `rows` limits it to that many rows
+/// of however many cards fit across.
 #[component]
 pub fn Shelf(
     #[prop(default = 168)] min: u32,
@@ -212,13 +216,46 @@ pub fn Shelf(
     #[prop(optional)] rows: Option<u32>,
     children: Children,
 ) -> impl IntoView {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
     let app = app();
+    let id = format!("shelf-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    let node = NodeRef::<leptos::html::Div>::new();
+    let width = RwSignal::new(0.0);
+    let measure = move || {
+        if let Some(element) = node.get_untracked() {
+            width.set(element.client_width() as f64);
+        }
+    };
+    if rows.is_some() {
+        // Measured once shown, and again when the window or the sidebar changes size.
+        Effect::new(move |_| {
+            node.track();
+            app.sidebar_width.track();
+            request_animation_frame(measure);
+        });
+        let resized = window_event_listener(leptos::ev::resize, move |_| measure());
+        on_cleanup(move || resized.remove());
+    }
+    let selector = id.clone();
+    let hide_extra = move || {
+        let (Some(rows), w) = (rows, width.get()) else { return String::new() };
+        if w <= 0.0 {
+            return String::new();
+        }
+        let phone = crate::state::window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(1200.0) <= 760.0;
+        let card = if albums && app.album_list.get() { 380.0 } else if albums && phone { PHONE_CARD } else { min as f64 };
+        let columns = ((w + gap as f64) / (card + gap as f64)).floor().max(1.0) as u32;
+        format!("#{selector} > :nth-child(n+{}) {{ display: none; }}", columns * rows + 1)
+    };
     view! {
+        <style>{hide_extra}</style>
         <div
+            id=id
+            node_ref=node
             class="shelf"
             class:albums=albums
             class:list=move || albums && app.album_list.get()
-            class:one-row=rows == Some(1)
             style=format!("--min:{min}px;--gap:{gap}px")
         >
             {children()}

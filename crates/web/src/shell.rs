@@ -154,7 +154,13 @@ fn NavItem(
     let location = use_location();
     let target = href.clone();
     let selected = move || {
-        let here = format!("{}{}", location.pathname.get(), location.search.get());
+        // The router's search part comes without its "?".
+        let search = location.search.get();
+        let here = if search.is_empty() || search.starts_with('?') {
+            format!("{}{search}", location.pathname.get())
+        } else {
+            format!("{}?{search}", location.pathname.get())
+        };
         if target == "/" { here == "/" } else if target.contains('?') { here == target } else { here == target || here.starts_with(&format!("{target}?")) || here.starts_with(&format!("{target}/")) }
     };
     view! {
