@@ -33,6 +33,7 @@ fn main() {
         QmlFile::from("qml/SectionHeader.qml"),
         QmlFile::from("qml/HorizontalShelf.qml"),
         QmlFile::from("qml/StatusView.qml"),
+        QmlFile::from("qml/Spinner.qml"),
         QmlFile::from("qml/TextPrompt.qml"),
         QmlFile::from("qml/SeekSlider.qml"),
         QmlFile::from("qml/HomePage.qml"),

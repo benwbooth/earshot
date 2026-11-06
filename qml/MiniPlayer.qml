@@ -107,7 +107,7 @@ Window {
                                 Icon { anchors.centerIn: parent; name: playButton.iconName; size: 16; color: Theme.background }
                             }
                         }
-                        BusyIndicator { anchors.fill: parent; visible: Player.loading; running: visible }
+                        Spinner { anchors.fill: parent; visible: Player.loading }
                     }
                     IconButton { iconName: "next"; iconSize: 16; color: Theme.text; enabled: Player.hasNext; onClicked: Player.next(false) }
                     Item { Layout.fillWidth: true }

@@ -52,16 +52,42 @@ pub fn IconButton(
     }
 }
 
+/// A pink play button. While the music it started (`ours`) is playing, or on
+/// its way, it shows pause and says "Pause", and a click pauses or carries
+/// on; otherwise a click runs `on_play`.
+#[component]
+pub fn PlayButton(
+    #[prop(into)] ours: Signal<bool>,
+    #[prop(into)] tip: String,
+    #[prop(default = 24)] size: u32,
+    #[prop(optional, into)] disabled: Signal<bool>,
+    #[prop(optional, into)] class: String,
+    #[prop(into)] on_play: Callback<MouseEvent>,
+) -> impl IntoView {
+    let player = app().player;
+    let pause = Memo::new(move |_| ours.get() && player.busy());
+    view! {
+        <IconButton size=size filled=true class=class disabled=disabled
+            icon=Signal::derive(move || if pause.get() { "pause".to_owned() } else { "play".to_owned() })
+            tip=Signal::derive(move || if pause.get() { "Pause".to_owned() } else { tip.clone() })
+            on_click=move |event: MouseEvent| {
+                // Inside a card's link: play rather than open it.
+                event.prevent_default();
+                if ours.get_untracked() { player.toggle() } else { on_play.run(event) }
+            }/>
+    }
+}
+
 #[component]
 pub fn PillButton(
     #[prop(into)] text: Signal<String>,
-    #[prop(optional, into)] icon: String,
+    #[prop(optional, into)] icon: Signal<String>,
     #[prop(optional)] primary: bool,
     #[prop(optional, into)] checked: Signal<bool>,
     #[prop(optional, into)] disabled: Signal<bool>,
     #[prop(into)] on_click: Callback<MouseEvent>,
 ) -> impl IntoView {
-    let has_icon = !icon.is_empty();
+    let has_icon = move || !icon.with(String::is_empty);
     let icon_size = if primary { 18 } else { 16 };
     view! {
         <button
@@ -71,7 +97,7 @@ pub fn PillButton(
             disabled=move || disabled.get()
             on:click=move |event| on_click.run(event)
         >
-            {has_icon.then(|| view! { <Icon name=icon.clone() size=icon_size/> })}
+            {move || has_icon().then(|| view! { <Icon name=icon size=icon_size/> })}
             <span>{move || text.get()}</span>
         </button>
     }
@@ -148,7 +174,6 @@ pub fn AlbumCard(
     let player = app.player;
     let seed = if seed.is_empty() { title.clone() } else { seed };
     let playing_this = Memo::new(move |_| player.playing_album(&album_id));
-    let pause = Signal::derive(move || playing_this.get() && player.playing());
     view! {
         <a class="album-card" class:list=move || app.album_list.get() class:round=round class:playing=move || playing_this.get() href=href>
             <div class="art">
@@ -156,13 +181,7 @@ pub fn AlbumCard(
                 {(playable && on_play.is_some()).then(|| {
                     let on_play = on_play.unwrap();
                     view! {
-                        <IconButton size=20 filled=true class="card-play"
-                            icon=Signal::derive(move || if pause.get() { "pause".to_owned() } else { "play".to_owned() })
-                            tip=Signal::derive(move || if pause.get() { "Pause".to_owned() } else { "Play".to_owned() })
-                            on_click=move |event: MouseEvent| {
-                                event.prevent_default();
-                                if playing_this.get_untracked() { player.toggle() } else { on_play.run(()) }
-                            }/>
+                        <PlayButton size=20 class="card-play" tip="Play" ours=playing_this on_play=move |_| on_play.run(())/>
                     }
                 })}
             </div>

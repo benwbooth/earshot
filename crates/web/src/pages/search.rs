@@ -15,10 +15,9 @@ use leptos_router::hooks::{use_navigate, use_query_map};
 use serde_json::{Value, json};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
-use web_sys::MouseEvent;
 
 use crate::api;
-use crate::components::{AlbumCard, Cover, IconButton, PillButton, SectionHeader, Shelf, StatusView, TrackList};
+use crate::components::{AlbumCard, Cover, PillButton, PlayButton, SectionHeader, Shelf, StatusView, TrackList};
 use crate::state::{album_href, app, artist_href, bandcamp_tag_href, encode, list, long_duration, num, s, search_href, window};
 
 const TABS: [(&str, &str); 9] = [
@@ -561,12 +560,7 @@ fn top_result(search: Search) -> impl IntoView {
         let (theirs, artist_name, album_id) = (theirs.clone(), artist_name.clone(), album_id.clone());
         Memo::new(move |_| if show_artist { player.playing_from(&artist_name, &theirs) } else { player.playing_album(&album_id) })
     };
-    let play = move |event: MouseEvent| {
-        event.prevent_default();
-        if playing_this.get_untracked() {
-            player.toggle();
-            return;
-        }
+    let play = move |_| {
         match &album {
             _ if show_artist => player.play_tracks(theirs.clone(), 0, artist_name.clone(), None),
             Some(album) => app.play_album(album_id.clone(), s(album, "title"), false),
@@ -579,8 +573,7 @@ fn top_result(search: Search) -> impl IntoView {
             <div class="grow"></div>
             <div class="top-name">{name}</div>
             <div class="top-kind">{kind}</div>
-            <IconButton size=22 filled=true tip="Play" on_click=play
-                icon=Signal::derive(move || if playing_this.get() && player.playing() { "pause".to_owned() } else { "play".to_owned() })/>
+            <PlayButton size=22 tip="Play" ours=playing_this on_play=play/>
         </a>
     }
 }

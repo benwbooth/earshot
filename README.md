@@ -124,9 +124,12 @@ another upload instead of playing on youtube.com's page. The waveform is always 
 
 - Bandcamp and Internet Archive songs are measured in the browser (their audio passes through Earshot's server,
   which those sites require for a page to measure it).
-- YouTube, SoundCloud and Mixcloud play in those sites' own players, which a page can't hear. In a browser on the
-  computer running the server (http://localhost:…), the server measures the speakers instead, as the app does.
-- Anywhere else (a phone playing YouTube, say) the bars stay still.
+- YouTube and SoundCloud play in those sites' own players, which a page can't hear, so the server fetches the
+  song's audio itself, measures it, and the page plays those levels back in time with the song, on any device.
+  YouTube sometimes sends only the first minute or so without a sign-in; after that the bars rest.
+- Mixcloud scrambles its audio against downloading, so it isn't measured. Only then does the page fall back to
+  the speakers of the computer running the server (the PipeWire socket above); otherwise the bars rest.
+- When the bars rest, their tooltip says why.
 
 ## Build and run (Nix)
 

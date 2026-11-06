@@ -7,7 +7,7 @@ use leptos_router::hooks::use_query_map;
 use serde_json::{Value, json};
 
 use crate::api::{Load, fetch};
-use crate::components::{AlbumCard, IconButton, PillButton, SectionHeader, Shelf, StatusView, TrackList};
+use crate::components::{AlbumCard, PillButton, PlayButton, SectionHeader, Shelf, StatusView, TrackList};
 use crate::pages::bandcamp::TagField;
 use crate::state::{album_href, app, encode, list, s, service_href};
 
@@ -150,15 +150,11 @@ fn FeaturedSection(section: Value, on: &'static str, #[prop(into)] open: Signal<
     let songs_view = has_songs.then(|| {
         let (play_name, play_route) = (name.clone(), route.clone());
         let (shuffle_name, shuffle_route) = (name.clone(), route.clone());
-        let icon_name = name.clone();
+        let ours_name = name.clone();
         view! {
             <div class="actions">
-                <IconButton size=22 filled=true tip="Play all"
-                    icon=Signal::derive(move || tracks.with(|list| player.play_icon(&icon_name, list)))
-                    on_click=move |_| {
-                        let list = tracks.get_untracked();
-                        player.play_or_toggle(&play_name, &list, || player.play_tracks(list.clone(), 0, play_name.clone(), Some(play_route.clone())))
-                    }/>
+                <PlayButton size=22 tip="Play all" ours=Signal::derive(move || tracks.with(|list| player.playing_from(&ours_name, list)))
+                    on_play=move |_| player.play_tracks(tracks.get_untracked(), 0, play_name.clone(), Some(play_route.clone()))/>
                 <PillButton text="Shuffle" icon="shuffle"
                     on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), shuffle_name.clone(), Some(shuffle_route.clone()))/>
             </div>
@@ -279,12 +275,8 @@ pub fn ServicePage() -> impl IntoView {
             </Show>
             <Show when=move || !tracks.with(Vec::is_empty)>
                 <div class="actions">
-                    <IconButton size=22 filled=true tip="Play all"
-                        icon=Signal::derive(move || tracks.with(|list| player.play_icon(&context.get(), list)))
-                        on_click=move |_| {
-                            let (list, name) = (tracks.get_untracked(), context.get_untracked());
-                            player.play_or_toggle(&name, &list, || player.play_tracks(list.clone(), 0, name.clone(), Some(service_href(id.get_untracked()))))
-                        }/>
+                    <PlayButton size=22 tip="Play all" ours=Signal::derive(move || tracks.with(|list| player.playing_from(&context.get(), list)))
+                        on_play=move |_| player.play_tracks(tracks.get_untracked(), 0, context.get_untracked(), Some(service_href(id.get_untracked())))/>
                     <PillButton text="Shuffle" icon="shuffle"
                         on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), context.get_untracked(), Some(service_href(id.get_untracked())))/>
                 </div>

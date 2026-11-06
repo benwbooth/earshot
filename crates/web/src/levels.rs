@@ -2,13 +2,21 @@
 //! itself, never made up:
 //!
 //! - Bandcamp and Internet Archive songs play from an audio file (passed
-//!   through Earshot's server), which the browser can measure directly.
-//! - YouTube, SoundCloud and Mixcloud play in those sites' own players, which
-//!   a page can't hear, so the server measures the speakers of the computer
-//!   it runs on instead, as the Qt app does. (A page can't tell whether it's
-//!   on that computer when opened by its network address, so it always asks.)
-//! - A phone playing YouTube by itself, say, isn't heard by that computer, so
-//!   its bars stay still.
+//!   through Earshot's server), which the browser measures as it plays.
+//! - YouTube and SoundCloud play in those sites' own players, which a page
+//!   can't hear. Earshot's server reads the same song's audio from the site,
+//!   measures it ahead (`/api/envelope`, 25 frames a second) and the bars play
+//!   those levels back at the player's position, so they move with the music
+//!   on any device. (Audio files use this too if the browser can't measure.)
+//!   When YouTube shares only the start of a video's audio with the server
+//!   (it asks for a sign-in for many videos), the server measures the same
+//!   song on SoundCloud or Bandcamp instead; failing that, only the start
+//!   YouTube gave moves the bars.
+//! - Mixcloud doesn't let its audio be read, and a song the server couldn't
+//!   read falls back to the speakers of the computer the server runs on
+//!   (`/api/levels`), which only hear it in a browser on that computer.
+//!
+//! When nothing can be measured the bars rest, and their tooltip says why.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -22,11 +30,8 @@ use crate::state::window;
 pub const BANDS: usize = 6;
 /// Centre frequencies of the six bars, as in the Qt app.
 const CENTRES: [f64; BANDS] = [70.0, 180.0, 450.0, 1100.0, 2800.0, 7000.0];
-
-/// Why the bars aren't moving, when they can't be measured.
-pub const CANT_HEAR: &str = "The waveform can't hear this site's player in a browser on this device";
-/// Where the bars come from for YouTube, SoundCloud and Mixcloud.
-const FROM_SPEAKERS: &str = "Measured from the speakers of the computer running Earshot";
+/// Frames a second in the server's measurements.
+const FPS: f64 = 25.0;
 
 /// The browser's own measuring of the audio file, made on the first click
 /// (browsers only allow sound through it after one).
@@ -73,9 +78,41 @@ impl Meter {
     }
 }
 
+/// One song's levels from the server, as they arrive.
+struct Envelope {
+    id: String,
+    events: EventSource,
+    /// Six bytes a frame, 0..255.
+    levels: Vec<u8>,
+    done: bool,
+    failed: Option<String>,
+    /// Why the levels end before the song does, if they do.
+    cut_short: Option<String>,
+    /// Where the server read the audio, when it isn't the song's own player's.
+    source: Option<String>,
+    _handlers: Vec<Closure<dyn Fn(MessageEvent)>>,
+}
+
+impl Drop for Envelope {
+    fn drop(&mut self) {
+        self.events.close();
+    }
+}
+
+/// Where the song's position was last heard from its player, to follow it
+/// between the players' reports (a few a second).
+#[derive(Default)]
+struct Clock {
+    id: String,
+    position: f64,
+    at: f64,
+}
+
 thread_local! {
     static METER: std::cell::RefCell<Option<Meter>> = const { std::cell::RefCell::new(None) };
     static SPEAKERS: std::cell::RefCell<Option<EventSource>> = const { std::cell::RefCell::new(None) };
+    static ENVELOPE: std::cell::RefCell<Option<Envelope>> = const { std::cell::RefCell::new(None) };
+    static CLOCK: std::cell::RefCell<Clock> = std::cell::RefCell::new(Clock::default());
 }
 
 /// Listens to the server's speaker measurements while needed.
@@ -104,6 +141,189 @@ fn speakers(on: bool, levels: RwSignal<[f64; BANDS]>) {
     });
 }
 
+/// Changes what [`ENVELOPE`] holds to `id`'s levels (asking the server for
+/// them), or to nothing.
+fn follow(id: Option<&str>, song: Option<&serde_json::Value>) {
+    let current = ENVELOPE.with(|cell| cell.borrow().as_ref().map(|e| e.id.clone()));
+    if current.as_deref() == id {
+        return;
+    }
+    ENVELOPE.with(|cell| cell.borrow_mut().take());
+    let Some(id) = id else { return };
+    // A YouTube video's title, artist and length, so the server can measure
+    // the same song elsewhere if YouTube won't hand the video over in full.
+    let mut address = format!("/api/envelope?id={}", encode(id));
+    if let Some(song) = song.filter(|_| !id.contains(':')) {
+        let text = |key: &str| song[key].as_str().unwrap_or("").to_owned();
+        address += &format!(
+            "&title={}&artist={}&duration={}",
+            encode(&text("title")),
+            encode(&text("artist")),
+            song["duration"].as_f64().unwrap_or(0.0)
+        );
+    }
+    let Ok(events) = EventSource::new(&address) else { return };
+    let with_mine = {
+        let id = id.to_owned();
+        move |change: &dyn Fn(&mut Envelope)| {
+            ENVELOPE.with(|cell| {
+                if let Some(envelope) = cell.borrow_mut().as_mut().filter(|e| e.id == id) {
+                    change(envelope);
+                }
+            })
+        }
+    };
+    let on_frames = {
+        let with_mine = with_mine.clone();
+        Closure::<dyn Fn(MessageEvent)>::new(move |event: MessageEvent| {
+            let text = event.data().as_string().unwrap_or_default();
+            let Some((first, data)) = text.split_once(' ') else { return };
+            let Ok(first) = first.parse::<usize>() else { return };
+            let Ok(bytes) = window().atob(data) else { return };
+            with_mine(&|envelope| {
+                // Frames in order; a reconnection starts again from the beginning.
+                if first * BANDS <= envelope.levels.len() {
+                    envelope.levels.truncate(first * BANDS);
+                    envelope.levels.extend(bytes.chars().map(|c| c as u32 as u8));
+                }
+            });
+        })
+    };
+    let on_done = {
+        let with_mine = with_mine.clone();
+        Closure::<dyn Fn(MessageEvent)>::new(move |event: MessageEvent| {
+            let text = event.data().as_string().unwrap_or_default();
+            let cut_short = text.split_once(' ').map(|(_, why)| why.to_owned()).filter(|why| !why.is_empty());
+            with_mine(&|envelope| {
+                envelope.done = true;
+                envelope.cut_short = cut_short.clone();
+                envelope.events.close();
+            })
+        })
+    };
+    let on_source = {
+        let with_mine = with_mine.clone();
+        Closure::<dyn Fn(MessageEvent)>::new(move |event: MessageEvent| {
+            let source = event.data().as_string();
+            with_mine(&|envelope| envelope.source = source.clone())
+        })
+    };
+    let on_failed = Closure::<dyn Fn(MessageEvent)>::new(move |event: MessageEvent| {
+        let reason = event.data().as_string().unwrap_or_default();
+        with_mine(&|envelope| {
+            envelope.done = true;
+            envelope.failed = Some(reason.clone());
+            envelope.events.close();
+        })
+    });
+    for (name, handler) in [("frames", &on_frames), ("done", &on_done), ("failed", &on_failed), ("source", &on_source)] {
+        let _ = events.add_event_listener_with_callback(name, handler.as_ref().unchecked_ref());
+    }
+    ENVELOPE.with(|cell| {
+        *cell.borrow_mut() = Some(Envelope {
+            id: id.to_owned(),
+            events,
+            levels: Vec::new(),
+            done: false,
+            failed: None,
+            cut_short: None,
+            source: None,
+            _handlers: vec![on_frames, on_done, on_failed, on_source],
+        })
+    });
+}
+
+/// What the bars show from the server's levels at `seconds` into the song.
+enum FromEnvelope {
+    Levels([f64; BANDS]),
+    /// Still being measured, up to this many seconds so far.
+    Measuring(f64),
+    Failed(String),
+    /// Past the end of what was measured (this many seconds), and why it
+    /// ended before the song did, if the site stopped sending its audio.
+    Ended(f64, Option<String>),
+    Missing,
+}
+
+fn envelope_at(seconds: f64) -> FromEnvelope {
+    ENVELOPE.with(|cell| {
+        let cell = cell.borrow();
+        let Some(envelope) = cell.as_ref() else { return FromEnvelope::Missing };
+        let frame = (seconds.max(0.0) * FPS).floor() as usize;
+        if let Some(bytes) = envelope.levels.get(frame * BANDS..(frame + 1) * BANDS) {
+            let mut targets = [0.0; BANDS];
+            for (target, byte) in targets.iter_mut().zip(bytes) {
+                *target = *byte as f64 / 255.0;
+            }
+            return FromEnvelope::Levels(targets);
+        }
+        let measured = envelope.levels.len() as f64 / BANDS as f64 / FPS;
+        match (&envelope.failed, envelope.done) {
+            (Some(reason), _) => FromEnvelope::Failed(reason.clone()),
+            (None, true) => FromEnvelope::Ended(measured, envelope.cut_short.clone()),
+            (None, false) => FromEnvelope::Measuring(measured),
+        }
+    })
+}
+
+/// The song's position now: the last one its player reported, moved on by
+/// the time since (players report a few times a second).
+fn position_now(player: &Player, playing: bool) -> f64 {
+    let id = player.engine.video_id.get_untracked();
+    let reported = player.engine.position.get_untracked();
+    let now = js_sys::Date::now();
+    CLOCK.with(|clock| {
+        let mut clock = clock.borrow_mut();
+        if clock.id != id || clock.position != reported {
+            *clock = Clock { id, position: reported, at: now };
+        } else if !playing {
+            clock.at = now;
+        }
+        // Never run on more than a few seconds past the last report.
+        reported + if playing { ((now - clock.at) / 1000.0).clamp(0.0, 3.0) } else { 0.0 }
+    })
+}
+
+/// Which site's audio the server measures, for the tooltip.
+fn site(id: &str) -> &'static str {
+    if id.starts_with("soundcloud:") {
+        "SoundCloud"
+    } else if id.starts_with("mixcloud:") {
+        "Mixcloud"
+    } else if id.starts_with("audio:") {
+        "the audio file"
+    } else {
+        "YouTube"
+    }
+}
+
+fn clock(seconds: f64) -> String {
+    let seconds = seconds.max(0.0) as u64;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+/// Rise fast, fall gently, like a VU meter (the Qt app's speeds, per 40 ms).
+fn approach(levels: RwSignal<[f64; BANDS]>, targets: [f64; BANDS]) {
+    levels.update(|levels| {
+        for (level, target) in levels.iter_mut().zip(targets) {
+            let speed = if target > *level { 0.75 } else { 0.3 };
+            *level += (target - *level) * speed;
+        }
+    });
+}
+
+fn rest(levels: RwSignal<[f64; BANDS]>) {
+    if levels.with_untracked(|l| l.iter().any(|v| *v > 0.0)) {
+        levels.set([0.0; BANDS]);
+    }
+}
+
+fn note(player: &Player, text: String) {
+    if player.levels_note.with_untracked(|note| *note != text) {
+        player.levels_note.set(text);
+    }
+}
+
 /// Keeps `player.levels` (and `player.levels_note`) up to date.
 pub fn run(player: Player) {
     // The audio file's meter needs a click first; the play button counts.
@@ -121,34 +341,83 @@ pub fn run(player: Player) {
 
     let tick = Closure::<dyn Fn()>::new(move || {
         let playing = player.engine.state.get_untracked() == 1;
+        let id = player.engine.video_id.get_untracked();
         let from_file = player.engine.playing_file();
-        speakers(playing && !from_file, player.levels);
+        let has_meter = METER.with(|meter| meter.borrow().is_some());
+        // The browser measures audio files itself when it can; everything else
+        // comes measured from the server (kept while paused, for resuming).
+        let measured_here = from_file && has_meter;
+        let song = player.current_untracked();
+        follow((!id.is_empty() && !measured_here).then_some(id.as_str()), song.as_ref());
+        let seconds = position_now(&player, playing);
+        let from_envelope = if measured_here { FromEnvelope::Missing } else { envelope_at(seconds) };
+        let failed = match &from_envelope {
+            FromEnvelope::Failed(reason) => Some(reason.clone()),
+            _ => None,
+        };
+        // The speakers of the server's computer, only when the song itself can't be measured.
+        speakers(playing && failed.is_some(), player.levels);
         if !playing {
-            if player.levels.with_untracked(|l| l.iter().any(|v| *v > 0.0)) {
-                player.levels.set([0.0; BANDS]);
-            }
-            player.levels_note.set(String::new());
+            rest(player.levels);
+            note(&player, String::new());
             return;
         }
-        if from_file {
-            let targets = METER.with(|meter| meter.borrow_mut().as_mut().map(Meter::measure));
-            match targets {
-                Some(targets) => {
-                    // Rise fast, fall gently, like a VU meter (the Qt app's speeds, per 40 ms).
-                    player.levels.update(|levels| {
-                        for (level, target) in levels.iter_mut().zip(targets) {
-                            let speed = if target > *level { 0.75 } else { 0.3 };
-                            *level += (target - *level) * speed;
-                        }
-                    });
-                    player.levels_note.set(String::new());
-                }
-                None => player.levels_note.set(CANT_HEAR.to_owned()),
+        if measured_here {
+            if let Some(targets) = METER.with(|meter| meter.borrow_mut().as_mut().map(Meter::measure)) {
+                approach(player.levels, targets);
+                note(&player, "Measured from the song's audio as it plays, in this browser".to_owned());
             }
-        } else {
-            player.levels_note.set(FROM_SPEAKERS.to_owned());
+            return;
+        }
+        let site = site(&id);
+        match from_envelope {
+            FromEnvelope::Levels(targets) => {
+                approach(player.levels, targets);
+                note(
+                    &player,
+                    match ENVELOPE.with(|cell| cell.borrow().as_ref().and_then(|e| e.source.clone())) {
+                        Some(source) => format!("{source} (read by Earshot's server), at the playing position"),
+                        None => format!("Measured from the song's own audio (read from {site} by Earshot's server), at the playing position"),
+                    },
+                );
+            }
+            FromEnvelope::Measuring(so_far) => {
+                rest(player.levels);
+                note(&player, format!("Earshot's server is measuring the song's audio from {site} (done up to {}); the bars move once it reaches {}", clock(so_far), clock(seconds)));
+            }
+            FromEnvelope::Ended(measured, cut_short) => {
+                rest(player.levels);
+                note(
+                    &player,
+                    match cut_short {
+                        Some(why) => format!("{why}, so only its first {} could be measured; the bars rest from there", clock(measured)),
+                        None => format!("The audio Earshot's server read from {site} ends at {}, before this point", clock(measured)),
+                    },
+                );
+            }
+            FromEnvelope::Missing => {
+                rest(player.levels);
+                note(&player, "Nothing to measure: no song is loaded".to_owned());
+            }
+            FromEnvelope::Failed(reason) => {
+                // The speakers' feed sets the bars by itself.
+                let silent = player.levels.with_untracked(|l| l.iter().all(|v| *v < 0.01));
+                let reason = reason.trim_end_matches('.');
+                note(
+                    &player,
+                    if silent {
+                        format!("{reason}. The speakers of the computer running Earshot are silent, so the bars rest")
+                    } else {
+                        format!("{reason}. Measured from the speakers of the computer running Earshot instead")
+                    },
+                );
+            }
         }
     });
     let _ = window().set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), 40);
     tick.forget();
+}
+
+fn encode(text: &str) -> String {
+    js_sys::encode_uri_component(text).as_string().unwrap_or_default()
 }

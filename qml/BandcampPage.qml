@@ -223,10 +223,12 @@ Flickable {
                         Layout.fillWidth: true
                         spacing: 14
                         PillButton {
+                            // Pause while it plays (started here, from its card or its page).
+                            readonly property bool ours: !!highlight.album && Player.playingAlbum(highlight.album.id)
                             primary: true
-                            iconName: "play"
-                            text: "Play"
-                            onClicked: Api.playAlbum(highlight.album.id, highlight.album.title)
+                            iconName: ours && Player.busy ? "pause" : "play"
+                            text: ours && Player.busy ? "Pause" : "Play"
+                            onClicked: ours ? Player.toggle() : Api.playAlbum(highlight.album.id, highlight.album.title)
                         }
                         PillButton {
                             visible: !!highlight.album && !!highlight.album.article

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use web_sys::MouseEvent;
 
 use crate::api;
-use crate::components::{AlbumCard, IconButton, PillButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
+use crate::components::{AlbumCard, PillButton, PlayButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
 use crate::state::{album_href, app, list, s};
 
 const TINTS: [&str; 4] = ["#7a5cff", "#ff5f7e", "#3db8ff", "#3ddc97"];
@@ -167,12 +167,8 @@ pub fn ForYouPage() -> impl IntoView {
                     <SectionHeader title=mix_title/>
                     <p class="note">{move || mix.with(|m| m.as_ref().map(|m| s(m, "subtitle")).unwrap_or_default())}</p>
                     <div class="actions">
-                        <IconButton size=22 filled=true tip="Play"
-                            icon=Signal::derive(move || mix_tracks.with(|tracks| player.play_icon(&mix_title.get(), tracks)))
-                            on_click=move |_| {
-                                let (tracks, title) = (mix_tracks.get_untracked(), mix_title.get_untracked());
-                                player.play_or_toggle(&title, &tracks, || player.play_tracks(tracks.clone(), 0, title.clone(), Some(ROUTE.into())))
-                            }/>
+                        <PlayButton size=22 tip="Play" ours=Signal::derive(move || mix_tracks.with(|tracks| player.playing_from(&mix_title.get(), tracks)))
+                            on_play=move |_| player.play_tracks(mix_tracks.get_untracked(), 0, mix_title.get_untracked(), Some(ROUTE.into()))/>
                         <PillButton text="Shuffle" icon="shuffle"
                             on_click=move |_| player.shuffle_tracks(mix_tracks.get_untracked(), mix_title.get_untracked(), Some(ROUTE.into()))/>
                         <PillButton text="Save as playlist" icon="plus" on_click=move |_| {

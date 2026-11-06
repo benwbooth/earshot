@@ -89,7 +89,7 @@ pub fn describe(code: i32) -> String {
         5 => "YouTube's player couldn't play this video.".into(),
         100 => "This video was removed or made private.".into(),
         101 | 150 | 153 => "This video's owner doesn't allow it to play outside youtube.com.".into(),
-        1001 => "Bandcamp's audio stopped loading.".into(),
+        1001 => "The song's audio stopped loading.".into(),
         1002 => "SoundCloud's player couldn't play this song.".into(),
         1003 => "Mixcloud's player couldn't play this show.".into(),
         other => format!("YouTube's player stopped (error {other})."),
@@ -349,6 +349,21 @@ impl Engine {
         let a = audio();
         // Through Earshot's server, so the browser may measure it for the waveform.
         a.set_src(&format!("/api/audio?url={}", encode(url)));
+        a.set_volume(self.volume.get_value() / 100.0);
+        if start > 0.0 {
+            a.set_current_time(start);
+        }
+        let _ = a.play();
+    }
+
+    /// A YouTube video's audio played from Earshot's server, for videos whose
+    /// owners don't let YouTube's player play them on other sites. It's still
+    /// the video (its id is kept), so it's remembered and played as usual.
+    pub fn load_youtube_audio(&self, id: &str, start: f64) {
+        self.switch(Mode::Audio);
+        self.reset(id.to_owned(), start);
+        let a = audio();
+        a.set_src(&format!("/api/youtube-audio?v={}", encode(id)));
         a.set_volume(self.volume.get_value() / 100.0);
         if start > 0.0 {
             a.set_current_time(start);

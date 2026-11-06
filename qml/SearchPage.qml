@@ -453,8 +453,9 @@ Flickable {
                         anchors.bottom: parent.bottom
                         anchors.margins: 20
                         filled: true
-                        iconName: playingThis && Player.playing ? "pause" : "play"
+                        iconName: playingThis && Player.busy ? "pause" : "play"
                         iconSize: 22
+                        tip: playingThis && Player.busy ? "Pause" : "Play"
                         opacity: topHover.hovered || playingThis ? 1 : 0
                         onClicked: playingThis ? Player.toggle()
                                    : topResult.showArtist ? Player.playTracks(artistTracks, 0, topResult.artist.name)

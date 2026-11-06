@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use serde_json::{Value, json};
 
 use crate::api::{Load, fetch};
-use crate::components::{AlbumCard, Cover, IconButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
+use crate::components::{AlbumCard, Cover, PlayButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
 use crate::state::{album_href, app, chart_href, list, radio_href, s};
 
 thread_local! {
@@ -72,9 +72,7 @@ pub fn HomePage() -> impl IntoView {
                                     <div class="title">{s(&track, "title")}</div>
                                     <div class="subtitle">{s(&track, "artist")}</div>
                                 </div>
-                                <IconButton filled=true size=16
-                                    icon=Signal::derive(move || if is_current.get() && player.playing() { "pause".to_owned() } else { "play".to_owned() })
-                                    on_click=move |_| play()/>
+                                <PlayButton size=16 tip="Play" ours=is_current on_play=move |_| play()/>
                             </div>
                         }
                     }).collect_view()}

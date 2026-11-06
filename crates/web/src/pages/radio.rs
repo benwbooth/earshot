@@ -10,7 +10,7 @@ use leptos_router::hooks::use_query_map;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Icon, IconButton, PillButton, StatusView, TrackList};
+use crate::components::{Icon, IconButton, PillButton, PlayButton, StatusView, TrackList};
 use crate::state::{App, app, list, radio_href, s};
 
 thread_local! {
@@ -200,7 +200,7 @@ pub fn RadioPage() -> impl IntoView {
     let context = move || format!("r/{}", station.get());
     let tracks = Signal::derive(move || radio.tracks.get().unwrap_or_default());
     let has_tracks = Signal::derive(move || radio.tracks.with(|t| t.as_ref().is_some_and(|t| !t.is_empty())));
-    let playing_this = move || player.context.get() == context() && player.current().is_some();
+    let playing_this = Signal::derive(move || player.context.get() == context() && player.current().is_some());
     let route = move || Some(radio_href(&station.get_untracked()));
     let save = move || {
         let tracks = tracks.get_untracked();
@@ -295,11 +295,8 @@ pub fn RadioPage() -> impl IntoView {
 
             <div class="radio-head">
                 <div class="radio-title">
-                    <IconButton filled=true size=24 tip="Play" disabled=Signal::derive(move || !has_tracks.get())
-                        icon=Signal::derive(move || if playing_this() && player.playing() { "pause".to_owned() } else { "play".to_owned() })
-                        on_click=move |_| if playing_this() {
-                            player.toggle()
-                        } else if has_tracks.get_untracked() {
+                    <PlayButton tip="Play" ours=playing_this disabled=Signal::derive(move || !has_tracks.get())
+                        on_play=move |_| if has_tracks.get_untracked() {
                             player.play_tracks(tracks.get_untracked(), 0, format!("r/{}", station.get_untracked()), route())
                         }/>
                     <div class="radio-name">

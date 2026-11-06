@@ -87,6 +87,63 @@ pub fn stream(track: &Value) -> Result<Value, String> {
     Ok(json!({ "key": track["key"], "url": url }))
 }
 
+/// Lower-case words only, for comparing titles and names across sites.
+fn plain(text: &str) -> String {
+    text.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|word| !word.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+/// Whether `other` (from SoundCloud or Bandcamp) is the same recording as
+/// `track`: the same title (sites sometimes put "Artist - " in front), by the
+/// same artist, and as long, give or take a few seconds.
+fn same_song(track: &Value, other: &Value) -> bool {
+    let text = |value: &Value, key: &str| plain(value[key].as_str().unwrap_or(""));
+    let (title, found) = (text(track, "title"), text(other, "title"));
+    if title.is_empty() || !(found == title || found.ends_with(&format!(" {title}"))) {
+        return false;
+    }
+    // The first named artist ("A, B & C" → "a"), anywhere in the other's names or title.
+    let artist = plain(track["artist"].as_str().unwrap_or("").split([',', '&']).next().unwrap_or(""));
+    if artist.is_empty() || !(text(other, "artist").contains(&artist) || found.contains(&artist)) {
+        return false;
+    }
+    let (length, other_length) = (track["duration"].as_f64().unwrap_or(0.0), other["duration"].as_f64().unwrap_or(0.0));
+    length <= 0.0 || other_length <= 0.0 || (length - other_length).abs() <= (length * 0.03).max(8.0)
+}
+
+/// The same song on SoundCloud or Bandcamp, for when no YouTube upload of it
+/// will play (owners can keep videos on youtube.com). The song keeps its own
+/// name, key and artwork, so likes, playlists and history stay with it; only
+/// where it plays from changes. Null when neither site has it.
+pub fn elsewhere(track: &Value) -> Result<Value, String> {
+    Ok(found_elsewhere(track, true).into_iter().next().unwrap_or(Value::Null))
+}
+
+/// [`elsewhere`]'s finds on each site, SoundCloud first, for when the first
+/// one can't be used (the waveform can't read SoundCloud's encrypted streams).
+pub fn elsewhere_all(track: &Value) -> Vec<Value> {
+    found_elsewhere(track, false)
+}
+
+fn found_elsewhere(track: &Value, first_only: bool) -> Vec<Value> {
+    let query = format!("{} {}", track["artist"].as_str().unwrap_or(""), track["title"].as_str().unwrap_or(""));
+    let mut songs = Vec::new();
+    for search in [soundcloud::search, bandcamp::search] {
+        if first_only && !songs.is_empty() {
+            break;
+        }
+        let Ok(found) = search(query.trim()) else { continue };
+        let Some(other) = found["tracks"].as_array().into_iter().flatten().find(|other| same_song(track, other)) else { continue };
+        let mut song = other.clone();
+        for key in ["key", "title", "artist", "artistId", "album", "albumId", "cover", "coverBig", "explicit", "trackNumber", "disc"] {
+            if !track[key].is_null() {
+                song[key] = track[key].clone();
+            }
+        }
+        songs.push(song);
+    }
+    songs
+}
+
 fn list(value: &Value) -> Vec<Value> {
     match value {
         Value::Array(items) => items.clone(),
@@ -181,6 +238,7 @@ impl Earshot {
             // Bandcamp's front page: { highlight, sections: [{ id, title, about, link, rows, albums, tracks, articles }] }.
             "bandcampFeatured" => bandcamp::featured(),
             "stream" => stream(&args["track"]),
+            "elsewhere" => elsewhere(&args["track"]),
             "radioMore" => radio_more(&args["track"], &text("video")),
             "forYou" => {
                 // Liked songs and playlist songs count too, not only plays.
@@ -282,5 +340,25 @@ impl Earshot {
             }
             other => Err(format!("Earshot doesn't know \"{other}\"")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_same_song_elsewhere() {
+        let song = json!({ "title": "Autumn Leaves (Extended Version)", "artist": "Lofi Fruits Music", "duration": 310 });
+        let same = json!({ "title": "Autumn Leaves (Extended Version)", "artist": "Lofi Fruits Music", "duration": 312 });
+        let named = json!({ "title": "Lofi Fruits Music - Autumn Leaves (Extended Version)", "artist": "someone", "duration": 0 });
+        let shorter = json!({ "title": "Autumn Leaves", "artist": "Lofi Fruits Music, Chill Fruits Music", "duration": 124 });
+        let longer = json!({ "title": "Autumn Leaves (Extended Version)", "artist": "Lofi Fruits Music", "duration": 400 });
+        let other_artist = json!({ "title": "Autumn Leaves (Extended Version)", "artist": "Yoofi Beats", "duration": 310 });
+        assert!(same_song(&song, &same));
+        assert!(same_song(&song, &named));
+        assert!(!same_song(&song, &shorter));
+        assert!(!same_song(&song, &longer));
+        assert!(!same_song(&song, &other_artist));
     }
 }

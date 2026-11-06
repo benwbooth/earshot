@@ -29,6 +29,8 @@ pub struct Player {
     pub radio_loading: RwSignal<bool>,
     radio_waiting: RwSignal<bool>,
     pub loading: RwSignal<bool>,
+    /// A song failed and the next one starts in a moment.
+    advancing: RwSignal<bool>,
     pub error: RwSignal<String>,
     failures: StoredValue<u32>,
     request: StoredValue<u64>,
@@ -41,6 +43,12 @@ pub struct Player {
     /// Bandcamp songs' audio links, with when they were fetched.
     streams: StoredValue<HashMap<String, (String, f64)>>,
     stream_retried: StoredValue<String>,
+    /// The last video played through Earshot's server because its owner keeps
+    /// it on youtube.com, and why YouTube's player refused it.
+    direct_tried: StoredValue<String>,
+    blocked_message: StoredValue<String>,
+    /// The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
+    elsewhere_tried: StoredValue<String>,
     looking: StoredValue<HashSet<String>>,
     /// Counts up when a new song starts (for the now-playing card).
     pub started_count: RwSignal<u32>,
@@ -89,6 +97,7 @@ impl Player {
             radio_loading: RwSignal::new(false),
             radio_waiting: RwSignal::new(false),
             loading: RwSignal::new(false),
+            advancing: RwSignal::new(false),
             error: RwSignal::new(String::new()),
             failures: StoredValue::new(0),
             request: StoredValue::new(0),
@@ -99,6 +108,9 @@ impl Player {
             unrecorded: StoredValue::new(None),
             streams: StoredValue::new(HashMap::new()),
             stream_retried: StoredValue::new(String::new()),
+            direct_tried: StoredValue::new(String::new()),
+            blocked_message: StoredValue::new(String::new()),
+            elsewhere_tried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
             started_count: RwSignal::new(0),
             levels: RwSignal::new([0.0; crate::levels::BANDS]),
@@ -131,25 +143,23 @@ impl Player {
         !key.is_empty() && self.context.get() == context && tracks.iter().any(|t| s(t, "key") == key)
     }
 
-    /// A page's big play button: pause or carry on if its songs are what's
-    /// playing, otherwise `start` them.
-    pub fn play_or_toggle(&self, context: &str, tracks: &[Value], start: impl FnOnce()) {
-        if self.playing_from(context, tracks) {
-            self.toggle();
-        } else {
-            start();
-        }
-    }
-
-    /// "pause" while these songs play, otherwise "play".
-    pub fn play_icon(&self, context: &str, tracks: &[Value]) -> String {
-        if self.playing_from(context, tracks) && self.playing() { "pause".into() } else { "play".into() }
+    /// Whether the music playing was started from this page (`route`, as
+    /// given to `play_tracks`).
+    pub fn playing_route(&self, route: &str) -> bool {
+        self.current().is_some() && self.context_route.with(|r| r.as_deref() == Some(route))
     }
 
     /// An album card's play button: whether that album is what's playing
     /// (started from its card or its page).
     pub fn playing_album(&self, id: &str) -> bool {
-        !id.is_empty() && self.current().is_some() && self.context_route.with(|r| r.as_deref() == Some(crate::state::album_href(id).as_str()))
+        !id.is_empty() && self.playing_route(&crate::state::album_href(id))
+    }
+
+    /// Music playing or on its way: a song starting or buffering, or the next
+    /// one about to start after one failed. A page's pink play button shows
+    /// pause meanwhile (a click stops it), so it doesn't flicker to play.
+    pub fn busy(&self) -> bool {
+        self.playing() || self.loading.get() || self.advancing.get() || self.engine.state.get() == 3
     }
 
     /// Whether a song may be shown and played: not while it's explicit and
@@ -229,6 +239,11 @@ impl Player {
         });
         Effect::new(move |_| {
             if engine.state.get() == 1 && !self.started.get_untracked() {
+                // Paused before it began (see `halt`): YouTube's player may start anyway.
+                if !self.loading.get_untracked() {
+                    engine.pause();
+                    return;
+                }
                 if let Some(track) = self.current_untracked() {
                     self.started.set(true);
                     self.loading.set(false);
@@ -270,6 +285,21 @@ impl Player {
                 self.resolve_current();
                 return;
             }
+            // A video whose owner keeps it on youtube.com: play its audio
+            // through Earshot's server instead (once per video).
+            let video = engine.video_id.get_untracked();
+            if matches!(code, 101 | 150 | 153) && track["service"].is_null() && !video.contains(':') && self.direct_tried.get_value() != video {
+                self.direct_tried.set_value(video.clone());
+                self.blocked_message.set_value(message.clone());
+                engine.load_youtube_audio(&video, self.track_start());
+                return;
+            }
+            // That didn't work either: say why the video itself wouldn't play.
+            let message = if code == 1001 && self.direct_tried.get_value() == video && track["service"].is_null() {
+                self.blocked_message.get_value()
+            } else {
+                message
+            };
             // Another upload of the same song may be allowed to play here.
             let next = self.candidate.get_value() + 1;
             if track["service"].is_null() && next < self.candidates.with_value(Vec::len) {
@@ -279,7 +309,32 @@ impl Player {
                 return;
             }
             let _ = code;
-            self.fail(format!("Couldn't play \"{}\": {message}", s(&track, "title")));
+            let message = format!("Couldn't play \"{}\": {message}", s(&track, "title"));
+            // No upload will play here: look for the same song on SoundCloud or Bandcamp.
+            if track["service"].is_null() && num(&track, "start") == 0.0 && self.elsewhere_tried.get_value() != key {
+                self.elsewhere_tried.set_value(key.clone());
+                self.loading.set(true);
+                let (player, request, index) = (self, self.request.get_value(), self.index.get_untracked());
+                spawn_local(async move {
+                    let found = api::call("elsewhere", json!({ "track": track })).await.ok().filter(|song| !song.is_null());
+                    if player.request.get_value() != request {
+                        return;
+                    }
+                    match found {
+                        Some(song) => {
+                            player.queue.update(|queue| {
+                                if let Some(slot) = queue.get_mut(index as usize) {
+                                    *slot = song;
+                                }
+                            });
+                            player.resolve_current();
+                        }
+                        None => player.fail(message),
+                    }
+                });
+                return;
+            }
+            self.fail(message);
         });
         Effect::new(move |_| {
             if self.radio.get() {
@@ -470,6 +525,7 @@ impl Player {
         let Some(first) = videos.first().cloned() else { return };
         self.candidates.set_value(videos);
         self.candidate.set_value(0);
+        self.direct_tried.set_value(String::new());
         self.engine.load(&first, self.track_start());
     }
 
@@ -482,6 +538,7 @@ impl Player {
         let Some(track) = self.current_untracked() else { return };
         let engine = self.engine;
         self.error.set(String::new());
+        self.advancing.set(false);
         let start = num(&track, "start");
         let key = s(&track, "key");
         // Another chapter of the video that's already playing: just move there.
@@ -636,9 +693,15 @@ impl Player {
         self.failures.update_value(|n| *n += 1);
         if self.failures.get_value() < 3 && self.index.get_untracked() + 1 < self.queue.with_untracked(Vec::len) as i64 {
             let player = *self;
+            let request = self.request.get_value();
+            self.advancing.set(true);
             spawn_local(async move {
                 gloo_timers::future::TimeoutFuture::new(1200).await;
-                player.next(true);
+                // Not if something else was chosen (or it was paused) meanwhile.
+                if player.request.get_value() == request && player.advancing.get_untracked() {
+                    player.advancing.set(false);
+                    player.next(true);
+                }
             });
         }
     }
@@ -647,13 +710,29 @@ impl Player {
         if self.current_untracked().is_none() {
             return;
         }
-        if self.engine.state.get_untracked() == 1 {
+        let state = self.engine.state.get_untracked();
+        if state == 1 {
+            self.engine.pause();
+        } else if self.loading.get_untracked() || self.advancing.get_untracked() {
+            self.halt();
+        } else if state == 3 {
             self.engine.pause();
         } else if !self.started.get_untracked() || !self.error.get_untracked().is_empty() {
             self.resolve_current();
         } else {
             self.engine.play();
         }
+    }
+
+    /// Pause while a song is still starting (or about to): it doesn't start,
+    /// and playing again starts it afresh.
+    fn halt(&self) {
+        self.next_request();
+        self.advancing.set(false);
+        self.radio_waiting.set(false);
+        self.loading.set(false);
+        self.started.set(false);
+        self.engine.pause();
     }
 
     pub fn next(&self, automatic: bool) {

@@ -94,12 +94,13 @@ Flickable {
             visible: !!page.data_
             IconButton {
                 filled: true
-                iconName: page.data_ && Player.playingFrom(page.data_.title || "Chart", page.data_.tracks) && Player.playing ? "pause" : "play"
+                readonly property bool pause: !!page.data_ && Player.playingFrom(page.data_.title || "Chart", page.data_.tracks) && Player.busy
+                iconName: pause ? "pause" : "play"
                 iconSize: 24
-                tip: "Play"
+                tip: pause ? "Pause" : "Play"
                 onClicked: Player.playOrToggle(page.data_.tracks, page.data_.title || "Chart")
             }
-            PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.data_.tracks, page.data_.title) }
+            PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.data_.tracks, page.data_.title || "Chart") }
             IconButton {
                 iconName: "more"
                 tip: "More"

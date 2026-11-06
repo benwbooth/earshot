@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = "0.8"
+base64 = "0.22"
 earshot-core = { path = "../core" }
 earshot-speakers = { path = "../speakers" }
 futures-util = { version = "0.3", default-features = false }

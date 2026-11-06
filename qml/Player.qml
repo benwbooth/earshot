@@ -26,6 +26,8 @@ QtObject {
     // next one is tried if YouTube won't play a video inside the app.
     property var candidates: []
     property int candidate: 0
+    // The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
+    property string elsewhereTried: ""
     // Track key -> videos found earlier, so upcoming songs start instantly.
     property var found: ({})
     property bool started: false   // the current track has begun playing
@@ -53,6 +55,10 @@ QtObject {
     readonly property string loadedVideo: engine ? engine.videoId : ""
 
     readonly property bool playing: engine !== null && engine.playing
+    // Music playing or on its way: a song starting or buffering, or the next
+    // one about to start after one failed. A page's pink play button shows
+    // pause meanwhile (a click stops it), so it doesn't flicker to play.
+    readonly property bool busy: playing || loading || skipTimer.running || (engine !== null && engine.playerState === 3)
     readonly property bool seekable: true
     readonly property real position: engine ? Math.max(0, engine.position - trackStart) : 0
     readonly property real length: trackEnd > 0 ? trackEnd - trackStart
@@ -147,6 +153,11 @@ QtObject {
         target: player.engine
         function onPlayerStateChanged() {
             if (player.engine.playing && player.current && !player.started) {
+                // Paused before it began (see halt()): the player may start anyway.
+                if (!player.loading) {
+                    player.engine.pause()
+                    return
+                }
                 player.started = true
                 player.loading = false
                 player.failures = 0
@@ -184,7 +195,33 @@ QtObject {
                 player.engine.load(player.candidates[player.candidate], player.trackStart)
                 return
             }
-            player.fail("Couldn't play \"" + player.current.title + "\": " + message)
+            const failure = "Couldn't play \"" + player.current.title + "\": " + message
+            // No upload will play: look for the same song on SoundCloud or Bandcamp.
+            const track = player.current
+            if (!track.service && !(track.start > 0) && player.elsewhereTried !== track.key) {
+                player.elsewhereTried = track.key
+                player.loading = true
+                const at = player.index
+                player.pendingRequest = Api.call(Backend.call("elsewhere", JSON.stringify({ track: track })), function (song) {
+                    player.pendingRequest = -1
+                    if (!player.current || player.current.key !== track.key || player.index !== at)
+                        return
+                    if (!song) {
+                        player.fail(failure)
+                        return
+                    }
+                    const q = player.queue.slice()
+                    q[at] = song
+                    player.queue = q
+                    player.resolveCurrent()
+                }, function () {
+                    player.pendingRequest = -1
+                    if (player.current && player.current.key === track.key)
+                        player.fail(failure)
+                })
+                return
+            }
+            player.fail(failure)
         }
     }
 
@@ -200,11 +237,17 @@ QtObject {
             playTracks(tracks, 0, contextName, route)
     }
 
+    // Whether the music playing was started from this page (an album or a
+    // playlist, by its id).
+    function playingRoute(pageName, id) {
+        return current !== null && !!id && !!contextRoute && contextRoute.page === pageName
+            && !!contextRoute.args && String(contextRoute.args.id) === String(id)
+    }
+
     // An album card's play button: whether that album is what's playing
     // (started from its card or its page).
     function playingAlbum(id) {
-        return current !== null && !!id && !!contextRoute && contextRoute.page === "album"
-            && !!contextRoute.args && String(contextRoute.args.id) === String(id)
+        return playingRoute("album", id)
     }
 
     // Explicit songs are left out everywhere while "Hide explicit songs" is on.
@@ -333,6 +376,7 @@ QtObject {
             return
         error = ""
         wantPlaying = true
+        skipTimer.stop()
         // Another chapter of the video that's already playing: just move there.
         if (track.youtubeId && track.youtubeId === loadedVideo && started) {
             if (Math.abs(engine.position - trackStart) > 1.5)
@@ -474,12 +518,31 @@ QtObject {
         if (playing) {
             wantPlaying = false
             engine.pause()
+        } else if (loading || skipTimer.running) {
+            halt()
+        } else if (engine.playerState === 3) {
+            wantPlaying = false
+            engine.pause()
         } else if (!started || error !== "") {
             resolveCurrent()
         } else {
             wantPlaying = true
             engine.play()
         }
+    }
+
+    // Pause while a song is still starting (or about to): it doesn't start,
+    // and playing again starts it afresh.
+    function halt() {
+        skipTimer.stop()
+        if (pendingRequest >= 0)
+            Api.cancel(pendingRequest)
+        pendingRequest = -1
+        radioWaiting = false
+        loading = false
+        started = false
+        wantPlaying = false
+        engine.pause()
     }
 
     function next(automatic) {

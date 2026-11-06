@@ -21,6 +21,64 @@ fn innertube(endpoint: &str, mut body: Value) -> Result<Value, String> {
     Ok(answer)
 }
 
+/// A video's AAC audio (itag 140, an MP4), for measuring the waveform: its
+/// address and size in bytes. Asked as YouTube's VR app (version 1.62)
+/// asks, which is given plain addresses (later versions get only the first
+/// megabyte); they're read in pieces of [`AUDIO_PIECE`] bytes
+/// (`&range=start-end`), as YouTube's own players do.
+///
+/// YouTube asks the VR app to "sign in to confirm you're not a bot" for many
+/// videos; the iPhone app is asked then, whose address gives only the first
+/// megabyte (about a minute) without a sign-in token, so only that much can
+/// be measured.
+pub fn audio(video: &str) -> Result<(String, u64), String> {
+    let clients = [
+        json!({
+            "clientName": "ANDROID_VR", "clientVersion": "1.62.27", "hl": "en", "gl": "US",
+            "androidSdkVersion": 32, "deviceMake": "Oculus", "deviceModel": "Quest 3", "osName": "Android", "osVersion": "12L",
+        }),
+        json!({
+            "clientName": "IOS", "clientVersion": "20.10.4", "hl": "en", "gl": "US",
+            "deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82",
+        }),
+    ];
+    let mut refused = String::new();
+    for client in clients {
+        let body = json!({ "videoId": video, "contentCheckOk": true, "racyCheckOk": true, "context": { "client": client } });
+        let answer = post_json("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", &body)?;
+        if answer.pointer("/playabilityStatus/status").and_then(Value::as_str) == Some("OK") {
+            return audio_format(&answer);
+        }
+        refused = answer.pointer("/playabilityStatus/reason").and_then(Value::as_str).unwrap_or("it isn't available").to_owned();
+    }
+    Err(format!("YouTube won't share this video's audio with Earshot's server ({refused})"))
+}
+
+/// [`audio`], but only if YouTube will hand over all of it: without a
+/// sign-in it sometimes gives just the first megabyte (about a minute), and
+/// the very end, so a few bytes from past the middle are asked for.
+pub fn whole_audio(video: &str) -> Result<(String, u64), String> {
+    let (url, length) = audio(video)?;
+    let middle = (length / 2).max(AUDIO_PIECE + 1).min(length.saturating_sub(1000));
+    match ureq::get(&format!("{url}&range={middle}-{}", middle + 999)).call() {
+        Ok(response) if response.status().is_success() => Ok((url, length)),
+        _ => Err("YouTube shares only the start of this video's audio without a sign-in".to_owned()),
+    }
+}
+
+fn audio_format(answer: &Value) -> Result<(String, u64), String> {
+    let formats = answer.pointer("/streamingData/adaptiveFormats").and_then(Value::as_array).cloned().unwrap_or_default();
+    let aac = |f: &&Value| f["mimeType"].as_str().is_some_and(|m| m.starts_with("audio/mp4") && m.contains("mp4a.40.2"));
+    let chosen = formats.iter().find(|f| f["itag"] == 140).or_else(|| formats.iter().find(aac)).ok_or("YouTube didn't offer this video's audio as AAC.")?;
+    let url = chosen["url"].as_str().ok_or("YouTube's address for this video's audio is scrambled.")?;
+    let length = chosen["contentLength"].as_str().and_then(|l| l.parse().ok()).ok_or("YouTube didn't say how long this video's audio is.")?;
+    Ok((url.to_owned(), length))
+}
+
+/// How much of a video's audio is asked for at once (YouTube refuses a
+/// whole file in one request).
+pub const AUDIO_PIECE: u64 = 1_000_000;
+
 /// Every object stored under one of `keys`, in page order (matches aren't searched inside).
 fn collect<'a>(value: &'a Value, keys: &[&'static str], out: &mut Vec<(&'static str, &'a Value)>) {
     match value {

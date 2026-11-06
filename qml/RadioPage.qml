@@ -296,8 +296,10 @@ Flickable {
             spacing: 16
             IconButton {
                 filled: true
-                iconName: Player.context === "r/" + page.station && Player.playing ? "pause" : "play"
+                readonly property bool pause: Player.context === "r/" + page.station && Player.current !== null && Player.busy
+                iconName: pause ? "pause" : "play"
                 iconSize: 24
+                tip: pause ? "Pause" : "Play"
                 enabled: !!page.tracks && page.tracks.length > 0
                 onClicked: Player.context === "r/" + page.station && Player.current ? Player.toggle() : page.tuneIn()
             }

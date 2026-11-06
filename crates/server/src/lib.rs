@@ -8,6 +8,10 @@
 //!   measured from this computer's speakers, for browsers on this computer
 //! - `GET /api/audio?url=…` → a Bandcamp or Internet Archive audio file passed
 //!   through, so the browser may measure it for the waveform
+//! - `GET /api/envelope?id=…` → server-sent waveform levels measured from the
+//!   song's own audio (see `earshot_core::envelope`), for any device
+//! - `GET /api/youtube-audio?v=…` → a YouTube video's audio, for videos whose
+//!   owners don't let YouTube's player play them on other sites
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -25,6 +29,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use earshot_core::api::Earshot;
+use earshot_core::envelope;
 use futures_util::Stream;
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
@@ -82,18 +87,60 @@ async fn levels() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     Sse::new(levels).keep_alive(KeepAlive::default())
 }
 
-/// Only the sites Earshot plays audio files from, so this isn't an open proxy.
-fn audio_allowed(url: &str) -> bool {
-    let Some(rest) = url.strip_prefix("https://") else { return false };
-    let host = rest.split(['/', '?', ':']).next().unwrap_or("");
-    host.ends_with(".bcbits.com") || host == "archive.org" || host.ends_with(".archive.org")
+/// The levels of a song (`id` is what the player plays: a YouTube video id,
+/// "soundcloud:…", "mixcloud:…" or "audio:…"), measured from its own audio:
+/// `frames` events ("<first frame> <levels in base64>", six bytes a frame,
+/// 25 frames a second) as they're measured, then `done` ("<frames>", then why
+/// they end before the song does, if they do), or `failed` with why.
+async fn envelope(Query(query): Query<HashMap<String, String>>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    use base64::Engine as _;
+    let id = query.get("id").cloned().unwrap_or_default();
+    // The song itself, so a video YouTube won't hand over can be measured from the same song elsewhere.
+    let song = match query.get("title") {
+        Some(title) => json!({
+            "title": title,
+            "artist": query.get("artist").cloned().unwrap_or_default(),
+            "duration": query.get("duration").and_then(|d| d.parse::<f64>().ok()).unwrap_or(0.0),
+        }),
+        None => Value::Null,
+    };
+    let job = envelope::measure(&id, &song);
+    let watching = job.watch();
+    let ticks = IntervalStream::new(tokio::time::interval(Duration::from_millis(200)));
+    let events = futures_util::stream::unfold((ticks, watching, job, 0usize, false, false), |(mut ticks, watching, job, sent, told, over)| async move {
+        if over {
+            return None;
+        }
+        loop {
+            ticks.next().await?;
+            let snapshot = job.since(sent);
+            // `source`: where the audio came from, when it isn't the song's own player's.
+            if !told && let Some(source) = snapshot.source {
+                return Some((Ok(Event::default().event("source").data(source)), (ticks, watching, job, sent, true, false)));
+            }
+            let whole = snapshot.levels.len() / envelope::BANDS * envelope::BANDS;
+            if whole > 0 {
+                let text = format!("{} {}", sent / envelope::BANDS, base64::engine::general_purpose::STANDARD.encode(&snapshot.levels[..whole]));
+                return Some((Ok(Event::default().event("frames").data(text)), (ticks, watching, job, sent + whole, told, false)));
+            }
+            if snapshot.done {
+                let event = match snapshot.error {
+                    Some(error) => Event::default().event("failed").data(error),
+                    // The frame count, then why the levels end early, if they do.
+                    None => Event::default().event("done").data(format!("{} {}", sent / envelope::BANDS, snapshot.cut_short.unwrap_or_default()).trim_end().to_owned()),
+                };
+                return Some((Ok(event), (ticks, watching, job, sent, told, true)));
+            }
+        }
+    });
+    Sse::new(events).keep_alive(KeepAlive::default())
 }
 
 /// Passes a Bandcamp or Internet Archive audio file through (with seeking),
 /// since those sites don't let a browser measure their sound themselves.
 async fn audio(Query(query): Query<HashMap<String, String>>, headers: HeaderMap) -> Response {
     let url = query.get("url").cloned().unwrap_or_default();
-    if !audio_allowed(&url) {
+    if !envelope::file_allowed(&url) {
         return (StatusCode::FORBIDDEN, "Earshot only passes through Bandcamp and Internet Archive audio.").into_response();
     }
     let range = headers.get(header::RANGE).and_then(|value| value.to_str().ok()).map(str::to_owned);
@@ -148,6 +195,150 @@ async fn audio(Query(query): Query<HashMap<String, String>>, headers: HeaderMap)
     }
 }
 
+/// Where a video's audio is, kept for two hours (YouTube's addresses last six).
+/// Only an address that reaches the end will do: without a sign-in YouTube
+/// sometimes gives just the first minute, and a song that stops part way is
+/// worse than one found elsewhere.
+fn youtube_address(video: &str, fresh: bool) -> Result<(String, u64), String> {
+    static FOUND: OnceLock<std::sync::Mutex<HashMap<String, (std::time::Instant, Result<(String, u64), String>)>>> = OnceLock::new();
+    let found = FOUND.get_or_init(Default::default);
+    if !fresh && let Some((when, answer)) = found.lock().unwrap().get(video).cloned() && when.elapsed() < Duration::from_secs(7200) {
+        return answer;
+    }
+    let answer = earshot_core::youtube::whole_audio(video);
+    found.lock().unwrap().insert(video.to_owned(), (std::time::Instant::now(), answer.clone()));
+    answer
+}
+
+/// "bytes=10-" or "bytes=10-99" as the first and last byte wanted.
+fn byte_range(range: Option<&str>, length: u64) -> (u64, u64) {
+    let last = length.saturating_sub(1);
+    let Some((start, end)) = range.and_then(|r| r.strip_prefix("bytes=")).and_then(|r| r.split(',').next()).and_then(|r| r.split_once('-')) else {
+        return (0, last);
+    };
+    match (start.trim().parse::<u64>(), end.trim().parse::<u64>()) {
+        (Ok(start), Ok(end)) => (start, end.min(last)),
+        (Ok(start), Err(_)) => (start, last),
+        // "bytes=-500": the last 500 bytes.
+        (Err(_), Ok(tail)) => (length.saturating_sub(tail), last),
+        _ => (0, last),
+    }
+}
+
+/// A YouTube video's audio straight from YouTube (with seeking), for videos
+/// whose owners don't let YouTube's player play them on other sites. YouTube
+/// hands it out a megabyte at a time, so the pieces are asked for in turn.
+async fn youtube_audio(Query(query): Query<HashMap<String, String>>, headers: HeaderMap) -> Response {
+    use earshot_core::youtube::AUDIO_PIECE;
+    let video = query.get("v").cloned().unwrap_or_default();
+    if video.is_empty() || !video.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return (StatusCode::BAD_REQUEST, "Which video?").into_response();
+    }
+    let range = headers.get(header::RANGE).and_then(|value| value.to_str().ok()).map(str::to_owned);
+    let (head_tx, head_rx) = tokio::sync::oneshot::channel();
+    let (body_tx, body_rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+    tokio::task::spawn_blocking(move || {
+        static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+        let agent = AGENT.get_or_init(|| {
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .timeout_connect(Some(Duration::from_secs(15)))
+                .timeout_per_read(Some(Duration::from_secs(30)))
+                .build()
+                .into()
+        });
+        let piece = |url: &str, from: u64, to: u64| agent.get(&format!("{url}&range={from}-{to}")).call().map_err(|error| error.to_string());
+        // The first piece decides whether YouTube will hand the audio over;
+        // an address kept from earlier may have run out, so look again once.
+        let mut first = None;
+        for fresh in [false, true] {
+            let (url, length) = match youtube_address(&video, fresh) {
+                Ok(found) => found,
+                Err(message) => {
+                    let _ = head_tx.send(Err(message));
+                    return;
+                }
+            };
+            let (start, end) = byte_range(range.as_deref(), length);
+            if start > end {
+                let _ = head_tx.send(Ok((416, vec![(header::CONTENT_RANGE, format!("bytes */{length}"))])));
+                return;
+            }
+            match piece(&url, start, (start + AUDIO_PIECE - 1).min(end)) {
+                Ok(response) if response.status().is_success() => {
+                    first = Some((url, length, start, end, response));
+                    break;
+                }
+                Ok(response) if fresh => {
+                    let _ = head_tx.send(Err(format!("YouTube refused this video's audio ({})", response.status())));
+                    return;
+                }
+                Err(message) if fresh => {
+                    let _ = head_tx.send(Err(message));
+                    return;
+                }
+                _ => {}
+            }
+        }
+        let Some((url, length, start, end, mut response)) = first else { return };
+        let mut kept = vec![
+            (header::CONTENT_TYPE, "audio/mp4".to_owned()),
+            (header::ACCEPT_RANGES, "bytes".to_owned()),
+            (header::CONTENT_LENGTH, (end - start + 1).to_string()),
+        ];
+        if range.is_some() {
+            kept.push((header::CONTENT_RANGE, format!("bytes {start}-{end}/{length}")));
+        }
+        let _ = head_tx.send(Ok((if range.is_some() { 206 } else { 200 }, kept)));
+        let mut at = start;
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            let before = at;
+            let mut reader = response.into_body().into_reader();
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        at += n as u64;
+                        if body_tx.blocking_send(Ok(Bytes::copy_from_slice(&buffer[..n]))).is_err() {
+                            return; // the browser stopped listening
+                        }
+                    }
+                    Err(error) => {
+                        let _ = body_tx.blocking_send(Err(error));
+                        return;
+                    }
+                }
+            }
+            if at > end || at == before {
+                return;
+            }
+            response = match piece(&url, at, (at + AUDIO_PIECE - 1).min(end)) {
+                Ok(next) if next.status().is_success() => next,
+                Ok(next) => {
+                    let _ = body_tx.blocking_send(Err(std::io::Error::other(format!("YouTube stopped sending the audio ({})", next.status()))));
+                    return;
+                }
+                Err(message) => {
+                    let _ = body_tx.blocking_send(Err(std::io::Error::other(message)));
+                    return;
+                }
+            };
+        }
+    });
+    match head_rx.await {
+        Ok(Ok((status, kept))) => {
+            let mut response = Response::builder().status(status);
+            for (name, value) in kept {
+                response = response.header(name, value);
+            }
+            response.body(Body::from_stream(ReceiverStream::new(body_rx))).unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
+        }
+        Ok(Err(message)) => (StatusCode::BAD_GATEWAY, message).into_response(),
+        Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+    }
+}
+
 // The interface's files come from the Nix store, where every file is dated
 // 1970, so browsers asking "changed since?" would always hear no and keep an
 // old version after an update. Answer in full every time instead.
@@ -179,6 +370,8 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
         .route("/api/events", get(events))
         .route("/api/levels", get(levels))
         .route("/api/audio", get(audio))
+        .route("/api/envelope", get(envelope))
+        .route("/api/youtube-audio", get(youtube_audio))
         .route("/api/{method}", post(call))
         .fallback_service(files)
         // Audio passes through as it is, so seeking (byte ranges) keeps working.

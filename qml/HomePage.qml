@@ -121,7 +121,8 @@ Flickable {
                             Layout.rightMargin: 10
                             filled: true
                             iconSize: 16
-                            iconName: quick.isCurrent && Player.playing ? "pause" : "play"
+                            iconName: quick.isCurrent && Player.busy ? "pause" : "play"
+                            tip: quick.isCurrent && Player.busy ? "Pause" : "Play"
                             opacity: quickHover.hovered || quick.isCurrent ? 1 : 0
                             onClicked: quick.isCurrent ? Player.toggle() : Player.playTracks(page.data_.tracks.filter(t => Player.allowed(t)), quick.index, "Trending now")
                         }

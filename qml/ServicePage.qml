@@ -201,9 +201,10 @@ Flickable {
                     spacing: 14
                     IconButton {
                         filled: true
-                        iconName: Player.playingFrom(section.context, section.modelData.tracks) && Player.playing ? "pause" : "play"
+                        readonly property bool pause: Player.playingFrom(section.context, section.modelData.tracks) && Player.busy
+                        iconName: pause ? "pause" : "play"
                         iconSize: 22
-                        tip: "Play all"
+                        tip: pause ? "Pause" : "Play all"
                         onClicked: Player.playOrToggle(section.modelData.tracks, section.context)
                     }
                     PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(section.modelData.tracks, section.context) }
@@ -299,9 +300,10 @@ Flickable {
             spacing: 14
             IconButton {
                 filled: true
-                iconName: Player.playingFrom(page.info.name + ": " + page.tagLabel, page.firstTracks()) && Player.playing ? "pause" : "play"
+                readonly property bool pause: Player.playingFrom(page.info.name + ": " + page.tagLabel, page.firstTracks()) && Player.busy
+                iconName: pause ? "pause" : "play"
                 iconSize: 22
-                tip: "Play all"
+                tip: pause ? "Pause" : "Play all"
                 onClicked: Player.playOrToggle(page.found.tracks, page.info.name + ": " + page.tagLabel)
             }
             PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.found.tracks, page.info.name + ": " + page.tagLabel) }

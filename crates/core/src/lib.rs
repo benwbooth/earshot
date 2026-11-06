@@ -6,6 +6,7 @@ pub mod api;
 pub mod archive;
 pub mod bandcamp;
 pub mod catalog;
+pub mod envelope;
 pub mod featured;
 pub mod foryou;
 pub mod library;

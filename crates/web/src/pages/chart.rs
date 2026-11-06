@@ -6,7 +6,7 @@ use serde_json::json;
 use web_sys::MouseEvent;
 
 use crate::api::{Load, fetch};
-use crate::components::{AlbumCard, Cover, IconButton, PillButton, SectionHeader, Shelf, StatusView, TrackList};
+use crate::components::{AlbumCard, Cover, IconButton, PillButton, PlayButton, SectionHeader, Shelf, StatusView, TrackList};
 use crate::state::{MenuRequest, album_href, app, list, s};
 
 #[component]
@@ -69,14 +69,10 @@ pub fn ChartPage() -> impl IntoView {
 
             <Show when=ready>
                 <div class="chart-actions">
-                    <IconButton filled=true size=24 tip="Play"
-                        icon=Signal::derive(move || tracks.with(|list| player.play_icon(&context.get(), list)))
-                        on_click=move |_| {
-                            let (list, name) = (tracks.get_untracked(), context.get_untracked());
-                            player.play_or_toggle(&name, &list, || player.play_tracks(list.clone(), 0, name.clone(), None))
-                        }/>
+                    <PlayButton tip="Play" ours=Signal::derive(move || tracks.with(|list| player.playing_from(&context.get(), list)))
+                        on_play=move |_| player.play_tracks(tracks.get_untracked(), 0, context.get_untracked(), None)/>
                     <PillButton text="Shuffle" icon="shuffle"
-                        on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), title.get_untracked(), None)/>
+                        on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), context.get_untracked(), None)/>
                     <IconButton icon="more" tip="More"
                         on_click=move |event: MouseEvent| app.menu.set(Some(MenuRequest::new(
                             tracks.get_untracked(), event.client_x() as f64, event.client_y() as f64)))/>
@@ -87,7 +83,7 @@ pub fn ChartPage() -> impl IntoView {
                 on_retry=Callback::new(move |_| retry.update(|n| *n += 1))/>
 
             <Show when=ready>
-                <TrackList tracks=tracks context=title/>
+                <TrackList tracks=tracks context=context/>
             </Show>
 
             <Show when=move || !albums.with(Vec::is_empty)>

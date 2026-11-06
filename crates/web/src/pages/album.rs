@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use web_sys::MouseEvent;
 
 use crate::api::{Load, fetch};
-use crate::components::{Cover, IconButton, PillButton, StatusView, TrackList};
+use crate::components::{Cover, IconButton, PillButton, PlayButton, StatusView, TrackList};
 use crate::state::{
     MenuRequest, album_href, album_page, app, artist_href, bandcamp_tag_href, encode, list, long_duration, num, open_web, s, site_name,
 };
@@ -92,7 +92,12 @@ pub fn AlbumPage() -> impl IntoView {
     let tags = Signal::derive(move || album.with(|a| a.as_ref().map(|a| list(a, "tags")).unwrap_or_default()));
     let web = Signal::derive(move || album.with(|a| a.as_ref().map(album_page).unwrap_or_default()));
     let saved = Signal::derive(move || app.is_album_saved(&id.get()));
+    // Started here or from the album's card (the same address), or its songs
+    // played from another page showing this album.
     let playing_this = Memo::new(move |_| {
+        if player.playing_album(&id.get()) {
+            return true;
+        }
         let Some(current) = player.current() else { return false };
         let context = player.context.get();
         album.with(|a| a.as_ref().is_some_and(|a| s(&current, "albumId") == s(a, "id") && context == s(a, "title")))
@@ -137,13 +142,7 @@ pub fn AlbumPage() -> impl IntoView {
         })
     };
 
-    let play = move |_| {
-        if playing_this.get_untracked() {
-            player.toggle();
-        } else {
-            player.play_tracks(tracks.get_untracked(), 0, title.get_untracked(), route());
-        }
-    };
+    let play = move |_| player.play_tracks(tracks.get_untracked(), 0, title.get_untracked(), route());
     let shuffle = move |_| player.shuffle_tracks(tracks.get_untracked(), title.get_untracked(), route());
     let toggle_saved = move |_| {
         let Some(album) = album.get_untracked() else { return };
@@ -175,9 +174,7 @@ pub fn AlbumPage() -> impl IntoView {
 
             <Show when=move || album.with(Option::is_some)>
                 <div class="album-actions">
-                    <IconButton filled=true size=24 tip="Play album"
-                        icon=Signal::derive(move || if playing_this.get() && player.playing() { "pause".to_owned() } else { "play".to_owned() })
-                        on_click=play/>
+                    <PlayButton tip="Play album" ours=playing_this on_play=play/>
                     <PillButton text="Shuffle" icon="shuffle" on_click=shuffle/>
                     <span class="save" class:saved=move || saved.get()>
                         <IconButton size=22

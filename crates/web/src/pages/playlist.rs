@@ -8,8 +8,8 @@ use leptos_router::hooks::use_query_map;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{Cover, Icon, IconButton, PillButton, StatusView, TrackList};
-use crate::state::{Prompt, app, list, long_duration, num, s};
+use crate::components::{Cover, Icon, IconButton, PillButton, PlayButton, StatusView, TrackList};
+use crate::state::{Prompt, app, list, long_duration, num, playlist_href, s};
 
 #[component]
 pub fn PlaylistPage() -> impl IntoView {
@@ -64,7 +64,10 @@ pub fn PlaylistPage() -> impl IntoView {
             .collect()
     });
     let filtering = Memo::new(move |_| !filter.with(|f| f.trim().is_empty()));
-    let playing_this = move || exists() && player.context.get() == field("name") && player.current().is_some();
+    // Started from this playlist's page (its address, so a rename or another
+    // playlist of the same name doesn't matter).
+    let playing_this = Signal::derive(move || exists() && player.playing_route(&playlist_href(&id.get())));
+    let route = move || Some(playlist_href(&id.get_untracked()));
     let rename = move || {
         if !special.get_untracked() {
             app.prompt.set(Some(Prompt::Rename(id.get_untracked(), field("name"))));
@@ -120,11 +123,10 @@ pub fn PlaylistPage() -> impl IntoView {
                 </div>
 
                 <div class="playlist-actions">
-                    <IconButton filled=true size=24 tip="Play" disabled=Signal::derive(move || count.get() == 0)
-                        icon=Signal::derive(move || if playing_this() && player.playing() { "pause".to_owned() } else { "play".to_owned() })
-                        on_click=move |_| if playing_this() { player.toggle() } else { player.play_tracks(tracks.get_untracked(), 0, field("name"), None) }/>
+                    <PlayButton tip="Play" ours=playing_this disabled=Signal::derive(move || count.get() == 0)
+                        on_play=move |_| player.play_tracks(tracks.get_untracked(), 0, field("name"), route())/>
                     <PillButton text="Shuffle" icon="shuffle" disabled=Signal::derive(move || count.get() == 0)
-                        on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), field("name"), None)/>
+                        on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), field("name"), route())/>
                     <Show when=move || !special.get()>
                         <IconButton icon="edit" tip="Rename" on_click=move |_| rename()/>
                         <IconButton icon="trash" tip="Delete playlist" on_click=move |_| confirm_delete.set(true)/>

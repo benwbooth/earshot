@@ -18,7 +18,9 @@ Flickable {
             return playlist.tracks
         return playlist.tracks.filter(t => (t.title + " " + t.artist + " " + (t.album || "")).toLowerCase().indexOf(f) >= 0)
     }
-    readonly property bool playingThis: playlist !== null && Player.context === playlist.name && Player.current !== null
+    // Started from this playlist's page (by its id, so a rename or another
+    // playlist of the same name doesn't matter).
+    readonly property bool playingThis: playlist !== null && Player.playingRoute("playlist", args.id || "")
 
     function firstTracks() { return playlist ? playlist.tracks : [] }
 
@@ -127,10 +129,10 @@ Flickable {
             spacing: 14
             IconButton {
                 filled: true
-                iconName: page.playingThis && Player.playing ? "pause" : "play"
+                iconName: page.playingThis && Player.busy ? "pause" : "play"
                 iconSize: 24
                 enabled: page.playlist && page.playlist.count > 0
-                tip: "Play"
+                tip: page.playingThis && Player.busy ? "Pause" : "Play"
                 onClicked: page.playingThis ? Player.toggle() : Player.playTracks(page.playlist.tracks, 0, page.playlist.name)
             }
             PillButton {

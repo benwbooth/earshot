@@ -17,13 +17,9 @@ ColumnLayout {
     Layout.topMargin: 40
     spacing: 14
 
-    BusyIndicator {
+    Spinner {
         visible: status.loading
-        running: visible
         Layout.alignment: Qt.AlignHCenter
-        implicitWidth: 40
-        implicitHeight: 40
-        palette.dark: Theme.accent
     }
     Icon {
         visible: !status.loading && (status.error !== "" || status.empty !== "")

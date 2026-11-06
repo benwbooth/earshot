@@ -12,7 +12,10 @@ Flickable {
     property bool loading: false
     property string error: ""
     readonly property bool saved: (Backend.libraryRevision, Backend.isAlbumSaved(args.id || ""))
-    readonly property bool playingThis: Player.current !== null && album !== null && Player.current.albumId === album.id && Player.context === album.title
+    // Started here or from the album's card (the same page), or its songs
+    // played from another page showing this album.
+    readonly property bool playingThis: Player.playingAlbum(args.id || "")
+        || (Player.current !== null && album !== null && Player.current.albumId === album.id && Player.context === album.title)
 
     function firstTracks() { return album ? album.tracks : [] }
 
@@ -153,9 +156,9 @@ Flickable {
             spacing: 14
             IconButton {
                 filled: true
-                iconName: page.playingThis && Player.playing ? "pause" : "play"
+                iconName: page.playingThis && Player.busy ? "pause" : "play"
                 iconSize: 24
-                tip: "Play album"
+                tip: page.playingThis && Player.busy ? "Pause" : "Play album"
                 onClicked: page.playingThis ? Player.toggle() : Player.playTracks(page.album.tracks, 0, page.album.title)
             }
             PillButton {

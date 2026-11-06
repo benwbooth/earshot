@@ -148,6 +148,76 @@ pub fn related(track_id: u64) -> Result<Vec<Value>, String> {
     Ok(answer["collection"].as_array().map(|items| items.iter().filter_map(track).collect()).unwrap_or_default())
 }
 
+/// Where a track's audio is, for measuring the waveform: the files to read
+/// one after another (a whole MP3, or an HLS stream's init and segments) and
+/// what kind they are ("mp3" or "mp4"). Asked the way soundcloud.com's own
+/// player asks, preferring MP3, then the smallest AAC.
+pub fn audio(track_id: u64) -> Result<(Vec<String>, &'static str), String> {
+    let item = api(&format!("/tracks/{track_id}?"))?;
+    let authorization = item["track_authorization"].as_str().unwrap_or("");
+    let mut transcodings: Vec<&Value> = item.pointer("/media/transcodings").and_then(Value::as_array).map(|t| t.iter().collect()).unwrap_or_default();
+    let rank = |t: &Value| {
+        let mime = t.pointer("/format/mime_type").and_then(Value::as_str).unwrap_or("");
+        let progressive = t.pointer("/format/protocol").and_then(Value::as_str) == Some("progressive");
+        let small = t["quality"].as_str() == Some("lq");
+        match (mime.starts_with("audio/mpeg"), progressive, mime.contains("mp4a")) {
+            (true, true, _) => 0,
+            (true, false, _) => 1,
+            (_, _, true) if small => 2,
+            (_, _, true) => 3,
+            _ => 9, // Opus, which can't be decoded here
+        }
+    };
+    transcodings.sort_by_key(|t| rank(t));
+    let mut last = "SoundCloud didn't offer this track's audio.".to_owned();
+    for transcoding in transcodings.into_iter().filter(|t| rank(t) < 9) {
+        let Some(url) = transcoding["url"].as_str() else { continue };
+        let kind = if rank(transcoding) < 2 { "mp3" } else { "mp4" };
+        let located = (|| {
+            let id = client_id(false)?;
+            let answer = get_json(&format!("{url}?client_id={id}&track_authorization={}", encode(authorization)))?;
+            let stream = answer["url"].as_str().ok_or("SoundCloud didn't say where the audio is.")?.to_owned();
+            if transcoding.pointer("/format/protocol").and_then(Value::as_str) == Some("progressive") {
+                return Ok(vec![stream]);
+            }
+            hls_parts(&stream, &get_text(&stream)?)
+        })();
+        match located {
+            Ok(parts) => return Ok((parts, kind)),
+            Err(error) => last = error,
+        }
+    }
+    Err(last)
+}
+
+/// An HLS playlist's files in order (its init section first), or an error if
+/// it's encrypted.
+fn hls_parts(base: &str, playlist: &str) -> Result<Vec<String>, String> {
+    let absolute = |uri: &str| {
+        if uri.starts_with("http") {
+            uri.to_owned()
+        } else {
+            let dir = base.split('?').next().unwrap_or(base);
+            format!("{}/{uri}", &dir[..dir.rfind('/').unwrap_or(dir.len())])
+        }
+    };
+    let mut parts = Vec::new();
+    for line in playlist.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if let Some(key) = line.strip_prefix("#EXT-X-KEY:") {
+            if !key.contains("METHOD=NONE") {
+                return Err("SoundCloud's stream for this track is encrypted.".to_owned());
+            }
+        } else if let Some(map) = line.strip_prefix("#EXT-X-MAP:") {
+            if let Some(uri) = map.split("URI=\"").nth(1).and_then(|rest| rest.split('"').next()) {
+                parts.push(absolute(uri));
+            }
+        } else if !line.starts_with('#') {
+            parts.push(absolute(line));
+        }
+    }
+    if parts.is_empty() { Err("SoundCloud's stream for this track was empty.".to_owned()) } else { Ok(parts) }
+}
+
 /// Playlists only list the first few tracks in full; fetch the rest by id.
 fn full_tracks(items: &[Value]) -> Result<Vec<Value>, String> {
     let missing: Vec<u64> = items.iter().filter(|t| t["title"].is_null()).filter_map(|t| t["id"].as_u64()).collect();

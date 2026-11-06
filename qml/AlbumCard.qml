@@ -54,9 +54,9 @@ Item {
         id: playButton
         visible: card.playable
         filled: true
-        iconName: card.playingThis && Player.playing ? "pause" : "play"
+        iconName: card.playingThis && Player.busy ? "pause" : "play"
         iconSize: card.listMode ? 16 : 20
-        tip: card.playingThis && Player.playing ? "Pause" : "Play"
+        tip: card.playingThis && Player.busy ? "Pause" : "Play"
         x: card.listMode ? card.width - width - 8 : art.width - width - 10
         y: card.listMode ? (card.height - height) / 2 : art.height - height - (hover.hovered || card.playingThis ? 10 : 2)
         opacity: hover.hovered || card.playingThis ? 1 : 0

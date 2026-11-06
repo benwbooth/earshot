@@ -98,9 +98,10 @@ Flickable {
             spacing: 14
             IconButton {
                 filled: true
-                iconName: page.artist && Player.playingFrom(page.artist.name, page.artist.topTracks) && Player.playing ? "pause" : "play"
+                readonly property bool pause: !!page.artist && Player.playingFrom(page.artist.name, page.artist.topTracks) && Player.busy
+                iconName: pause ? "pause" : "play"
                 iconSize: 24
-                tip: "Play top songs"
+                tip: pause ? "Pause" : "Play top songs"
                 onClicked: Player.playOrToggle(page.artist.topTracks, page.artist.name)
             }
             PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.artist.topTracks, page.artist.name) }

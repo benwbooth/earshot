@@ -186,6 +186,16 @@ fn Highlight(album: Value) -> impl IntoView {
         .collect::<Vec<_>>()
         .join(" · ");
     let (play_id, play_title) = (id.clone(), title.clone());
+    // Pause while it plays (started here, from its card or its page).
+    let player = app.player;
+    let pause = {
+        let id = id.clone();
+        Memo::new(move |_| player.playing_album(&id) && player.busy())
+    };
+    let playing_this = {
+        let id = id.clone();
+        move || player.playing_album(&id)
+    };
     view! {
         <div class="bc-highlight">
             <a class="bc-highlight-art" href=album_href(&id)>
@@ -197,7 +207,10 @@ fn Highlight(album: Value) -> impl IntoView {
                 <div class="bc-highlight-artist">{s(&album, "artist")}</div>
                 <p class="bc-highlight-blurb">{s(&album, "blurb")}</p>
                 <div class="row">
-                    <PillButton primary=true icon="play" text="Play" on_click=move |_| app.play_album(play_id.clone(), play_title.clone(), false)/>
+                    <PillButton primary=true
+                        icon=Signal::derive(move || if pause.get() { "pause".to_owned() } else { "play".to_owned() })
+                        text=Signal::derive(move || if pause.get() { "Pause".to_owned() } else { "Play".to_owned() })
+                        on_click=move |_| if playing_this() { player.toggle() } else { app.play_album(play_id.clone(), play_title.clone(), false) }/>
                     {(!article.is_empty()).then(|| view! {
                         <PillButton icon="external" text="Read on Bandcamp Daily" on_click=move |_| open_web(&article)/>
                     })}

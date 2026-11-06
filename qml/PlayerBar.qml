@@ -159,11 +159,9 @@ Rectangle {
                             Icon { anchors.centerIn: parent; name: playButton.iconName; size: 20; color: Theme.background }
                         }
                     }
-                    BusyIndicator {
+                    Spinner {
                         anchors.fill: parent
                         visible: Player.loading
-                        running: visible
-                        palette.dark: Theme.accent
                     }
                 }
                 IconButton {
