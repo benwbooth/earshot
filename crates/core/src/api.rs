@@ -27,6 +27,7 @@ pub fn album(id: &str) -> Result<Value, String> {
         Some("bc") => bandcamp::album(id),
         Some("sc") => soundcloud::album(id),
         Some("ia") => archive::album(id),
+        Some("mb") => crate::musicbrainz::album(id),
         _ => catalog::album_detail(id),
     }
 }

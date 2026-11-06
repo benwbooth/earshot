@@ -4,19 +4,22 @@
 //! releases and related artists from Deezer's catalogue.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
 use crate::net::{encode, get_json};
-use crate::{catalog, random, youtube};
+use crate::{archive, bandcamp, catalog, mixcloud, musicbrainz, random, soundcloud, youtube};
 
 const DAY_MS: u64 = 86_400_000;
 /// Fewer different songs than this and there's nothing to go on yet.
 pub const SONGS_NEEDED: usize = 1;
 /// How much a liked song counts, in plays (a song in a playlist counts one).
 pub const LIKED_WEIGHT: usize = 2;
+/// Which way of making the mixes saved ones came from (2: from every source).
+const MADE_BY: u64 = 2;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -97,28 +100,86 @@ fn video_for(track: &Value, video: &str) -> Option<String> {
     youtube::search(&query, 1).ok()?.first()?["youtubeId"].as_str().map(str::to_owned)
 }
 
-/// New songs like `seed` that haven't been heard (and aren't in `taken`).
+fn tracks_of(found: Result<Value, String>) -> Vec<Value> {
+    found.ok().and_then(|value| value["tracks"].as_array().cloned()).unwrap_or_default()
+}
+
+/// Songs like `seed` from every source that has some, one list per source:
+/// the seed's own site's suggestions (SoundCloud's related tracks, Mixcloud's
+/// similar shows, Bandcamp's recommendations, the Internet Archive's other
+/// recordings), YouTube's mix for it, and, for songs from YouTube or the
+/// catalogue, the artist on Bandcamp and SoundCloud.
+fn similar(seed: &Value, video: &str) -> Vec<Vec<Value>> {
+    let artist = seed["artist"].as_str().unwrap_or("").trim().to_owned();
+    let own = match seed["service"].as_str() {
+        Some("soundcloud") => seed["soundcloudId"].as_u64().map(soundcloud::related),
+        Some("mixcloud") => seed["mixcloudKey"].as_str().map(mixcloud::similar),
+        Some("bandcamp") => Some(bandcamp::related(seed)),
+        Some("archive") => Some(archive::related(seed)),
+        _ => None,
+    };
+    let elsewhere = own.is_none() && !artist.is_empty();
+    std::thread::scope(|scope| {
+        let youtube = scope.spawn(|| video_for(seed, video).and_then(|video| youtube::mix(&video).ok()).unwrap_or_default());
+        let bandcamp = elsewhere.then(|| scope.spawn(|| tracks_of(bandcamp::search(&artist))));
+        let soundcloud = elsewhere.then(|| scope.spawn(|| tracks_of(soundcloud::search(&artist))));
+        let mut lists = vec![own.and_then(Result::ok).unwrap_or_default(), youtube.join().unwrap_or_default()];
+        for job in [bandcamp, soundcloud].into_iter().flatten() {
+            // Only songs actually by the artist, not everything the search matched.
+            let found: Vec<Value> = job.join().unwrap_or_default();
+            let wanted = artist.to_lowercase();
+            let by_artist = |name: &str| {
+                let name = name.trim().to_lowercase();
+                !name.is_empty() && (name.contains(&wanted) || wanted.contains(&name))
+            };
+            lists.push(found.into_iter().filter(|t| t["artist"].as_str().is_some_and(by_artist)).collect());
+        }
+        lists
+    })
+}
+
+/// Takes up to `count` songs that haven't been heard (and aren't in
+/// `taken`), a source at a time in turn, so every source gets a say.
+fn pick(mut lists: Vec<Vec<Value>>, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
+    for list in &mut lists {
+        random::shuffle(list);
+        list.reverse(); // popped from the end
+    }
+    let mut picked = Vec::new();
+    while picked.len() < count && lists.iter().any(|list| !list.is_empty()) {
+        for list in &mut lists {
+            while let Some(song) = list.pop() {
+                let key = song["key"].as_str().unwrap_or("").to_owned();
+                let video = song["youtubeId"].as_str().map(|v| format!("yt:{v}")).unwrap_or_default();
+                if !key.is_empty() && !heard.contains(&key) && !heard.contains(&video) && taken.insert(key) {
+                    picked.push(song);
+                    break;
+                }
+            }
+            if picked.len() >= count {
+                break;
+            }
+        }
+    }
+    picked
+}
+
+/// New songs like `seed`, from all the sources, that haven't been heard.
 fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
-    let Some(video) = video_for(seed, video) else { return Vec::new() };
-    let mut found = youtube::mix(&video).unwrap_or_default();
-    random::shuffle(&mut found);
-    found
-        .into_iter()
-        .filter(|song| {
-            let key = song["key"].as_str().unwrap_or("").to_owned();
-            !heard.contains(&key) && taken.insert(key)
-        })
-        .take(count)
-        .collect()
+    pick(similar(seed, video), heard, taken, count)
 }
 
 fn discover_weekly(taste: &Taste) -> Value {
     let mut taken = HashSet::new();
     let mut tracks = Vec::new();
     // About 30 songs, from up to six favourites (more from each when there are few).
-    let seeds = taste.songs.len().clamp(1, 6);
-    for (seed, video, _) in taste.songs.iter().take(6) {
-        tracks.extend(new_like(seed, video, &taste.heard, &mut taken, (30 / seeds).max(5)));
+    let seeds: Vec<_> = taste.songs.iter().take(6).collect();
+    let per_seed = (30 / seeds.len().max(1)).max(5);
+    // Every favourite's suggestions are looked up at the same time.
+    let found: Vec<Vec<Vec<Value>>> =
+        std::thread::scope(|scope| seeds.iter().map(|(seed, video, _)| scope.spawn(move || similar(seed, video))).collect::<Vec<_>>().into_iter().map(|job| job.join().unwrap_or_default()).collect());
+    for lists in found {
+        tracks.extend(pick(lists, &taste.heard, &mut taken, per_seed));
     }
     random::shuffle(&mut tracks);
     json!({
@@ -175,55 +236,200 @@ fn days(date: &str) -> Option<i64> {
     Some(era * 146_097 + doe - 719_468)
 }
 
-fn release_radar(taste: &Taste, ids: &[(String, String)], today: i64) -> Value {
-    let mut albums: Vec<(i64, Value)> = Vec::new();
-    for (name, id) in ids.iter().take(10) {
-        let Ok(list) = get_json(&format!("https://api.deezer.com/artist/{id}/albums?limit=50")) else { continue };
-        let artist = json!({ "id": id, "name": name });
-        for item in list["data"].as_array().cloned().unwrap_or_default() {
-            let Some(released) = item["release_date"].as_str().and_then(days) else { continue };
-            if released <= today && today - released <= 60 {
-                albums.push((released, catalog::album(&item, Some(&artist))));
-            }
+/// Where the listener's artists can be found: Deezer's catalogue, MusicBrainz,
+/// and the YouTube channels their songs come from (many aren't anywhere else).
+struct Artists {
+    deezer: Vec<(String, String)>,
+    musicbrainz: Vec<(String, String)>,
+    channels: Vec<String>,
+}
+
+fn find_artists(taste: &Taste) -> Artists {
+    let names: Vec<(String, String)> = taste.artists.iter().take(10).map(|(name, _, _, known)| (name.clone(), known.clone())).collect();
+    let mut channels: Vec<String> = Vec::new();
+    for (song, video, _) in &taste.songs {
+        let on_youtube = !video.is_empty() || song["key"].as_str().is_some_and(|k| k.starts_with("yt:"));
+        let channel = song["channel"].as_str().or(song["artist"].as_str()).unwrap_or("").trim().to_owned();
+        if on_youtube && song["service"].is_null() && !channel.is_empty() && !channels.iter().any(|c| c.eq_ignore_ascii_case(&channel)) {
+            channels.push(channel);
         }
     }
+    channels.truncate(6);
+    std::thread::scope(|scope| {
+        let deezer = scope.spawn(|| names.iter().filter_map(|(name, known)| deezer_artist(name, known).map(|id| (name.clone(), id))).collect());
+        let musicbrainz = scope.spawn(|| names.iter().filter_map(|(name, _)| musicbrainz::artist_id(name).map(|id| (name.clone(), id))).collect());
+        Artists { deezer: deezer.join().unwrap_or_default(), musicbrainz: musicbrainz.join().unwrap_or_default(), channels }
+    })
+}
+
+/// Albums (with release days where known) by the listener's artists from
+/// every source; with `within` days, only releases that recent.
+fn releases_from(artists: &Artists, today: i64, within: Option<i64>) -> Vec<(i64, Value)> {
+    let recent = |day: i64| within.is_none_or(|limit| day <= today && today - day <= limit);
+    std::thread::scope(|scope| {
+        let deezer = scope.spawn(|| {
+            let mut found = Vec::new();
+            for (name, id) in &artists.deezer {
+                let Ok(list) = get_json(&format!("https://api.deezer.com/artist/{id}/albums?limit=50")) else { continue };
+                let artist = json!({ "id": id, "name": name });
+                for item in list["data"].as_array().cloned().unwrap_or_default() {
+                    if let Some(day) = item["release_date"].as_str().and_then(days).filter(|day| recent(*day)) {
+                        found.push((day, catalog::album(&item, Some(&artist))));
+                    }
+                }
+            }
+            found
+        });
+        let musicbrainz = scope.spawn(|| {
+            let mut found = Vec::new();
+            for (name, id) in &artists.musicbrainz {
+                for release in musicbrainz::releases(id, name) {
+                    if let Some(day) = release["releaseDate"].as_str().and_then(days).filter(|day| recent(*day)) {
+                        found.push((day, release));
+                    }
+                }
+            }
+            found
+        });
+        // YouTube's filter gives this month's uploads; they count as new.
+        let youtube: Vec<_> = artists
+            .channels
+            .iter()
+            .map(|channel| scope.spawn(move || youtube::uploads(channel, within.is_some())))
+            .collect();
+        let mut all: Vec<(i64, Value)> = deezer.join().unwrap_or_default();
+        all.extend(musicbrainz.join().unwrap_or_default());
+        for job in youtube {
+            all.extend(job.join().unwrap_or_default().into_iter().take(4).map(|album| (today, album)));
+        }
+        all
+    })
+}
+
+/// The same release seen in two places counts once (the first, dated, one).
+fn distinct(albums: Vec<(i64, Value)>) -> Vec<(i64, Value)> {
+    let mut seen = HashSet::new();
+    albums
+        .into_iter()
+        .filter(|(_, album)| {
+            let name = |key: &str| album[key].as_str().unwrap_or("").trim().to_lowercase();
+            seen.insert((name("artist"), name("title")))
+        })
+        .collect()
+}
+
+fn release_radar(artists: &Artists, today: i64) -> Value {
+    let mut albums = distinct(releases_from(artists, today, Some(90)));
+    let mut subtitle = "New from artists you listen to, from the last three months: albums, singles and uploads.";
+    if albums.is_empty() {
+        // Nothing that recent: each artist's latest instead, so there's always something.
+        let mut latest = distinct(releases_from(artists, today, None));
+        latest.sort_by(|a, b| b.0.cmp(&a.0));
+        let mut per_artist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        albums = latest
+            .into_iter()
+            .filter(|(_, album)| {
+                let count = per_artist.entry(album["artist"].as_str().unwrap_or("").to_lowercase()).or_insert(0);
+                *count += 1;
+                *count <= 3
+            })
+            .collect();
+        subtitle = "Nothing new in the last three months, so here's the latest from artists you listen to.";
+    }
     albums.sort_by(|a, b| b.0.cmp(&a.0));
-    let _ = taste;
     json!({
         "id": "release-radar", "title": "Release Radar",
-        "subtitle": "New releases from artists you listen to, from the last two months.",
+        "subtitle": subtitle,
         "albums": albums.into_iter().map(|(_, album)| album).take(24).collect::<Vec<_>>(),
     })
 }
 
-fn albums_for_you(taste: &Taste, ids: &[(String, String)]) -> Value {
-    let known: HashSet<String> = taste.artists.iter().map(|a| a.0.to_lowercase()).collect();
-    let mut picks = Vec::new();
-    let mut seen = HashSet::new();
-    for (_, id) in ids.iter().take(4) {
-        let Ok(related) = get_json(&format!("https://api.deezer.com/artist/{id}/related?limit=4")) else { continue };
-        for other in related["data"].as_array().cloned().unwrap_or_default() {
-            let name = other["name"].as_str().unwrap_or("").to_owned();
-            if known.contains(&name.to_lowercase()) || !seen.insert(name.clone()) {
-                continue;
-            }
-            let Ok(list) = get_json(&format!("https://api.deezer.com/artist/{}/albums?limit=25", other["id"])) else { continue };
-            let best = list["data"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|album| album["record_type"] == "album")
-                .max_by_key(|album| album["fans"].as_u64().unwrap_or(0));
-            if let Some(album) = best {
-                picks.push(catalog::album(&album, Some(&other)));
-            }
-        }
+/// An artist's best-known album: Deezer's most popular, or MusicBrainz's newest.
+fn best_album(name: &str, musicbrainz_id: Option<&str>) -> Option<Value> {
+    if let Some(id) = deezer_artist(name, "") {
+        let list = get_json(&format!("https://api.deezer.com/artist/{id}/albums?limit=25")).ok()?;
+        let best = list["data"]
+            .as_array()?
+            .iter()
+            .filter(|album| album["record_type"] == "album")
+            .max_by_key(|album| album["fans"].as_u64().unwrap_or(0))?
+            .clone();
+        return Some(catalog::album(&best, Some(&json!({ "id": id, "name": name }))));
     }
+    musicbrainz::releases(musicbrainz_id?, name).into_iter().find(|release| release["kind"] == "album")
+}
+
+fn albums_for_you(taste: &Taste, artists: &Artists) -> Value {
+    let known: HashSet<String> = taste.artists.iter().map(|a| a.0.to_lowercase()).collect();
+    let seen = Mutex::new(known.clone());
+    // Each artist once, and none the listener already plays.
+    let fresh = |name: &str| !name.trim().is_empty() && seen.lock().unwrap().insert(name.trim().to_lowercase());
+    let picks: Vec<Value> = std::thread::scope(|scope| {
+        // Deezer's related artists.
+        let deezer = scope.spawn(|| {
+            let mut found = Vec::new();
+            for (_, id) in artists.deezer.iter().take(4) {
+                let Ok(related) = get_json(&format!("https://api.deezer.com/artist/{id}/related?limit=4")) else { continue };
+                for other in related["data"].as_array().cloned().unwrap_or_default() {
+                    let name = other["name"].as_str().unwrap_or("").to_owned();
+                    if fresh(&name) {
+                        found.extend(best_album(&name, None));
+                    }
+                }
+            }
+            found
+        });
+        // ListenBrainz: artists people listen to alongside yours.
+        let listenbrainz = scope.spawn(|| {
+            let mut found = Vec::new();
+            for (_, id) in artists.musicbrainz.iter().take(3) {
+                for (name, mbid) in musicbrainz::similar_artists(id).into_iter().take(8) {
+                    if found.len() >= 8 {
+                        break;
+                    }
+                    if fresh(&name) {
+                        found.extend(best_album(&name, Some(&mbid)));
+                    }
+                }
+            }
+            found
+        });
+        // YouTube: the other channels in the mixes of the listener's favourite songs.
+        let youtube = scope.spawn(|| {
+            let mut found = Vec::new();
+            for (seed, video, _) in taste.songs.iter().take(3) {
+                let Some(video) = video_for(seed, video) else { continue };
+                for track in youtube::mix(&video).unwrap_or_default().into_iter().take(15) {
+                    let channel = track["channel"].as_str().or(track["artist"].as_str()).unwrap_or("").to_owned();
+                    if found.len() < 10 && fresh(&channel) {
+                        found.extend(youtube::uploads(&channel, false).into_iter().next());
+                    }
+                }
+            }
+            found
+        });
+        // Bandcamp: what the pages of the listener's Bandcamp songs recommend.
+        let bandcamp = scope.spawn(|| {
+            taste
+                .songs
+                .iter()
+                .filter(|(song, _, _)| song["service"] == "bandcamp")
+                .take(2)
+                .flat_map(|(song, _, _)| bandcamp::recommended_albums(song, 4))
+                .collect::<Vec<_>>()
+        });
+        let mut all: Vec<Value> = Vec::new();
+        for job in [deezer, listenbrainz, youtube, bandcamp] {
+            all.extend(job.join().unwrap_or_default());
+        }
+        all
+    });
+    let mut picks = picks;
     random::shuffle(&mut picks);
+    picks.truncate(24);
     json!({
         "id": "albums-for-you", "title": "Albums for you",
-        "subtitle": "By artists like the ones you play.",
+        "subtitle": "By artists like the ones you play: from YouTube's mixes, Bandcamp's recommendations, ListenBrainz and Deezer.",
         "albums": picks,
     })
 }
@@ -251,7 +457,8 @@ pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) ->
         .unwrap_or(Value::Null);
     // Mixes made from only a song or two are made again once there's more to go on.
     let seeds = taste.songs.len().min(6) as u64;
-    let grown = saved["seeds"].as_u64().unwrap_or(0) < seeds;
+    // Mixes saved by an Earshot that made them differently are made again too.
+    let grown = saved["seeds"].as_u64().unwrap_or(0) < seeds || saved["made"].as_u64() != Some(MADE_BY);
     let weekly_fresh = !refresh && !grown && saved["week"].as_i64() == Some(week) && saved["weekly"].is_object();
     let daily_fresh = !refresh && !grown && saved["day"].as_i64() == Some(today) && saved["daily"].is_array();
 
@@ -261,13 +468,12 @@ pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) ->
         let daily = (!daily_fresh).then(|| scope.spawn(|| daily_mixes(&taste)));
         let catalogue = (!weekly_fresh).then(|| {
             scope.spawn(|| {
-                let ids: Vec<(String, String)> = taste
-                    .artists
-                    .iter()
-                    .take(10)
-                    .filter_map(|(name, _, _, known)| deezer_artist(name, known).map(|id| (name.clone(), id)))
-                    .collect();
-                (release_radar(&taste, &ids, today), albums_for_you(&taste, &ids))
+                let artists = find_artists(&taste);
+                std::thread::scope(|inner| {
+                    let radar = inner.spawn(|| release_radar(&artists, today));
+                    let albums = albums_for_you(&taste, &artists);
+                    (radar.join().unwrap_or(Value::Null), albums)
+                })
             })
         });
         let weekly = weekly.map(|job| job.join().unwrap_or(Value::Null)).unwrap_or_else(|| saved["weekly"].clone());
@@ -278,7 +484,7 @@ pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) ->
         (weekly, daily, radar, albums)
     });
 
-    let result = json!({ "week": week, "day": today, "seeds": seeds, "weekly": weekly, "daily": daily, "radar": radar, "albums": albums });
+    let result = json!({ "week": week, "day": today, "seeds": seeds, "made": MADE_BY, "weekly": weekly, "daily": daily, "radar": radar, "albums": albums });
     if let Some(path) = saved_path() {
         let _ = std::fs::write(path, result.to_string());
     }

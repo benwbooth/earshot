@@ -9,6 +9,7 @@ pub mod catalog;
 pub mod foryou;
 pub mod library;
 pub mod mixcloud;
+pub mod musicbrainz;
 pub mod net;
 pub mod radio;
 pub mod random;

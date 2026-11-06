@@ -308,6 +308,8 @@ h1, h2, h3, p { margin: 0; }
 .row-by { display: flex; align-items: center; gap: 6px; margin-top: 2px; color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
 .row-by a:hover { color: var(--text); text-decoration: underline; }
 .explicit { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 3px; background: var(--text-faint); color: var(--background); font-size: 9px; font-weight: 700; flex: none; }
+/* Where the song plays from (YouTube, Bandcamp…) */
+.row-by .source { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--text-faint); font-size: var(--font-small); white-space: nowrap; }
 .row-album { flex: 2; min-width: 0; color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
 a.row-album:hover { color: var(--text); text-decoration: underline; }
 .track-header .row-album, .track-header .row-text { font-size: 11px; }

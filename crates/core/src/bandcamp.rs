@@ -272,6 +272,23 @@ pub fn related(track: &Value) -> Result<Vec<Value>, String> {
     Ok(songs)
 }
 
+/// The albums a song's Bandcamp page recommends, as album cards (for Albums for you).
+pub fn recommended_albums(track: &Value, count: usize) -> Vec<Value> {
+    let Some(page_url) = track["pageUrl"].as_str() else { return Vec::new() };
+    let Ok(page) = get_text(page_url) else { return Vec::new() };
+    recommended(&page)
+        .iter()
+        .take(count)
+        .filter_map(|url| album(&format!("bc:{url}")).ok())
+        .map(|mut album| {
+            if let Some(object) = album.as_object_mut() {
+                object.remove("tracks");
+            }
+            album
+        })
+        .collect()
+}
+
 /// A fresh stream link for one song (Bandcamp's links expire after a while).
 pub fn stream(track: &Value) -> Result<String, String> {
     let page = track["pageUrl"].as_str().ok_or("This song has no Bandcamp page.")?;

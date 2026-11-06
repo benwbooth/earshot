@@ -124,6 +124,17 @@ Rectangle {
                     color: Theme.textFaint
                     Text { anchors.centerIn: parent; text: "E"; font.pixelSize: 9; font.bold: true; color: Theme.background }
                 }
+                // Where the song plays from: YouTube, Bandcamp, SoundCloud, Mixcloud or the Internet Archive.
+                RowLayout {
+                    readonly property var source: Api.source(row.track)
+                    spacing: 4
+                    Icon { name: parent.source.icon; size: 12; color: Theme.textFaint }
+                    Text {
+                        text: parent.source.name + "  ·"
+                        color: Theme.textFaint
+                        font.pixelSize: Theme.fontSmall
+                    }
+                }
                 Text {
                     Layout.fillWidth: true
                     text: row.track.artist + (row.track.source ? "  ·  " + row.track.source : "") + (row.track.tags ? "  ·  " + row.track.tags : "")

@@ -316,6 +316,18 @@ pub fn Marquee(#[prop(into)] text: Signal<String>, #[prop(optional, into)] class
     }
 }
 
+/// Where a song plays from (name, icon), for the label on every song row.
+/// Catalogue songs (and Reddit's) play from YouTube.
+pub fn source(track: &Value) -> (&'static str, &'static str) {
+    match track["service"].as_str() {
+        Some("bandcamp") => ("Bandcamp", "tag"),
+        Some("soundcloud") => ("SoundCloud", "cloud"),
+        Some("mixcloud") => ("Mixcloud", "mix"),
+        Some("archive") => ("Internet Archive", "archive"),
+        _ => ("YouTube", "youtube"),
+    }
+}
+
 fn opens_menu(tracks: Vec<Value>, event: &MouseEvent) -> MenuRequest {
     MenuRequest::new(tracks, event.client_x() as f64, event.client_y() as f64)
 }
@@ -397,6 +409,10 @@ pub fn TrackRow(
                 <div class="row-title">{s(&track, "title")}</div>
                 <div class="row-by">
                     {track["explicit"].as_bool().unwrap_or(false).then(|| view! { <span class="explicit">"E"</span> })}
+                    {
+                        let (name, icon) = source(&track);
+                        view! { <span class="source" title=format!("Plays from {name}")><Icon name=icon.to_owned() size=12/>{name}" ·"</span> }
+                    }
                     {if artist_id.is_empty() {
                         view! { <span>{by}</span> }.into_any()
                     } else {

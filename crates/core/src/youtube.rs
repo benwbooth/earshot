@@ -200,10 +200,17 @@ fn from_lockup(lockup: &Value) -> Option<Lockup> {
 /// playlists), plus the token for the next page ("" after the last one). An
 /// empty `continuation` asks for the first page.
 fn search_page(query: &str, continuation: &str) -> Result<(Vec<Lockup>, String), String> {
-    let answer = if continuation.is_empty() {
-        innertube("search", json!({ "query": query }))?
-    } else {
+    search_filtered(query, continuation, None)
+}
+
+/// The same with one of YouTube's search filters (`params`, as youtube.com sends them).
+fn search_filtered(query: &str, continuation: &str, params: Option<&str>) -> Result<(Vec<Lockup>, String), String> {
+    let answer = if !continuation.is_empty() {
         innertube("search", json!({ "continuation": continuation }))?
+    } else if let Some(params) = params {
+        innertube("search", json!({ "query": query, "params": params }))?
+    } else {
+        innertube("search", json!({ "query": query }))?
     };
     let mut found = Vec::new();
     collect(&answer, &["videoRenderer", "lockupViewModel", "continuationItemRenderer"], &mut found);
@@ -284,25 +291,44 @@ pub fn search_albums(query: &str, continuation: &str) -> Result<Value, String> {
     for item in items {
         match item {
             Lockup::Playlist(playlist) => albums.push(playlist),
-            Lockup::Video(video) if is_album_video(&video) => {
-                let id = video["youtubeId"].as_str().unwrap_or("");
-                albums.push(json!({
-                    "id": format!("yt:v:{id}"),
-                    "title": video["rawTitle"],
-                    "artist": video["channel"],
-                    "artistId": "",
-                    "cover": thumbnail(id),
-                    "coverBig": thumbnail(id),
-                    "year": "",
-                    "kind": "video",
-                    "duration": video["duration"],
-                    "trackCount": video["chapters"],
-                }));
-            }
+            Lockup::Video(video) if is_album_video(&video) => albums.push(video_album(&video)),
             Lockup::Video(video) => tracks.push(video),
         }
     }
     Ok(json!({ "albums": albums, "tracks": tracks, "next": next }))
+}
+
+/// A video as an album card (it opens as one, split at its chapters).
+fn video_album(video: &Value) -> Value {
+    let id = video["youtubeId"].as_str().unwrap_or("");
+    json!({
+        "id": format!("yt:v:{id}"),
+        "title": video["rawTitle"],
+        "artist": video["channel"],
+        "artistId": "",
+        "cover": thumbnail(id),
+        "coverBig": thumbnail(id),
+        "year": "",
+        "kind": "video",
+        "duration": video["duration"],
+        "trackCount": video["chapters"],
+    })
+}
+
+/// What a channel has put up (playlists and videos, as album cards): only
+/// this month's when `recent` (YouTube's "Upload date: This month" filter).
+pub fn uploads(channel: &str, recent: bool) -> Vec<Value> {
+    let Ok((items, _)) = search_filtered(channel, "", recent.then_some("EgIIBA==")) else { return Vec::new() };
+    let wanted = channel.trim().to_lowercase();
+    let theirs = |name: &Value| name.as_str().is_some_and(|name| name.trim().to_lowercase() == wanted);
+    items
+        .into_iter()
+        .filter_map(|item| match item {
+            Lockup::Playlist(playlist) if theirs(&playlist["artist"]) => Some(playlist),
+            Lockup::Video(video) if theirs(&video["channel"]) => Some(video_album(&video)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// A YouTube playlist ("yt:pl:ID") or a long video split at its chapters ("yt:v:ID"), as an album.

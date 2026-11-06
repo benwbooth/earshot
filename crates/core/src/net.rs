@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-const USER_AGENT: &str = concat!("linux:earshot:", env!("CARGO_PKG_VERSION"), " (desktop music player)");
+// Names Earshot and where to reach it, as MusicBrainz asks of every app.
+const USER_AGENT: &str = concat!("linux:earshot:", env!("CARGO_PKG_VERSION"), " (desktop music player; https://github.com/benwbooth/earshot)");
 
 fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
