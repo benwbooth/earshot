@@ -29,6 +29,16 @@ fn need_more(made: &Option<Value>) -> bool {
     made.as_ref().is_some_and(needs_more)
 }
 
+/// Brings the chosen mix's songs into view when they start below the screen,
+/// so picking a mix always shows something happen.
+fn show_songs() {
+    let Some(songs) = document().query_selector(".foryou .mix-songs").ok().flatten() else { return };
+    let below = window().inner_height().ok().and_then(|h| h.as_f64()).unwrap_or(0.0) - 160.0;
+    if songs.get_bounding_client_rect().top() > below {
+        songs.scroll_into_view_with_bool(true);
+    }
+}
+
 /// "Nov 5", for a saved mix's name.
 fn short_date() -> String {
     const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -142,6 +152,7 @@ pub fn ForYouPage() -> impl IntoView {
                             <div class="mix" class:selected=move || is_selected.get() on:click=move |event: MouseEvent| {
                                 event.prevent_default();
                                 selected.set(pick.clone());
+                                request_animation_frame(show_songs);
                             }>
                                 <TileCard title=s(&m, "title") subtitle=format!("{} songs", tracks.len()) image=image
                                     tint=TINTS[index % TINTS.len()] height=110 href=ROUTE/>

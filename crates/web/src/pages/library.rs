@@ -1,5 +1,5 @@
-//! Saved albums (qml/LibraryAlbumsPage.qml), and the phone's Library tab: the
-//! sidebar's library entries, since phones don't show the sidebar.
+//! Saved albums (qml/LibraryAlbumsPage.qml), and the phone's More tab: every
+//! sidebar entry, since phones don't show the sidebar.
 
 use std::cmp::Ordering;
 
@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use serde_json::Value;
 
 use crate::components::{AlbumCard, Icon, IconButton, PillButton, Shelf, StatusView};
-use crate::state::{Prompt, album_href, app, playlist_href, s};
+use crate::state::{Prompt, album_href, app, playlist_href, s, service_href};
 
 fn by_text(a: &Value, b: &Value, key: &str) -> Ordering {
     s(a, key).to_lowercase().cmp(&s(b, key).to_lowercase())
@@ -89,11 +89,27 @@ pub fn LibraryPage() -> impl IntoView {
     let count = |n: u64| if n > 0 { n.to_string() } else { String::new() };
     let liked = Signal::derive(move || count(app.playlists().iter().find(|p| s(p, "id") == "liked").and_then(|p| p["count"].as_u64()).unwrap_or(0)));
     let albums = Signal::derive(move || count(app.saved_albums().len() as u64));
+    let player = app.player;
+    let upcoming = Signal::derive(move || {
+        let left = player.queue.with(Vec::len) as i64 - player.index.get() - 1;
+        if player.queue.with(Vec::is_empty) || left <= 0 { String::new() } else { left.to_string() }
+    });
+    let none = Signal::derive(String::new);
 
     view! {
         <div class="page library">
-            <h1 class="hero">"Your library"</h1>
+            <h1 class="hero">"More"</h1>
             <div class="library-list">
+                <div class="nav-heading">"DISCOVER"</div>
+                <Entry icon="sparkle" label="Made for you" href="/foryou" detail=none/>
+                <Entry icon="youtube" label="YouTube" href=service_href("youtube") detail=none/>
+                <Entry icon="radio" label="Reddit radio" href="/radio" detail=none/>
+                <Entry icon="tag" label="Bandcamp" href="/bandcamp" detail=none/>
+                <Entry icon="cloud" label="SoundCloud" href=service_href("soundcloud") detail=none/>
+                <Entry icon="mix" label="Mixcloud" href=service_href("mixcloud") detail=none/>
+                <Entry icon="archive" label="Internet Archive" href=service_href("archive") detail=none/>
+                <Entry icon="queue" label="Queue" href="/queue" detail=upcoming/>
+                <div class="nav-heading">"YOUR LIBRARY"</div>
                 <Entry icon="album" label="Albums" href="/albums" detail=albums/>
                 <Entry icon="heart" label="Liked songs" href=playlist_href("liked") detail=liked/>
                 <div class="nav-heading with-buttons">

@@ -10,8 +10,20 @@
 
 .foryou .mix-songs, .foryou .album-section { display: flex; flex-direction: column; gap: 12px; }
 .foryou .album-section { margin-top: 16px; }
+.foryou .mix-songs { scroll-margin-top: 24px; }
 .foryou .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 
 @media (max-width: 760px) {
   .foryou .intro { flex-direction: column; align-items: flex-start; }
+  /* On phones the mixes are one row of small tiles you swipe along, so the
+     chosen mix's songs sit right below them */
+  .foryou .mixes {
+    display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+    margin: 0 -16px; padding: 0 16px;
+  }
+  .foryou .mix { flex: 0 0 150px; scroll-snap-align: start; scroll-margin-left: 16px; }
+  .foryou .mix .tile { --height: 72px !important; }
+  .foryou .mix .tile-text { top: 12px; left: 12px; }
+  .foryou .mix .tile .title { font-size: 15px; }
+  .foryou .mix .tile .subtitle { font-size: 12px; }
 }

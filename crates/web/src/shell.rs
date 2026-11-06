@@ -254,7 +254,8 @@ pub fn TabBar() -> impl IntoView {
             <NavItem icon="search" label="Search" href="/search" tab=true/>
             <NavItem icon="sparkle" label="For you" href="/foryou" tab=true/>
             <NavItem icon="radio" label="Radio" href="/radio" tab=true/>
-            <NavItem icon="library" label="Library" href="/library" tab=true/>
+            // Everything else the sidebar has: the other sources, the queue and the library.
+            <NavItem icon="more" label="More" href="/library" tab=true/>
         </nav>
     }
 }
