@@ -87,8 +87,12 @@ pub fn ArtistPage() -> impl IntoView {
 
             <Show when=ready>
                 <div class="artist-actions">
-                    <IconButton filled=true icon="play" size=24 tip="Play top songs"
-                        on_click=move |_| player.play_tracks(top.get_untracked(), 0, name.get_untracked(), None)/>
+                    <IconButton filled=true size=24 tip="Play top songs"
+                        icon=Signal::derive(move || top.with(|list| player.play_icon(&name.get(), list)))
+                        on_click=move |_| {
+                            let (list, artist) = (top.get_untracked(), name.get_untracked());
+                            player.play_or_toggle(&artist, &list, || player.play_tracks(list.clone(), 0, artist.clone(), None))
+                        }/>
                     <PillButton text="Shuffle" icon="shuffle"
                         on_click=move |_| player.shuffle_tracks(top.get_untracked(), name.get_untracked(), None)/>
                 </div>

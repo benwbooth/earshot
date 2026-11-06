@@ -4,9 +4,11 @@
 //! - Bandcamp and Internet Archive songs play from an audio file (passed
 //!   through Earshot's server), which the browser can measure directly.
 //! - YouTube, SoundCloud and Mixcloud play in those sites' own players, which
-//!   a page can't hear. When the browser is on the computer running Earshot's
-//!   server, the server measures the speakers instead, as the Qt app does.
-//! - Otherwise (a phone playing YouTube, say) the bars stay still.
+//!   a page can't hear, so the server measures the speakers of the computer
+//!   it runs on instead, as the Qt app does. (A page can't tell whether it's
+//!   on that computer when opened by its network address, so it always asks.)
+//! - A phone playing YouTube by itself, say, isn't heard by that computer, so
+//!   its bars stay still.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -23,6 +25,8 @@ const CENTRES: [f64; BANDS] = [70.0, 180.0, 450.0, 1100.0, 2800.0, 7000.0];
 
 /// Why the bars aren't moving, when they can't be measured.
 pub const CANT_HEAR: &str = "The waveform can't hear this site's player in a browser on this device";
+/// Where the bars come from for YouTube, SoundCloud and Mixcloud.
+const FROM_SPEAKERS: &str = "Measured from the speakers of the computer running Earshot";
 
 /// The browser's own measuring of the audio file, made on the first click
 /// (browsers only allow sound through it after one).
@@ -74,12 +78,6 @@ thread_local! {
     static SPEAKERS: std::cell::RefCell<Option<EventSource>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Whether this browser is on the computer running Earshot's server.
-fn on_this_computer() -> bool {
-    let host = window().location().hostname().unwrap_or_default();
-    matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]" | "::1")
-}
-
 /// Listens to the server's speaker measurements while needed.
 fn speakers(on: bool, levels: RwSignal<[f64; BANDS]>) {
     SPEAKERS.with(|cell| {
@@ -124,8 +122,7 @@ pub fn run(player: Player) {
     let tick = Closure::<dyn Fn()>::new(move || {
         let playing = player.engine.state.get_untracked() == 1;
         let from_file = player.engine.playing_file();
-        let local = on_this_computer();
-        speakers(playing && !from_file && local, player.levels);
+        speakers(playing && !from_file, player.levels);
         if !playing {
             if player.levels.with_untracked(|l| l.iter().any(|v| *v > 0.0)) {
                 player.levels.set([0.0; BANDS]);
@@ -148,11 +145,8 @@ pub fn run(player: Player) {
                 }
                 None => player.levels_note.set(CANT_HEAR.to_owned()),
             }
-        } else if !local {
-            player.levels.set([0.0; BANDS]);
-            player.levels_note.set(CANT_HEAR.to_owned());
         } else {
-            player.levels_note.set(String::new());
+            player.levels_note.set(FROM_SPEAKERS.to_owned());
         }
     });
     let _ = window().set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), 40);

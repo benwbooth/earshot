@@ -148,6 +148,21 @@ async fn audio(Query(query): Query<HashMap<String, String>>, headers: HeaderMap)
     }
 }
 
+// The interface's files come from the Nix store, where every file is dated
+// 1970, so browsers asking "changed since?" would always hear no and keep an
+// old version after an update. Answer in full every time instead.
+async fn ask_fresh(mut request: axum::extract::Request) -> axum::extract::Request {
+    request.headers_mut().remove(header::IF_MODIFIED_SINCE);
+    request.headers_mut().remove(header::IF_NONE_MATCH);
+    request
+}
+
+async fn answer_fresh(mut response: Response) -> Response {
+    response.headers_mut().remove(header::LAST_MODIFIED);
+    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-cache"));
+    response
+}
+
 /// The whole site: the API, then the interface's files, with every other
 /// path answered by index.html so links into pages work.
 pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
@@ -156,7 +171,10 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
     core.on_change(move || {
         let _ = sender.send(());
     });
-    let files = ServeDir::new(&web_dir).fallback(ServeFile::new(web_dir.join("index.html")));
+    let files = Router::new()
+        .fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(web_dir.join("index.html"))))
+        .layer(axum::middleware::map_request(ask_fresh))
+        .layer(axum::middleware::map_response(answer_fresh));
     Router::new()
         .route("/api/events", get(events))
         .route("/api/levels", get(levels))

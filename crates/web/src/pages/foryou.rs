@@ -156,8 +156,12 @@ pub fn ForYouPage() -> impl IntoView {
                     <SectionHeader title=mix_title/>
                     <p class="note">{move || mix.with(|m| m.as_ref().map(|m| s(m, "subtitle")).unwrap_or_default())}</p>
                     <div class="actions">
-                        <IconButton icon="play" size=22 filled=true tip="Play"
-                            on_click=move |_| player.play_tracks(mix_tracks.get_untracked(), 0, mix_title.get_untracked(), Some(ROUTE.into()))/>
+                        <IconButton size=22 filled=true tip="Play"
+                            icon=Signal::derive(move || mix_tracks.with(|tracks| player.play_icon(&mix_title.get(), tracks)))
+                            on_click=move |_| {
+                                let (tracks, title) = (mix_tracks.get_untracked(), mix_title.get_untracked());
+                                player.play_or_toggle(&title, &tracks, || player.play_tracks(tracks.clone(), 0, title.clone(), Some(ROUTE.into())))
+                            }/>
                         <PillButton text="Shuffle" icon="shuffle"
                             on_click=move |_| player.shuffle_tracks(mix_tracks.get_untracked(), mix_title.get_untracked(), Some(ROUTE.into()))/>
                         <PillButton text="Save as playlist" icon="plus" on_click=move |_| {

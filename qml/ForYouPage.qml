@@ -162,10 +162,10 @@ Flickable {
                 spacing: 14
                 IconButton {
                     filled: true
-                    iconName: "play"
+                    iconName: page.mix && Player.playingFrom(page.mix.title, page.mix.tracks) && Player.playing ? "pause" : "play"
                     iconSize: 22
                     tip: "Play"
-                    onClicked: Player.playTracks(page.mix.tracks, 0, page.mix.title, { page: "foryou", args: {} })
+                    onClicked: Player.playOrToggle(page.mix.tracks, page.mix.title, { page: "foryou", args: {} })
                 }
                 PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.mix.tracks, page.mix.title, { page: "foryou", args: {} }) }
                 PillButton {

@@ -188,6 +188,18 @@ QtObject {
         }
     }
 
+    // Whether the song playing was started from these songs, so a page's big
+    // play button shows pause and pauses (or carries on) instead of restarting.
+    function playingFrom(contextName, tracks) {
+        return current !== null && context === contextName && (tracks || []).some(t => t.key === current.key)
+    }
+    function playOrToggle(tracks, contextName, route) {
+        if (playingFrom(contextName, tracks))
+            toggle()
+        else
+            playTracks(tracks, 0, contextName, route)
+    }
+
     function copy(tracks) {
         return (tracks || []).filter(t => t && t.key).map(t => Object.assign({}, t))
     }

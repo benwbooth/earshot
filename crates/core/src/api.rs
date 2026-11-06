@@ -98,15 +98,39 @@ fn list(value: &Value) -> Vec<Value> {
     }
 }
 
+type Listeners = Arc<Mutex<Vec<Box<dyn Fn() + Send + Sync>>>>;
+
+fn tell(listeners: &Listeners) {
+    for listener in listeners.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter() {
+        listener();
+    }
+}
+
 /// The music services plus the listener's library.
 pub struct Earshot {
     library: Arc<Mutex<Library>>,
-    on_change: Mutex<Vec<Box<dyn Fn() + Send + Sync>>>,
+    on_change: Listeners,
 }
 
 impl Earshot {
     pub fn new(library: Arc<Mutex<Library>>) -> Self {
-        Self { library, on_change: Mutex::new(Vec::new()) }
+        let on_change: Listeners = Arc::default();
+        // The app and the web version's server can share one database (the
+        // Docker image mounts the app's data folder): notice the other's changes.
+        let (watched, listeners) = (library.clone(), on_change.clone());
+        std::thread::spawn(move || {
+            let version = || watched.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).data_version();
+            let mut seen = version();
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let now = version();
+                if now != seen {
+                    seen = now;
+                    tell(&listeners);
+                }
+            }
+        });
+        Self { library, on_change }
     }
 
     pub fn library(&self) -> MutexGuard<'_, Library> {
@@ -118,15 +142,13 @@ impl Earshot {
     }
 
     /// Runs `listener` whenever playlists, liked songs, saved albums or the
-    /// listening history change through [`Earshot::call`].
+    /// listening history change, here or in another Earshot sharing the file.
     pub fn on_change(&self, listener: impl Fn() + Send + Sync + 'static) {
         self.on_change.lock().unwrap().push(Box::new(listener));
     }
 
     fn changed(&self) {
-        for listener in self.on_change.lock().unwrap().iter() {
-            listener();
-        }
+        tell(&self.on_change);
     }
 
     /// Answers one request by name. Slow ones (the network) block, so call
@@ -157,14 +179,11 @@ impl Earshot {
                 let (history, favourites) = {
                     let library = self.library();
                     let kept: Vec<(Value, usize)> = library
-                        .playlists
-                        .iter()
-                        .flat_map(|playlist| {
-                            let weight = if playlist.id == crate::library::LIKED { foryou::LIKED_WEIGHT } else { 1 };
-                            playlist.tracks.iter().map(move |track| (track.clone(), weight))
-                        })
+                        .all_playlist_tracks()
+                        .into_iter()
+                        .map(|(playlist, track)| (track, if playlist == crate::library::LIKED { foryou::LIKED_WEIGHT } else { 1 }))
                         .collect();
-                    (library.history.clone(), kept)
+                    (library.history(), kept)
                 };
                 foryou::build(&history, &favourites, args["refresh"].as_bool().unwrap_or(false))
             }
@@ -174,18 +193,14 @@ impl Earshot {
             "radioStations" => Ok(radio::stations()),
             "resolve" => {
                 let key = args["track"]["key"].as_str().unwrap_or("").to_owned();
-                let known = self.library().videos.get(&key).cloned();
+                let known = self.library().video(&key);
                 let videos = youtube::find_videos(&args["track"], known)?;
                 Ok(json!({ "key": key, "videos": videos }))
             }
             "importPlaylist" => import_playlist(&text("url")),
 
             "recordPlay" => {
-                {
-                    let mut library = self.library();
-                    library.record_play(&args["track"], &text("video"));
-                    library.save();
-                }
+                self.library().record_play(&args["track"], &text("video"));
                 changes(Value::Null)
             }
             "rememberVideo" => {
@@ -232,7 +247,7 @@ impl Earshot {
                 self.library().set_liked(args["track"].clone(), args["liked"].as_bool().unwrap_or(false));
                 changes(Value::Null)
             }
-            "savedAlbums" => Ok(json!(self.library().albums)),
+            "savedAlbums" => Ok(json!(self.library().albums())),
             "isAlbumSaved" => Ok(json!(self.library().is_album_saved(&text("id")))),
             "setAlbumSaved" => {
                 self.library().set_album_saved(args["album"].clone(), args["saved"].as_bool().unwrap_or(false));
@@ -241,7 +256,7 @@ impl Earshot {
             // Everything the library holds that the interface shows at once.
             "library" => {
                 let library = self.library();
-                Ok(json!({ "playlists": library.playlists_json(), "albums": library.albums }))
+                Ok(json!({ "playlists": library.playlists_json(), "albums": library.albums() }))
             }
             other => Err(format!("Earshot doesn't know \"{other}\"")),
         }

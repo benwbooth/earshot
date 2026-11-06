@@ -170,8 +170,12 @@ pub fn ServicePage() -> impl IntoView {
             </Show>
             <Show when=move || !tracks.with(Vec::is_empty)>
                 <div class="actions">
-                    <IconButton icon="play" size=22 filled=true tip="Play all"
-                        on_click=move |_| player.play_tracks(tracks.get_untracked(), 0, context.get_untracked(), Some(service_href(id.get_untracked())))/>
+                    <IconButton size=22 filled=true tip="Play all"
+                        icon=Signal::derive(move || tracks.with(|list| player.play_icon(&context.get(), list)))
+                        on_click=move |_| {
+                            let (list, name) = (tracks.get_untracked(), context.get_untracked());
+                            player.play_or_toggle(&name, &list, || player.play_tracks(list.clone(), 0, name.clone(), Some(service_href(id.get_untracked()))))
+                        }/>
                     <PillButton text="Shuffle" icon="shuffle"
                         on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), context.get_untracked(), Some(service_href(id.get_untracked())))/>
                 </div>

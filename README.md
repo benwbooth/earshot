@@ -70,7 +70,11 @@ Project page: https://benwbooth.github.io/earshot/ (served by GitHub Pages from 
   open as albums and their MP3s stream straight from archive.org.
 - The waveform is measured from what your speakers play, with the [cpal](https://github.com/RustAudio/cpal) audio
   library: loopback recording on Windows and macOS 14.6+, the PipeWire speaker monitor on Linux.
-- Your playlists, liked songs and saved albums live in `~/.local/share/earshot/library.json`.
+- Your playlists, liked songs, saved albums and listening history live in an SQLite database,
+  `~/.local/share/earshot/earshot.db`. The app and the web version's server can use it at the same time: each change
+  is one transaction that takes SQLite's write lock first, readers never wait (write-ahead log), and each notices the
+  other's changes within a couple of seconds. A `library.json` from earlier versions is imported once and kept as
+  `library.json.imported`.
 
 ## Install
 

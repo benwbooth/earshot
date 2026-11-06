@@ -69,8 +69,12 @@ pub fn ChartPage() -> impl IntoView {
 
             <Show when=ready>
                 <div class="chart-actions">
-                    <IconButton filled=true icon="play" size=24 tip="Play"
-                        on_click=move |_| player.play_tracks(tracks.get_untracked(), 0, context.get_untracked(), None)/>
+                    <IconButton filled=true size=24 tip="Play"
+                        icon=Signal::derive(move || tracks.with(|list| player.play_icon(&context.get(), list)))
+                        on_click=move |_| {
+                            let (list, name) = (tracks.get_untracked(), context.get_untracked());
+                            player.play_or_toggle(&name, &list, || player.play_tracks(list.clone(), 0, name.clone(), None))
+                        }/>
                     <PillButton text="Shuffle" icon="shuffle"
                         on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), title.get_untracked(), None)/>
                     <IconButton icon="more" tip="More"

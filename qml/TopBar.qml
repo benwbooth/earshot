@@ -101,6 +101,7 @@ Rectangle {
         // Brand, as wide as the sidebar below it so the search lines up with the content
         RowLayout {
             Layout.preferredWidth: 248 - 16 - (bar.buttonStyle === "mac" ? 60 : 0)
+            Layout.fillWidth: false
             spacing: 10
             Image {
                 source: Theme.icon("earshot-app")
@@ -115,6 +116,8 @@ Rectangle {
                 font.weight: Font.Bold
                 font.letterSpacing: -0.3
             }
+            // Keeps the name next to the logo; the row's spare width goes after it.
+            Item { Layout.fillWidth: true }
         }
 
         IconButton {

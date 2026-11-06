@@ -94,10 +94,10 @@ Flickable {
             visible: !!page.data_
             IconButton {
                 filled: true
-                iconName: "play"
+                iconName: page.data_ && Player.playingFrom(page.data_.title || "Chart", page.data_.tracks) && Player.playing ? "pause" : "play"
                 iconSize: 24
                 tip: "Play"
-                onClicked: Player.playTracks(page.data_.tracks, 0, (page.data_.title || "Chart"))
+                onClicked: Player.playOrToggle(page.data_.tracks, page.data_.title || "Chart")
             }
             PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.data_.tracks, page.data_.title) }
             IconButton {

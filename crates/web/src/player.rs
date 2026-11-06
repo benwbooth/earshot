@@ -112,6 +112,28 @@ impl Player {
         self.current().map(|t| s(&t, "key")).unwrap_or_default()
     }
 
+    /// Whether the song playing was started from these songs (a page's big
+    /// play button then shows pause, and pauses or carries on).
+    pub fn playing_from(&self, context: &str, tracks: &[Value]) -> bool {
+        let key = self.current_key();
+        !key.is_empty() && self.context.get() == context && tracks.iter().any(|t| s(t, "key") == key)
+    }
+
+    /// A page's big play button: pause or carry on if its songs are what's
+    /// playing, otherwise `start` them.
+    pub fn play_or_toggle(&self, context: &str, tracks: &[Value], start: impl FnOnce()) {
+        if self.playing_from(context, tracks) {
+            self.toggle();
+        } else {
+            start();
+        }
+    }
+
+    /// "pause" while these songs play, otherwise "play".
+    pub fn play_icon(&self, context: &str, tracks: &[Value]) -> String {
+        if self.playing_from(context, tracks) && self.playing() { "pause".into() } else { "play".into() }
+    }
+
     pub fn playing(&self) -> bool {
         self.engine.playing()
     }
