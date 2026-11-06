@@ -411,7 +411,8 @@ pub fn TrackRow(
                     {track["explicit"].as_bool().unwrap_or(false).then(|| view! { <span class="explicit">"E"</span> })}
                     {
                         let (name, logo) = source(&track);
-                        view! { <img class="source" src=format!("/icons/{logo}.svg") alt=name title=format!("Plays from {name}")/> }
+                        // One colour, like the other small icons; the name on hover.
+                        view! { <span class="source" role="img" aria-label=name title=format!("Plays from {name}")><Icon name=logo.to_owned() size=14/></span> }
                     }
                     {if artist_id.is_empty() {
                         view! { <span>{by}</span> }.into_any()

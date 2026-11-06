@@ -124,14 +124,14 @@ Rectangle {
                     color: Theme.textFaint
                     Text { anchors.centerIn: parent; text: "E"; font.pixelSize: 9; font.bold: true; color: Theme.background }
                 }
-                // Where the song plays from: the site's logo, its name on hover.
-                Image {
+                // Where the song plays from: the site's logo (one colour, like the
+                // other small icons), its name on hover.
+                Icon {
                     id: sourceLogo
                     readonly property var source_: Api.source(row.track)
-                    source: Theme.icon(source_.logo)
-                    sourceSize: Qt.size(32, 32)
-                    Layout.preferredWidth: 14
-                    Layout.preferredHeight: 14
+                    name: source_.logo
+                    size: 14
+                    color: logoHover.hovered ? Theme.textMuted : Theme.textFaint
                     HoverHandler { id: logoHover }
                     ToolTip.visible: logoHover.hovered
                     ToolTip.text: "Plays from " + source_.name
