@@ -9,6 +9,8 @@ Window {
     signal openRequested()
 
     property var track: null
+    // A short notice instead of a song (where the desktop has no tray to show it).
+    property string message: ""
     property int margin: 16
 
     width: 380
@@ -25,6 +27,17 @@ Window {
 
     function announce(newTrack) {
         track = newTrack
+        message = ""
+        appear()
+    }
+
+    function notify(text) {
+        track = null
+        message = text
+        appear()
+    }
+
+    function appear() {
         card.opacity = 0
         card.offset = 24
         show()
@@ -95,7 +108,16 @@ Window {
             anchors.margins: 12
             spacing: 14
 
+            Image {
+                visible: popup.message !== ""
+                source: Theme.icon("earshot-app")
+                sourceSize: Qt.size(80, 80)
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                Layout.alignment: Qt.AlignVCenter
+            }
             Cover {
+                visible: popup.message === ""
                 Layout.preferredWidth: 72
                 Layout.preferredHeight: 72
                 Layout.alignment: Qt.AlignTop
@@ -110,9 +132,9 @@ Window {
                 spacing: 3
                 RowLayout {
                     spacing: 8
-                    Waveform { Layout.preferredHeight: 12; barWidth: 2.5; gap: 1.5 }
+                    Waveform { visible: popup.message === ""; Layout.preferredHeight: 12; barWidth: 2.5; gap: 1.5 }
                     Text {
-                        text: "NOW PLAYING"
+                        text: popup.message !== "" ? "EARSHOT" : "NOW PLAYING"
                         color: Theme.accent
                         font.pixelSize: Theme.fontSmall - 1
                         font.weight: Font.DemiBold
@@ -121,7 +143,7 @@ Window {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: popup.track ? popup.track.title : ""
+                    text: popup.message !== "" ? popup.message : popup.track ? popup.track.title : ""
                     color: Theme.text
                     font.pixelSize: Theme.fontBody + 1
                     font.weight: Font.DemiBold

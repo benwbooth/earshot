@@ -10,7 +10,7 @@ use web_sys::MouseEvent;
 
 use crate::api;
 use crate::components::{AlbumCard, IconButton, PillButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
-use crate::state::{album_href, app, list, num, s};
+use crate::state::{album_href, app, list, s};
 
 const TINTS: [&str; 4] = ["#7a5cff", "#ff5f7e", "#3db8ff", "#3ddc97"];
 const ROUTE: &str = "/foryou";
@@ -118,9 +118,8 @@ pub fn ForYouPage() -> impl IntoView {
                 loading=Signal::derive(move || loading.get() && made.with(Option::is_none))
                 error=error
                 empty=Signal::derive(move || made.with(|m| match m {
-                    Some(m) if needs_more(m) => format!(
-                        "Play a few more songs (at least {} different ones, {} so far) and Earshot will make mixes from what you like.",
-                        num(m, "songsNeeded"), num(m, "songs")),
+                    Some(m) if needs_more(m) =>
+                        "Play a song for half a minute, or like one with the heart, and Earshot will make mixes from what you like.".to_owned(),
                     _ => String::new(),
                 }))
                 empty_icon="heart"

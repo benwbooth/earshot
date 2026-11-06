@@ -141,6 +141,15 @@ ApplicationWindow {
         }
     }
 
+    // Short notices ("Added to playlist", errors) as the desktop's own
+    // notifications, through the tray; Earshot's own card where there's no tray.
+    function notice(message) {
+        if (tray.available && tray.supportsMessages)
+            tray.showMessage("Earshot", message, Platform.SystemTrayIcon.NoIcon, 4000)
+        else
+            nowPlaying.notify(message)
+    }
+
     MiniPlayer {
         id: miniPlayer
         onExpandRequested: window.showWindow()
@@ -219,7 +228,7 @@ ApplicationWindow {
         target: Nav
         function onGo(page, args) { window.navigate(page, args) }
         function onBack() { if (stack.depth > 1) stack.pop() }
-        function onToast(message) { toast.show(message) }
+        function onToast(message) { window.notice(message) }
         function onAskNewPlaylist(tracks) {
             newPlaylist.tracks = tracks || []
             newPlaylist.ask("")
@@ -348,40 +357,6 @@ ApplicationWindow {
     }
 
     ResizeEdges { window: window }
-
-    // Short notices ("Added to playlist", errors)
-    Rectangle {
-        id: toast
-        property string message
-        function show(text) {
-            message = text
-            opacity = 1
-            hideTimer.restart()
-        }
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 112
-        width: Math.min(toastText.implicitWidth + 40, window.width - 80)
-        height: 44
-        radius: 22
-        color: Theme.text
-        opacity: 0
-        visible: opacity > 0
-        z: 100
-        Behavior on opacity { NumberAnimation { duration: 180 } }
-        Text {
-            id: toastText
-            anchors.centerIn: parent
-            width: parent.width - 40
-            horizontalAlignment: Text.AlignHCenter
-            text: toast.message
-            color: Theme.background
-            font.pixelSize: Theme.fontBody
-            font.weight: Font.DemiBold
-            elide: Text.ElideRight
-        }
-        Timer { id: hideTimer; interval: 2800; onTriggered: toast.opacity = 0 }
-    }
 
     TextPrompt {
         id: newPlaylist

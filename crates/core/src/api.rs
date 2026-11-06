@@ -153,8 +153,20 @@ impl Earshot {
             "stream" => stream(&args["track"]),
             "radioMore" => radio_more(&args["track"], &text("video")),
             "forYou" => {
-                let history = self.library().history.clone();
-                foryou::build(&history, args["refresh"].as_bool().unwrap_or(false))
+                // Liked songs and playlist songs count too, not only plays.
+                let (history, favourites) = {
+                    let library = self.library();
+                    let kept: Vec<(Value, usize)> = library
+                        .playlists
+                        .iter()
+                        .flat_map(|playlist| {
+                            let weight = if playlist.id == crate::library::LIKED { foryou::LIKED_WEIGHT } else { 1 };
+                            playlist.tracks.iter().map(move |track| (track.clone(), weight))
+                        })
+                        .collect();
+                    (library.history.clone(), kept)
+                };
+                foryou::build(&history, &favourites, args["refresh"].as_bool().unwrap_or(false))
             }
             "album" => album(&text("id")),
             "artist" => catalog::artist_detail(&text("id")),

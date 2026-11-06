@@ -624,6 +624,13 @@ pub fn integrate() {
     let app = app();
     let player = app.player;
     crate::levels::run(player);
+    // Notices and the now-playing card are system notifications; browsers
+    // only let a page ask for them on a click.
+    let ask = Closure::<dyn Fn()>::new(ask_notification_permission);
+    let once = web_sys::AddEventListenerOptions::new();
+    once.set_once(true);
+    let _ = window().add_event_listener_with_callback_and_add_event_listener_options("pointerdown", ask.as_ref().unchecked_ref(), &once);
+    ask.forget();
     Effect::new(move |previous: Option<u32>| {
         let count = player.started_count.get();
         if previous.is_some_and(|p| p != count) {

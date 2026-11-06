@@ -278,9 +278,22 @@ impl App {
         }
     }
 
+    /// A short notice: the system's own notification where the browser allows
+    /// it (asked on the first click), otherwise a notice inside the page.
     pub fn notify(&self, message: impl Into<String>) {
+        let message = message.into();
+        if web_sys::Notification::permission() == web_sys::NotificationPermission::Granted {
+            let options = web_sys::NotificationOptions::new();
+            options.set_body(&message);
+            options.set_icon("/earshot-256.png");
+            options.set_tag("earshot-notice");
+            options.set_silent(Some(true));
+            if web_sys::Notification::new_with_options("Earshot", &options).is_ok() {
+                return;
+            }
+        }
         let id = self.toast.with_untracked(|t| t.as_ref().map(|(id, _)| id + 1).unwrap_or(1));
-        self.toast.set(Some((id, message.into())));
+        self.toast.set(Some((id, message)));
         let toast = self.toast;
         spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(3200).await;

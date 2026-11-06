@@ -109,7 +109,7 @@ Flickable {
             loading: page.loading && !page.made
             error: page.error
             empty: page.made && page.made.needMore
-                   ? "Play a few more songs (at least " + page.made.songsNeeded + " different ones, " + page.made.songs + " so far) and Earshot will make mixes from what you like."
+                   ? "Play a song for half a minute, or like one with the heart, and Earshot will make mixes from what you like."
                    : ""
             emptyIcon: "heart"
             onRetry: page.load(false)

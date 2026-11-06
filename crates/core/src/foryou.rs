@@ -14,46 +14,52 @@ use crate::{catalog, random, youtube};
 
 const DAY_MS: u64 = 86_400_000;
 /// Fewer different songs than this and there's nothing to go on yet.
-pub const SONGS_NEEDED: usize = 5;
+pub const SONGS_NEEDED: usize = 1;
+/// How much a liked song counts, in plays (a song in a playlist counts one).
+pub const LIKED_WEIGHT: usize = 2;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// What the history says about the listener.
+/// What the history and the library say about the listener.
 struct Taste {
-    /// Songs by how often they were played lately: (track, its video, plays).
+    /// Songs by how much they count lately: (track, its video, plays).
     songs: Vec<(Value, String, usize)>,
     /// Artists by plays: (name, their songs played, plays, Deezer id if known).
     artists: Vec<(String, Vec<Value>, usize, String)>,
-    /// Every song heard (track keys and "yt:<video>"), so mixes bring new ones.
+    /// Every song heard or kept (track keys and "yt:<video>"), so mixes bring new ones.
     heard: HashSet<String>,
 }
 
-fn taste(history: &[Value], now: u64) -> Taste {
+/// From the plays of the last 60 days, plus `favourites`: songs liked or
+/// kept in playlists, with how many plays each counts as.
+fn taste(history: &[Value], favourites: &[(Value, usize)], now: u64) -> Taste {
     let recent_from = now.saturating_sub(60 * DAY_MS);
     let mut heard = HashSet::new();
     let mut songs: HashMap<String, (Value, String, usize)> = HashMap::new();
     let mut artists: HashMap<String, (String, Vec<Value>, usize, String)> = HashMap::new();
-    for play in history {
+    let recent = history.iter().map(|play| (play, 1, play["playedAt"].as_u64().unwrap_or(0) >= recent_from));
+    let kept = favourites.iter().map(|(track, weight)| (track, *weight, true));
+    for (play, weight, counts) in recent.chain(kept) {
         let key = play["key"].as_str().unwrap_or("").to_owned();
         let video = play["video"].as_str().filter(|v| !v.is_empty()).or(play["youtubeId"].as_str()).unwrap_or("").to_owned();
         heard.insert(key.clone());
         if !video.is_empty() {
             heard.insert(format!("yt:{video}"));
         }
-        if play["playedAt"].as_u64().unwrap_or(0) < recent_from || key.is_empty() {
+        if !counts || key.is_empty() {
             continue;
         }
         let song = songs.entry(key.clone()).or_insert_with(|| (play.clone(), video.clone(), 0));
-        song.2 += 1;
+        song.2 += weight;
         if song.1.is_empty() {
             song.1 = video;
         }
         let name = play["artist"].as_str().unwrap_or("").trim().to_owned();
         if !name.is_empty() {
             let artist = artists.entry(name.to_lowercase()).or_insert_with(|| (name.clone(), Vec::new(), 0, String::new()));
-            artist.2 += 1;
+            artist.2 += weight;
             if !artist.1.iter().any(|t| t["key"] == play["key"]) {
                 artist.1.push(play.clone());
             }
@@ -109,8 +115,10 @@ fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut Hash
 fn discover_weekly(taste: &Taste) -> Value {
     let mut taken = HashSet::new();
     let mut tracks = Vec::new();
+    // About 30 songs, from up to six favourites (more from each when there are few).
+    let seeds = taste.songs.len().clamp(1, 6);
     for (seed, video, _) in taste.songs.iter().take(6) {
-        tracks.extend(new_like(seed, video, &taste.heard, &mut taken, 5));
+        tracks.extend(new_like(seed, video, &taste.heard, &mut taken, (30 / seeds).max(5)));
     }
     random::shuffle(&mut tracks);
     json!({
@@ -224,13 +232,15 @@ fn saved_path() -> Option<PathBuf> {
     crate::library::data_dir().map(|dir| dir.join("for-you.json"))
 }
 
-/// Made for you, from the listening history. Weekly picks are kept for the
-/// week (starting Monday) and Daily Mixes for the day, unless `refresh`.
-pub fn build(history: &[Value], refresh: bool) -> Result<Value, String> {
+/// Made for you, from the listening history and `favourites` (liked songs and
+/// playlist songs, with what each counts as in plays). Weekly picks are kept
+/// for the week (starting Monday) and Daily Mixes for the day, unless
+/// `refresh`, or unless there's more to go on than when they were made.
+pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) -> Result<Value, String> {
     let now = now_ms();
     let today = (now / DAY_MS) as i64;
     let week = (today + 3) / 7; // weeks starting on Monday (1970-01-01 was a Thursday)
-    let taste = taste(history, now);
+    let taste = taste(history, favourites, now);
     if taste.songs.len() < SONGS_NEEDED {
         return Ok(json!({ "needMore": true, "songs": taste.songs.len(), "songsNeeded": SONGS_NEEDED }));
     }
@@ -239,8 +249,11 @@ pub fn build(history: &[Value], refresh: bool) -> Result<Value, String> {
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Value::Null);
-    let weekly_fresh = !refresh && saved["week"].as_i64() == Some(week) && saved["weekly"].is_object();
-    let daily_fresh = !refresh && saved["day"].as_i64() == Some(today) && saved["daily"].is_array();
+    // Mixes made from only a song or two are made again once there's more to go on.
+    let seeds = taste.songs.len().min(6) as u64;
+    let grown = saved["seeds"].as_u64().unwrap_or(0) < seeds;
+    let weekly_fresh = !refresh && !grown && saved["week"].as_i64() == Some(week) && saved["weekly"].is_object();
+    let daily_fresh = !refresh && !grown && saved["day"].as_i64() == Some(today) && saved["daily"].is_array();
 
     // The slow parts (dozens of requests) run side by side.
     let (weekly, daily, radar, albums) = std::thread::scope(|scope| {
@@ -265,7 +278,7 @@ pub fn build(history: &[Value], refresh: bool) -> Result<Value, String> {
         (weekly, daily, radar, albums)
     });
 
-    let result = json!({ "week": week, "day": today, "weekly": weekly, "daily": daily, "radar": radar, "albums": albums });
+    let result = json!({ "week": week, "day": today, "seeds": seeds, "weekly": weekly, "daily": daily, "radar": radar, "albums": albums });
     if let Some(path) = saved_path() {
         let _ = std::fs::write(path, result.to_string());
     }
@@ -289,10 +302,14 @@ mod tests {
             play("b", "Hans Zimmer", "v2", now - 800),
             play("old", "Someone", "v3", now - 90 * DAY_MS),
         ];
-        let t = taste(&history, now);
+        let t = taste(&history, &[], now);
         assert_eq!(t.songs[0].0["key"], "a");
         assert_eq!(t.songs[0].2, 2);
         assert_eq!(t.artists[0].0, "Koichi Sugiyama");
+        // A liked song counts double, however long ago it was liked.
+        let liked = taste(&history, &[(play("liked", "Hans Zimmer", "v4", 0), LIKED_WEIGHT)], now);
+        assert_eq!(liked.artists[0].0, "Hans Zimmer");
+        assert!(liked.heard.contains("yt:v4"), "liked songs don't come back as new");
         assert!(t.heard.contains("yt:v3"), "old plays still count as heard");
         assert!(!t.songs.iter().any(|s| s.0["key"] == "old"), "but not as recent taste");
     }
@@ -318,7 +335,7 @@ mod tests {
         {
             history.push(json!({ "key": key, "title": key, "artist": artist, "artistId": artist_id, "video": video, "playedAt": now - (i as u64) * 60_000 }));
         }
-        let built = build(&history, true).unwrap();
+        let built = build(&history, &[], true).unwrap();
         let weekly = built["weekly"]["tracks"].as_array().unwrap();
         assert!(weekly.len() >= 10, "Discover Weekly has {} songs", weekly.len());
         assert!(weekly.iter().all(|t| !["yt:jx-kcjc_v00", "yt:WqdpKnx6TfY"].contains(&t["key"].as_str().unwrap())));
