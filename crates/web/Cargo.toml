@@ -26,4 +26,6 @@ web-sys = { version = "0.3", features = [
   "NotificationOptions", "NotificationPermission", "KeyboardEvent", "MouseEvent", "PointerEvent", "DomRect",
   "MediaSession", "MediaMetadata", "MediaSessionAction", "Navigator", "MediaSessionPlaybackState", "MediaImage",
   "ScrollToOptions", "ScrollBehavior", "Event", "EventTarget", "AddEventListenerOptions", "VisibilityState",
+  "AudioContext", "BaseAudioContext", "AudioContextState", "AnalyserNode", "AudioNode", "AudioDestinationNode",
+  "MediaElementAudioSourceNode",
 ] }

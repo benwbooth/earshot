@@ -2,8 +2,10 @@
 //! cpal audio library, on Windows, macOS and Linux) while music plays, and
 //! measures six frequency bands so the bars move with the actual song.
 //! YouTube's player is a sealed web page, so its sound can't be read from
-//! inside the app; the speaker output can.
+//! inside the app; the speaker output can. The Qt app and the web version's
+//! server (for browsers on this computer) share one recording.
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -91,9 +93,40 @@ fn commands() -> &'static Mutex<Option<mpsc::Sender<bool>>> {
     COMMANDS.get_or_init(Default::default)
 }
 
-/// Turns listening on (while music plays) or off. Off closes the recording
-/// entirely, so the desktop stops showing it.
+static APP_WANTS: AtomicBool = AtomicBool::new(false);
+static LISTENERS: AtomicUsize = AtomicUsize::new(0);
+
+/// The Qt app's say: listen while its music plays. The recording stays on
+/// while the app or any web listener ([`listen`]) wants it.
 pub fn set_active(active: bool) {
+    APP_WANTS.store(active, Ordering::SeqCst);
+    update();
+}
+
+/// Keeps the recording on until the returned value is dropped (a browser
+/// on this computer showing the waveform).
+pub fn listen() -> Listening {
+    LISTENERS.fetch_add(1, Ordering::SeqCst);
+    update();
+    Listening
+}
+
+pub struct Listening;
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        LISTENERS.fetch_sub(1, Ordering::SeqCst);
+        update();
+    }
+}
+
+fn update() {
+    switch(APP_WANTS.load(Ordering::SeqCst) || LISTENERS.load(Ordering::SeqCst) > 0);
+}
+
+/// Turns the recording on or off. Off closes it entirely, so the desktop
+/// stops showing it.
+fn switch(active: bool) {
     let mut guard = commands().lock().unwrap();
     if guard.is_none() {
         if !active {

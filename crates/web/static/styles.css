@@ -270,17 +270,10 @@ h1, h2, h3, p { margin: 0; }
 .spinner.small { width: 44px; height: 44px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Waveform: six bars that keep time while music plays */
+/* Waveform: six bars measured from the music (levels.rs sets their heights) */
 .waveform { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; flex: none; }
-.waveform i { width: 3px; height: 20%; border-radius: 1.5px; background: var(--accent); transition: height 200ms; }
+.waveform i { width: 3px; height: 15%; border-radius: 1.5px; background: var(--accent); transition: height 40ms linear; }
 .waveform.small i { width: 2.5px; }
-.waveform.playing i { animation: bar 900ms ease-in-out infinite alternate; }
-.waveform.playing i:nth-child(2) { animation-duration: 700ms; animation-delay: -200ms; }
-.waveform.playing i:nth-child(3) { animation-duration: 1100ms; animation-delay: -500ms; }
-.waveform.playing i:nth-child(4) { animation-duration: 800ms; animation-delay: -300ms; }
-.waveform.playing i:nth-child(5) { animation-duration: 1000ms; animation-delay: -650ms; }
-.waveform.playing i:nth-child(6) { animation-duration: 750ms; animation-delay: -100ms; }
-@keyframes bar { from { height: 15%; } to { height: 100%; } }
 
 /* Long text glides sideways instead of wrapping (only when it doesn't fit) */
 .marquee { overflow: hidden; white-space: nowrap; container-type: inline-size; min-width: 0; }

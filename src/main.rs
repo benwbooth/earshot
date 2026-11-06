@@ -1,7 +1,7 @@
 mod backend;
 mod kde;
 mod native;
-mod visualizer;
+
 
 use cxx_qt_lib::QString;
 

@@ -66,6 +66,9 @@
           inherit src;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "earshot-server" ];
+          # PipeWire, to measure this computer's speakers for the waveform.
+          nativeBuildInputs = [ pkgs.pkg-config pkgs.rustPlatform.bindgenHook ];
+          buildInputs = [ pkgs.pipewire pkgs.alsa-lib ];
           doCheck = false;
           postInstall = ''
             mkdir -p $out/share/earshot
@@ -84,7 +87,9 @@
 
         # The server as a container image, for ~/src/home-services:
         #   nix build .#docker && docker load < result
-        # The library lives in /data; it listens on port 8790.
+        # The library lives in /data; it listens on port 8790. Mount the host's
+        # PipeWire socket at /run/pipewire/pipewire-0 for the waveform to hear
+        # the speakers (browsers on that computer).
         packages.docker = pkgs.dockerTools.buildLayeredImage {
           name = "earshot";
           tag = "latest";
@@ -95,6 +100,8 @@
             Env = [
               "EARSHOT_LISTEN=0.0.0.0:8790"
               "EARSHOT_DATA_DIR=/data"
+              "PIPEWIRE_RUNTIME_DIR=/run/pipewire"
+              "XDG_RUNTIME_DIR=/run/pipewire"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             ];
             ExposedPorts."8790/tcp" = { };

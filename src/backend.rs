@@ -311,12 +311,12 @@ impl qobject::Backend {
 
     /// Listens to the speakers while music plays, for the waveform.
     pub fn set_waveform_active(&self, active: bool) {
-        crate::visualizer::set_active(active);
+        earshot_speakers::set_active(active);
     }
 
     /// The six waveform bar heights (0..1, bass first), comma-separated.
     pub fn waveform_levels(&self) -> QString {
-        let text = crate::visualizer::levels().iter().map(|level| format!("{level:.3}")).collect::<Vec<_>>().join(",");
+        let text = earshot_speakers::levels().iter().map(|level| format!("{level:.3}")).collect::<Vec<_>>().join(",");
         QString::from(&text)
     }
 

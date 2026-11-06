@@ -67,6 +67,11 @@ fn post(id: &str, message: &Value, origin: &str) {
     }
 }
 
+/// The element Bandcamp and Internet Archive songs play in.
+pub fn audio_element() -> HtmlAudioElement {
+    audio()
+}
+
 fn audio() -> HtmlAudioElement {
     thread_local! {
         static AUDIO: HtmlAudioElement = HtmlAudioElement::new().expect("audio");
@@ -110,6 +115,11 @@ impl Engine {
         };
         engine.listen();
         engine
+    }
+
+    /// Whether an audio file (Bandcamp, the Internet Archive) is what plays.
+    pub fn playing_file(&self) -> bool {
+        self.mode.get_value() == Mode::Audio
     }
 
     pub fn playing(&self) -> bool {
@@ -337,7 +347,8 @@ impl Engine {
         self.switch(Mode::Audio);
         self.reset(format!("audio:{url}"), start);
         let a = audio();
-        a.set_src(url);
+        // Through Earshot's server, so the browser may measure it for the waveform.
+        a.set_src(&format!("/api/audio?url={}", encode(url)));
         a.set_volume(self.volume.get_value() / 100.0);
         if start > 0.0 {
             a.set_current_time(start);

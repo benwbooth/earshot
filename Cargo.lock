@@ -862,13 +862,13 @@ checksum = "669a445ee724c5c69b1b06fe0b63e70a1c84bc9bb7d9696cd4f4e3ec45050408"
 name = "earshot"
 version = "0.1.0"
 dependencies = [
- "cpal",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
  "earshot-core",
  "earshot-server",
+ "earshot-speakers",
  "serde_json",
  "winresource",
 ]
@@ -889,11 +889,20 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "earshot-core",
+ "earshot-speakers",
  "futures-util",
  "serde_json",
  "tokio",
  "tokio-stream",
  "tower-http",
+ "ureq",
+]
+
+[[package]]
+name = "earshot-speakers"
+version = "0.1.0"
+dependencies = [
+ "cpal",
 ]
 
 [[package]]

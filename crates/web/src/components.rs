@@ -291,14 +291,17 @@ pub fn StatusView(
     }
 }
 
-/// Bars that move while music plays (the Qt app measures the speakers; a
-/// browser can't hear other sites' players, so these keep time on their own).
+/// Six bars that move with the music actually playing (see levels.rs), and
+/// stay still when it can't be measured.
 #[component]
 pub fn Waveform(#[prop(default = false)] small: bool) -> impl IntoView {
     let player = app().player;
+    let bars = (0..crate::levels::BANDS)
+        .map(|band| view! { <i style=move || format!("height:{:.0}%", 15.0 + 85.0 * player.levels.with(|l| l[band]))></i> })
+        .collect_view();
     view! {
-        <span class="waveform" class:small=small class:playing=move || player.playing()>
-            <i></i><i></i><i></i><i></i><i></i><i></i>
+        <span class="waveform" class:small=small title=move || player.levels_note.get()>
+            {bars}
         </span>
     }
 }

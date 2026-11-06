@@ -623,6 +623,7 @@ pub fn Toast() -> impl IntoView {
 pub fn integrate() {
     let app = app();
     let player = app.player;
+    crate::levels::run(player);
     Effect::new(move |previous: Option<u32>| {
         let count = player.started_count.get();
         if previous.is_some_and(|p| p != count) {

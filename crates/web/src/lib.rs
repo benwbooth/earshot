@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 mod api;
 mod components;
 mod engine;
+mod levels;
 mod pages;
 mod player;
 mod shell;

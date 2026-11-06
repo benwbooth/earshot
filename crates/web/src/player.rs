@@ -44,6 +44,10 @@ pub struct Player {
     looking: StoredValue<HashSet<String>>,
     /// Counts up when a new song starts (for the now-playing card).
     pub started_count: RwSignal<u32>,
+    /// The waveform's six bar heights, 0..1, bass first (see levels.rs).
+    pub levels: RwSignal<[f64; crate::levels::BANDS]>,
+    /// Why the waveform is still, when the music can't be measured.
+    pub levels_note: RwSignal<String>,
 }
 
 fn shuffled(mut items: Vec<Value>) -> Vec<Value> {
@@ -87,6 +91,8 @@ impl Player {
             stream_retried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
             started_count: RwSignal::new(0),
+            levels: RwSignal::new([0.0; crate::levels::BANDS]),
+            levels_note: RwSignal::new(String::new()),
         };
         player.wire();
         player

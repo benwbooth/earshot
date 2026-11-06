@@ -111,12 +111,18 @@ its own; a small server answers it with the same Rust code the app uses (`crates
 - **Docker**: `nix build github:benwbooth/earshot#docker && docker load < result` gives the image `earshot:latest`.
   It listens on port 8790 and keeps its library in `/data`:
   ```sh
-  docker run -d -p 8788:8790 -v /srv/earshot:/data earshot:latest
+  docker run -d -p 8788:8790 -v /srv/earshot:/data -v /run/user/1000/pipewire-0:/run/pipewire/pipewire-0 earshot:latest
   ```
+  (the PipeWire socket is optional; it lets the waveform hear the speakers, below).
 
-Songs play through each site's own player, as in the app. Browsers don't let a page hear other sites' players, so
-the waveform keeps time on its own rather than following the music, and videos whose owners block embedded players
-move on to another upload instead of playing on youtube.com's page.
+Songs play through each site's own player, as in the app; videos whose owners block embedded players move on to
+another upload instead of playing on youtube.com's page. The waveform is always measured, never made up:
+
+- Bandcamp and Internet Archive songs are measured in the browser (their audio passes through Earshot's server,
+  which those sites require for a page to measure it).
+- YouTube, SoundCloud and Mixcloud play in those sites' own players, which a page can't hear. In a browser on the
+  computer running the server (http://localhost:…), the server measures the speakers instead, as the app does.
+- Anywhere else (a phone playing YouTube, say) the bars stay still.
 
 ## Build and run (Nix)
 

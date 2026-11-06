@@ -1,0 +1,13 @@
+[package]
+name = "earshot-speakers"
+description = "Listens to what the speakers play and measures six frequency bands, for Earshot's waveform (the Qt app's and the web version's)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpal = "0.18"
+
+# Linux: record the speakers through PipeWire's own API.
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18", features = ["pipewire"] }
