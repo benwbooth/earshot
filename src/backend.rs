@@ -67,6 +67,8 @@ pub mod qobject {
         fn resolve(self: Pin<&mut Backend>, track: &QString) -> i32;
         #[qinvokable]
         fn import_playlist(self: Pin<&mut Backend>, url: &QString) -> i32;
+        #[qinvokable]
+        fn call(self: Pin<&mut Backend>, method: &QString, args: &QString) -> i32;
 
         #[qinvokable]
         fn remember_video(self: &Backend, key: &QString, video: &QString);
@@ -287,6 +289,27 @@ impl qobject::Backend {
 
     pub fn import_playlist(self: Pin<&mut Self>, url: &QString) -> i32 {
         self.ask("importPlaylist", json!({ "url": text(url) }))
+    }
+
+    /// Any request the shared core answers, by name with JSON arguments (as
+    /// the web version asks): newer features need no method of their own here.
+    pub fn call(mut self: Pin<&mut Self>, method: &QString, args: &QString) -> i32 {
+        let id = {
+            let mut rust = self.as_mut().rust_mut();
+            rust.next_request += 1;
+            rust.next_request
+        };
+        let (method, args) = (method.to_string(), parse(args));
+        let core = self.rust().core.clone();
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let result = core.call(&method, &args);
+            let _ = thread.queue(move |backend| match result {
+                Ok(value) => backend.reply(id, QString::from(&value.to_string())),
+                Err(message) => backend.failed(id, QString::from(&message)),
+            });
+        });
+        id
     }
 
     /// Starts the web version on this computer (once) and opens it in the
