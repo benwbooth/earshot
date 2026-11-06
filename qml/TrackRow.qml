@@ -124,16 +124,18 @@ Rectangle {
                     color: Theme.textFaint
                     Text { anchors.centerIn: parent; text: "E"; font.pixelSize: 9; font.bold: true; color: Theme.background }
                 }
-                // Where the song plays from: YouTube, Bandcamp, SoundCloud, Mixcloud or the Internet Archive.
-                RowLayout {
-                    readonly property var source: Api.source(row.track)
-                    spacing: 4
-                    Icon { name: parent.source.icon; size: 12; color: Theme.textFaint }
-                    Text {
-                        text: parent.source.name + "  ·"
-                        color: Theme.textFaint
-                        font.pixelSize: Theme.fontSmall
-                    }
+                // Where the song plays from: the site's logo, its name on hover.
+                Image {
+                    id: sourceLogo
+                    readonly property var source_: Api.source(row.track)
+                    source: Theme.icon(source_.logo)
+                    sourceSize: Qt.size(32, 32)
+                    Layout.preferredWidth: 14
+                    Layout.preferredHeight: 14
+                    HoverHandler { id: logoHover }
+                    ToolTip.visible: logoHover.hovered
+                    ToolTip.text: "Plays from " + source_.name
+                    ToolTip.delay: 300
                 }
                 Text {
                     Layout.fillWidth: true

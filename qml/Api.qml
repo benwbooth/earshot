@@ -63,16 +63,16 @@ QtObject {
             return "https://www.deezer.com/album/" + id
         return ""
     }
-    // Where a song plays from, for the label on every song row. Catalogue
-    // songs (and Reddit's) play from YouTube.
+    // Where a song plays from (the site's name and logo), for every song row.
+    // Catalogue songs (and Reddit's) play from YouTube.
     function source(track) {
         const services = {
-            bandcamp: { name: "Bandcamp", icon: "tag" },
-            soundcloud: { name: "SoundCloud", icon: "cloud" },
-            mixcloud: { name: "Mixcloud", icon: "mix" },
-            archive: { name: "Internet Archive", icon: "archive" }
+            bandcamp: { name: "Bandcamp", logo: "source-bandcamp" },
+            soundcloud: { name: "SoundCloud", logo: "source-soundcloud" },
+            mixcloud: { name: "Mixcloud", logo: "source-mixcloud" },
+            archive: { name: "Internet Archive", logo: "source-archive" }
         }
-        return (track && services[track.service]) || { name: "YouTube", icon: "youtube" }
+        return (track && services[track.service]) || { name: "YouTube", logo: "source-youtube" }
     }
 
     // "YouTube", "Bandcamp"… for "Open on …".
