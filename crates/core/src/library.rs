@@ -52,6 +52,11 @@ const SCHEMA: &str = "
         played_at INTEGER NOT NULL,
         entry TEXT NOT NULL
     );
+    -- Subreddits the listener added to Reddit radio (\"Your stations\").
+    CREATE TABLE IF NOT EXISTS stations (
+        subreddit TEXT PRIMARY KEY COLLATE NOCASE,
+        added INTEGER NOT NULL
+    );
 ";
 
 fn now() -> u64 {
@@ -417,6 +422,29 @@ impl Library {
         };
         query.query_map([], |row| row.get::<_, String>(0)).map(|rows| rows.filter_map(Result::ok).map(parse).collect()).unwrap_or_default()
     }
+
+    /// Subreddits added to Reddit radio, in the order they were added.
+    pub fn stations(&self) -> Vec<String> {
+        let Ok(mut query) = self.db.prepare_cached("SELECT subreddit FROM stations ORDER BY added, rowid") else {
+            return Vec::new();
+        };
+        query.query_map([], |row| row.get::<_, String>(0)).map(|rows| rows.filter_map(Result::ok).collect()).unwrap_or_default()
+    }
+
+    /// Keeps a subreddit among the listener's stations (once, whatever its
+    /// capitals). Returns whether it was new.
+    pub fn save_station(&mut self, subreddit: &str) -> bool {
+        let subreddit = subreddit.trim();
+        if subreddit.is_empty() {
+            return false;
+        }
+        self.write(|tx| tx.execute("INSERT OR IGNORE INTO stations (subreddit, added) VALUES (?1, ?2)", params![subreddit, now() as i64]))
+            .is_some_and(|added| added > 0)
+    }
+
+    pub fn remove_station(&mut self, subreddit: &str) {
+        self.write(|tx| tx.execute("DELETE FROM stations WHERE subreddit = ?1", [subreddit.trim()]));
+    }
 }
 
 /// Replaces a playlist's songs (inside the caller's transaction).
@@ -482,6 +510,23 @@ mod tests {
         assert_eq!(app.add(&id, vec![track("b")]), 1);
         assert_eq!(web.playlist_json(&id)["count"], 2);
         assert_ne!(app.data_version(), before, "the app sees the web version's change");
+    }
+
+    /// Subreddits added to Reddit radio: kept once each, in order, shared, removable.
+    #[test]
+    fn keeps_added_radio_stations() {
+        let path = temp_dir().join("earshot.db");
+        let mut app = Library::open(Some(path.clone()));
+        assert!(app.stations().is_empty());
+        assert!(app.save_station("Vaporwave"));
+        assert!(app.save_station("chiptune"));
+        assert!(!app.save_station("vaporwave"), "the same subreddit in other capitals isn't kept twice");
+        assert!(!app.save_station("  "));
+
+        let mut web = Library::open(Some(path));
+        assert_eq!(web.stations(), ["Vaporwave", "chiptune"]);
+        web.remove_station("VAPORWAVE");
+        assert_eq!(app.stations(), ["chiptune"]);
     }
 
     #[test]

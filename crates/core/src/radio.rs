@@ -74,6 +74,34 @@ pub fn stations() -> Value {
     json!(groups.into_iter().map(|(name, stations)| json!({ "name": name, "stations": stations })).collect::<Vec<_>>())
 }
 
+/// The built-in station for a subreddit, whatever its capitals.
+pub fn built_in(subreddit: &str) -> Option<&'static str> {
+    STATIONS.iter().map(|(_, sub, _)| *sub).find(|sub| sub.eq_ignore_ascii_case(subreddit))
+}
+
+/// The subreddit in what the listener typed: "r/name", "name" or a link to
+/// it on reddit.com. Names are 2 to 21 letters, digits or underscores.
+pub fn subreddit_name(text: &str) -> Result<String, String> {
+    let text = text.trim();
+    let rest = match text.find("/r/") {
+        Some(at) => &text[at + 3..],
+        None => text.strip_prefix("r/").or_else(|| text.strip_prefix("R/")).unwrap_or(text),
+    };
+    let name = rest.split(['/', '?', '#']).next().unwrap_or("").trim();
+    if name.is_empty() {
+        return Err("Type a subreddit's name, like r/vaporwave.".to_owned());
+    }
+    if !(2..=21).contains(&name.len()) || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(format!("\"{name}\" isn't a subreddit name: they're 2 to 21 letters, digits or underscores."));
+    }
+    Ok(built_in(name).map(str::to_owned).unwrap_or_else(|| name.to_owned()))
+}
+
+/// The listener's own stations, like the built-in ones.
+pub fn custom_stations(subreddits: &[String]) -> Value {
+    json!(subreddits.iter().map(|sub| json!({ "id": sub, "name": format!("r/{sub}"), "about": "Added by you" })).collect::<Vec<_>>())
+}
+
 fn cache() -> &'static Mutex<HashMap<String, (Instant, Value)>> {
     static CACHE: std::sync::OnceLock<Mutex<HashMap<String, (Instant, Value)>>> = std::sync::OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -113,11 +141,10 @@ fn save(subreddit: &str, station: &Value) {
 
 /// A station's songs. While Reddit asks for a pause, the answer carries
 /// "retryIn" (seconds) and the last saved copy of the songs, if any, with its
-/// "savedMinutesAgo"; the radio page counts down and asks again.
+/// "savedMinutesAgo"; the radio page counts down and asks again. Loaded
+/// songs come with the "subreddit" name as Reddit writes it.
 pub fn station(subreddit: &str) -> Result<Value, String> {
-    if !subreddit.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || subreddit.is_empty() {
-        return Err("That isn't a subreddit name.".to_owned());
-    }
+    let subreddit = &subreddit_name(subreddit)?;
     if let Some((when, value)) = cache().lock().unwrap().get(subreddit) {
         if when.elapsed() < FRESH {
             return Ok(value.clone());
@@ -133,15 +160,30 @@ pub fn station(subreddit: &str) -> Result<Value, String> {
     let waiting = reddit_free_at().lock().unwrap().and_then(|free| free.checked_duration_since(Instant::now()));
     let fetched = match waiting {
         Some(left) => Fetched::Wait(left.as_secs().max(1)),
-        None => get_text_or_wait(&format!("https://www.reddit.com/r/{subreddit}/hot/.rss?limit=100"))?,
+        None => get_text_or_wait(&format!("https://www.reddit.com/r/{subreddit}/hot/.rss?limit=100")).map_err(|error| {
+            if error.contains("HTTP 404") {
+                format!("Reddit has no subreddit called r/{subreddit}.")
+            } else if error.contains("HTTP 403") {
+                format!("r/{subreddit} is private, so its songs can't be played here.")
+            } else {
+                error
+            }
+        })?,
     };
     match fetched {
         Fetched::Text(feed) => {
+            let head = feed.split("<entry>").next().unwrap_or("");
+            // Reddit answers a subreddit that doesn't exist with a search for it.
+            if head.contains("/subreddits/search") {
+                return Err(format!("Reddit has no subreddit called r/{subreddit}."));
+            }
             let tracks = parse_feed(&feed, subreddit);
             if tracks.is_empty() {
-                return Err(format!("r/{subreddit} has no songs right now."));
+                return Err(format!("r/{subreddit} has no links to songs right now."));
             }
-            let result = json!({ "title": format!("r/{subreddit}"), "tracks": tracks });
+            // The feed names the subreddit with Reddit's own capitals.
+            let name = between(head, "<category term=\"", "\"").filter(|name| name.eq_ignore_ascii_case(subreddit)).unwrap_or(subreddit);
+            let result = json!({ "title": format!("r/{name}"), "subreddit": name, "tracks": tracks });
             cache().lock().unwrap().insert(subreddit.to_owned(), (Instant::now(), result.clone()));
             save(subreddit, &result);
             Ok(result)
@@ -277,5 +319,19 @@ mod tests {
         assert_eq!(tracks[0]["tags"], "psych/funk");
         assert_eq!(tracks[1]["title"], "Not");
         assert_eq!(tracks[1]["youtubeId"], "");
+    }
+
+    #[test]
+    fn reads_typed_subreddits() {
+        assert_eq!(subreddit_name(" r/Vaporwave ").unwrap(), "Vaporwave");
+        assert_eq!(subreddit_name("chiptune").unwrap(), "chiptune");
+        assert_eq!(subreddit_name("https://www.reddit.com/r/chiptune/comments/abc/x/").unwrap(), "chiptune");
+        assert_eq!(subreddit_name("old.reddit.com/r/chiptune?sort=new").unwrap(), "chiptune");
+        assert_eq!(subreddit_name("/r/LISTENTOTHIS").unwrap(), "listentothis", "built-in stations keep their own capitals");
+        assert!(subreddit_name("").is_err());
+        assert!(subreddit_name("a").is_err());
+        assert!(subreddit_name("no spaces").is_err());
+        assert!(subreddit_name("abcdefghijklmnopqrstuv").is_err(), "22 characters");
+        assert!(subreddit_name("https://www.reddit.com/user/someone").is_err());
     }
 }

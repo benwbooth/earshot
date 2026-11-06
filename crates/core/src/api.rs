@@ -27,6 +27,8 @@ pub fn album(id: &str) -> Result<Value, String> {
         Some("bc") => bandcamp::album(id),
         Some("sc") => soundcloud::album(id),
         Some("ia") => archive::album(id),
+        // A Mixcloud show ("mc:/user/show/") or someone's latest shows ("mc:user:name").
+        Some("mc") => mixcloud::album(id),
         Some("mb") => crate::musicbrainz::album(id),
         _ => catalog::album_detail(id),
     }
@@ -171,8 +173,13 @@ impl Earshot {
             "searchMixcloud" => mixcloud::search(&text("query")),
             "searchArchive" => archive::search(&text("query")),
             "browse" => browse(&text("service"), &text("tag")),
+            // YouTube's, SoundCloud's, Mixcloud's or the Internet Archive's front page:
+            // { sections: [{ id, title, subtitle, albums, tracks, round? }] }.
+            "featured" => crate::featured::featured(&text("service")),
             "bandcampTags" => bandcamp::tags(),
             "bandcampTag" => bandcamp::tag(&bandcamp::tag_slug(&text("tag")), &text("slice"), &text("next")),
+            // Bandcamp's front page: { highlight, sections: [{ id, title, about, link, rows, albums, tracks, articles }] }.
+            "bandcampFeatured" => bandcamp::featured(),
             "stream" => stream(&args["track"]),
             "radioMore" => radio_more(&args["track"], &text("video")),
             "forYou" => {
@@ -192,6 +199,20 @@ impl Earshot {
             "artist" => catalog::artist_detail(&text("id")),
             "radio" => radio::station(&text("subreddit")),
             "radioStations" => Ok(radio::stations()),
+            // What the listener typed ("r/name", "name" or a reddit.com link) as a subreddit name.
+            "radioStationName" => radio::subreddit_name(&text("text")).map(Value::from),
+            // Subreddits the listener added ("Your stations"): [{ id, name, about }].
+            "savedStations" => Ok(radio::custom_stations(&self.library().stations())),
+            // Keeps a subreddit that isn't a built-in station; answers whether it's new.
+            "saveStation" => {
+                let name = radio::subreddit_name(&text("subreddit"))?;
+                let added = radio::built_in(&name).is_none() && self.library().save_station(&name);
+                if added { changes(json!(true)) } else { Ok(json!(false)) }
+            }
+            "removeStation" => {
+                self.library().remove_station(&text("subreddit"));
+                changes(Value::Null)
+            }
             "resolve" => {
                 let key = args["track"]["key"].as_str().unwrap_or("").to_owned();
                 let known = self.library().video(&key);

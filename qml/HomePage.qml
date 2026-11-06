@@ -88,7 +88,7 @@ Flickable {
             columnSpacing: 12
             rowSpacing: 12
             Repeater {
-                model: page.data_ ? page.data_.tracks.slice(0, 6) : []
+                model: page.data_ ? page.data_.tracks.filter(t => Player.allowed(t)).slice(0, 6) : []
                 delegate: Rectangle {
                     id: quick
                     required property var modelData
@@ -99,7 +99,7 @@ Flickable {
                     radius: 8
                     color: quickHover.hovered ? Theme.surfaceHover : Qt.rgba(1, 1, 1, 0.06)
                     HoverHandler { id: quickHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: quick.isCurrent ? Player.toggle() : Player.playTracks(page.data_.tracks, quick.index, "Trending now") }
+                    TapHandler { onTapped: quick.isCurrent ? Player.toggle() : Player.playTracks(page.data_.tracks.filter(t => Player.allowed(t)), quick.index, "Trending now") }
                     RowLayout {
                         anchors.fill: parent
                         spacing: 14
@@ -123,7 +123,7 @@ Flickable {
                             iconSize: 16
                             iconName: quick.isCurrent && Player.playing ? "pause" : "play"
                             opacity: quickHover.hovered || quick.isCurrent ? 1 : 0
-                            onClicked: quick.isCurrent ? Player.toggle() : Player.playTracks(page.data_.tracks, quick.index, "Trending now")
+                            onClicked: quick.isCurrent ? Player.toggle() : Player.playTracks(page.data_.tracks.filter(t => Player.allowed(t)), quick.index, "Trending now")
                         }
                     }
                 }
@@ -165,6 +165,7 @@ Flickable {
                     image: modelData.coverBig || modelData.cover
                     seed: modelData.id
                     onClicked: Nav.album(modelData.id)
+                    albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
                 }
             }

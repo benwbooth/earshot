@@ -3,7 +3,7 @@
 
 use serde_json::{Value, json};
 
-use crate::net::{encode, get_json};
+use crate::net::{encode, get_json, post_json};
 
 const API: &str = "https://api.mixcloud.com";
 
@@ -88,6 +88,164 @@ pub fn import(url: &str) -> Result<Value, String> {
     Ok(json!({ "title": title, "tracks": tracks }))
 }
 
+/// A show as an album card ("mc:/user/show/", the same as its song's key):
+/// it opens as an album of one, like a long YouTube video.
+fn mix_card(item: &Value) -> Option<Value> {
+    let song = mix(item)?;
+    Some(json!({
+        "id": song["key"], "title": song["title"], "artist": song["artist"], "artistId": "",
+        "cover": song["cover"], "coverBig": song["coverBig"],
+        "year": item["created_time"].as_str().unwrap_or("").chars().take(4).collect::<String>(),
+        "kind": "mix", "duration": song["duration"], "trackCount": 1,
+    }))
+}
+
+/// A show ("mc:/user/show/") as an album of one, or someone's latest shows ("mc:user:<name>").
+pub fn album(id: &str) -> Result<Value, String> {
+    if let Some(name) = id.strip_prefix("mc:user:") {
+        let path = format!("/{}/", encode(name));
+        let (user, shows) = std::thread::scope(|scope| {
+            let user = scope.spawn(|| get_json(&format!("{API}{path}")));
+            let shows = scope.spawn(|| get_json(&format!("{API}{path}cloudcasts/?limit=50")));
+            (user.join().unwrap_or_else(|_| Err("Mixcloud didn't answer".to_owned())), shows.join().unwrap_or_else(|_| Err("Mixcloud didn't answer".to_owned())))
+        });
+        let (user, mut tracks) = (user?, mixes(&shows?));
+        if tracks.is_empty() {
+            return Err("This Mixcloud profile has no shows.".to_owned());
+        }
+        let title = user["name"].as_str().unwrap_or(name).to_owned();
+        for (index, song) in tracks.iter_mut().enumerate() {
+            song["album"] = json!(title);
+            song["albumId"] = json!(id);
+            song["trackNumber"] = json!(index + 1);
+        }
+        let picture = |size: &str| user.pointer(&format!("/pictures/{size}")).and_then(Value::as_str).unwrap_or("").to_owned();
+        let total: u64 = tracks.iter().filter_map(|t| t["duration"].as_u64()).sum();
+        return Ok(json!({
+            "id": id, "title": title, "artist": title, "artistId": "",
+            "cover": picture("large"), "coverBig": picture("extra_large"), "year": "", "kind": "playlist",
+            "trackCount": tracks.len(), "duration": total, "label": "Latest shows on Mixcloud",
+            "releaseDate": "", "genres": [], "tracks": tracks, "source": "mixcloud", "pageUrl": user["url"],
+        }));
+    }
+    let key = id.strip_prefix("mc:").filter(|key| key.starts_with('/')).ok_or("Unknown Mixcloud show")?;
+    let item = get_json(&format!("{API}{key}"))?;
+    let mut song = mix(&item).ok_or("Couldn't read this Mixcloud show.")?;
+    song["album"] = song["title"].clone();
+    song["albumId"] = json!(id);
+    song["trackNumber"] = json!(1);
+    let date = item["created_time"].as_str().unwrap_or("").chars().take(10).collect::<String>();
+    let genres: Vec<Value> = item["tags"].as_array().map(|tags| tags.iter().filter_map(|tag| tag.get("name").cloned()).collect()).unwrap_or_default();
+    Ok(json!({
+        "id": id, "title": song["title"], "artist": song["artist"], "artistId": "",
+        "cover": song["cover"], "coverBig": song["coverBig"], "year": date.chars().take(4).collect::<String>(), "kind": "mix",
+        "trackCount": 1, "duration": song["duration"], "label": "A show on Mixcloud",
+        "releaseDate": date, "genres": genres, "tracks": [song], "source": "mixcloud", "pageUrl": item["url"],
+    }))
+}
+
+/// Asks the API mixcloud.com's own pages use (the public one has no trending list).
+fn graphql(query: &str) -> Result<Value, String> {
+    let answer = post_json("https://app.mixcloud.com/graphql", &json!({ "query": query }))?;
+    if let Some(message) = answer.pointer("/errors/0/message").and_then(Value::as_str) {
+        return Err(format!("Mixcloud: {message}"));
+    }
+    Ok(answer)
+}
+
+fn thumbnail(root: &Value, size: u32) -> String {
+    root.as_str().filter(|root| !root.is_empty()).map(|root| format!("https://thumbnailer.mixcloud.com/unsafe/{size}x{size}/{root}")).unwrap_or_default()
+}
+
+/// What's asked about each show.
+const SHOW: &str = "slug name audioLength publishDate owner { username displayName picture { urlRoot } } picture { urlRoot }";
+
+/// The shows on Mixcloud's Trending page, as the public API would describe them.
+fn trending() -> Result<Vec<Value>, String> {
+    let answer = graphql(&format!("{{ viewer {{ trending(first: 40) {{ edges {{ node {{ {SHOW} }} }} }} }} }}"))?;
+    Ok(shows(answer.pointer("/data/viewer/trending/edges")))
+}
+
+/// The hot shows in one of Mixcloud's categories, as its genre pages list
+/// them (the public API only has the all-time most played, years old).
+fn hot(slug: &str) -> Result<Vec<Value>, String> {
+    let answer = graphql(&format!(
+        "{{ viewer {{ discover(discoverTags: [{{ slug: \"{slug}\", type: TAG }}]) {{ shows(first: 24, orderBy: HOT) {{ edges {{ node {{ {SHOW} }} }} }} }} }} }}"
+    ))?;
+    Ok(shows(answer.pointer("/data/viewer/discover/shows/edges")))
+}
+
+fn shows(edges: Option<&Value>) -> Vec<Value> {
+    edges
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|edge| {
+            let show = edge.get("node")?;
+            let (user, slug) = (show.pointer("/owner/username")?.as_str()?, show.get("slug")?.as_str()?);
+            let picture = show.pointer("/picture/urlRoot").unwrap_or(&Value::Null);
+            Some(json!({
+                "key": format!("/{user}/{slug}/"),
+                "url": format!("https://www.mixcloud.com/{user}/{slug}/"),
+                "name": show["name"],
+                "user": { "username": user, "name": show.pointer("/owner/displayName").cloned().unwrap_or(json!(user)),
+                          "picture": thumbnail(show.pointer("/owner/picture/urlRoot").unwrap_or(&Value::Null), 300) },
+                "audio_length": show["audioLength"],
+                "created_time": show["publishDate"],
+                "pictures": { "large": thumbnail(picture, 300), "extra_large": thumbnail(picture, 600) },
+            }))
+        })
+        .collect()
+}
+
+/// A few of Mixcloud's main categories.
+const CATEGORIES: [(&str, &str); 8] = [
+    ("house", "House"), ("techno", "Techno"), ("drum-bass", "Drum & Bass"), ("hip-hop", "Hip Hop"),
+    ("soul", "Soul"), ("jazz", "Jazz"), ("ambient", "Ambient"), ("funk", "Funk"),
+];
+
+/// Mixcloud's front page: the Trending shows, the DJs and stations behind
+/// them, and the hot shows in its main categories.
+pub fn featured() -> Result<Vec<Value>, String> {
+    let (trending, categories) = std::thread::scope(|scope| {
+        let trending = scope.spawn(trending);
+        let categories: Vec<_> = CATEGORIES
+            .iter()
+            .map(|(slug, name)| (slug, name, scope.spawn(move || hot(slug))))
+            .collect();
+        let categories: Vec<_> =
+            categories.into_iter().map(|(slug, name, job)| (*slug, *name, job.join().ok().and_then(Result::ok))).collect();
+        (trending.join().ok().and_then(Result::ok).unwrap_or_default(), categories)
+    });
+    let mut sections = Vec::new();
+    let songs: Vec<Value> = trending.iter().filter_map(mix).collect();
+    sections.extend(crate::featured::section("trending", "Trending", "The shows everyone's playing on Mixcloud right now.", Vec::new(), songs));
+    let mut seen = std::collections::HashSet::new();
+    let creators: Vec<Value> = trending
+        .iter()
+        .filter(|show| seen.insert(show.pointer("/user/username").and_then(Value::as_str).unwrap_or("").to_owned()))
+        .map(|show| {
+            let user = &show["user"];
+            json!({
+                "id": format!("mc:user:{}", user["username"].as_str().unwrap_or("")), "title": user["name"],
+                "artist": "Latest shows", "artistId": "", "cover": user["picture"], "coverBig": user["picture"],
+                "year": "", "kind": "playlist",
+            })
+        })
+        .collect();
+    if let Some(mut section) = crate::featured::section("creators", "Trending DJs and stations", "Who's behind this week's Trending shows. Each opens their latest shows.", creators, Vec::new()) {
+        section["round"] = json!(true);
+        sections.push(section);
+    }
+    for (slug, name, found) in categories {
+        let shows = found.unwrap_or_default().iter().filter_map(mix_card).collect();
+        let about = format!("Hot {} shows on Mixcloud right now.", name.to_lowercase());
+        sections.extend(crate::featured::section(slug, name, &about, shows, Vec::new()));
+    }
+    Ok(sections)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +271,23 @@ mod tests {
         let user = first["mixcloudKey"].as_str().unwrap().split('/').nth(1).unwrap().to_owned();
         let uploads = import(&format!("https://www.mixcloud.com/{user}/")).unwrap();
         assert!(!uploads["tracks"].as_array().unwrap().is_empty());
+    }
+
+    /// Talks to mixcloud.com: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_featured() {
+        let sections = featured().unwrap();
+        assert_eq!(sections[0]["id"], "trending");
+        let trending = sections[0]["tracks"].as_array().unwrap();
+        assert!(trending.len() >= 10 && trending.iter().all(|t| t["mixcloudKey"].as_str().unwrap().starts_with('/') && t["cover"] != ""));
+        assert!(sections.iter().any(|s| s["id"] == "house"), "the categories");
+        // A creator opens as their latest shows, a show as an album of one.
+        let creators = sections.iter().find(|s| s["id"] == "creators").expect("creators");
+        let latest = album(creators["albums"][0]["id"].as_str().unwrap()).unwrap();
+        assert!(!latest["tracks"].as_array().unwrap().is_empty());
+        let show = sections.iter().find(|s| s["id"] == "house").unwrap()["albums"][0]["id"].as_str().unwrap().to_owned();
+        let one = album(&show).unwrap();
+        assert_eq!(one["tracks"][0]["key"], show);
     }
 }

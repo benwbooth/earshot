@@ -75,6 +75,7 @@ Flickable {
                     image: modelData.coverBig || modelData.cover
                     seed: modelData.id
                     onClicked: Nav.album(modelData.id)
+                    albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
                 }
             }

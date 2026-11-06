@@ -139,20 +139,29 @@ pub fn AlbumCard(
     #[prop(default = true)] playable: bool,
     #[prop(default = "album")] placeholder: &'static str,
     #[prop(optional)] on_play: Option<Callback<()>>,
+    /// The album the play button plays: while it's what's playing, the button
+    /// shows pause and pauses (or carries on) instead of starting it again.
+    #[prop(optional, into)]
+    album_id: String,
 ) -> impl IntoView {
     let app = app();
+    let player = app.player;
     let seed = if seed.is_empty() { title.clone() } else { seed };
+    let playing_this = Memo::new(move |_| player.playing_album(&album_id));
+    let pause = Signal::derive(move || playing_this.get() && player.playing());
     view! {
-        <a class="album-card" class:list=move || app.album_list.get() class:round=round href=href>
+        <a class="album-card" class:list=move || app.album_list.get() class:round=round class:playing=move || playing_this.get() href=href>
             <div class="art">
                 <Cover src=image seed=seed radius=10 round=round placeholder=placeholder/>
                 {(playable && on_play.is_some()).then(|| {
                     let on_play = on_play.unwrap();
                     view! {
-                        <IconButton icon="play" size=20 filled=true class="card-play" tip="Play"
+                        <IconButton size=20 filled=true class="card-play"
+                            icon=Signal::derive(move || if pause.get() { "pause".to_owned() } else { "play".to_owned() })
+                            tip=Signal::derive(move || if pause.get() { "Pause".to_owned() } else { "Play".to_owned() })
                             on_click=move |event: MouseEvent| {
                                 event.prevent_default();
-                                on_play.run(())
+                                if playing_this.get_untracked() { player.toggle() } else { on_play.run(()) }
                             }/>
                     }
                 })}
@@ -463,34 +472,34 @@ pub fn TrackList(
     let player = app.player;
     let playlist_id = StoredValue::new(playlist_id);
     let route = StoredValue::new(route);
+    // The songs shown (explicit ones are left out while they're hidden).
+    let shown = Memo::new(move |_| tracks.get().into_iter().filter(|t| player.allowed(t)).collect::<Vec<Value>>());
     let rows = move || {
         let all = tracks.get();
         let length = all.len();
-        let shown: Vec<Value> = match limit {
-            Some(n) => all.into_iter().take(n).collect(),
-            None => all,
-        };
-        shown
+        // Each song shown with where it sits in `tracks` (for playlist and queue changes).
+        let visible: Vec<(usize, Value)> = all.into_iter().enumerate().filter(|(_, t)| player.allowed(t)).take(limit.unwrap_or(usize::MAX)).collect();
+        visible
             .into_iter()
             .enumerate()
-            .map(|(index, track)| {
+            .map(|(index, (at, track))| {
                 let number = if !show_cover { track["trackNumber"].as_u64().map(|n| n as usize).unwrap_or(index + 1) } else { index + 1 };
                 let on_play = Callback::new(move |_| {
                     if queue_mode {
-                        player.jump(index as i64);
+                        player.jump(at as i64);
                     } else {
-                        player.play_tracks(tracks.get_untracked(), index, context.get_untracked(), route.get_value());
+                        player.play_tracks(shown.get_untracked(), index, context.get_untracked(), route.get_value());
                     }
                 });
                 let on_menu = Callback::new(move |mut request: MenuRequest| {
                     let id = playlist_id.get_value();
                     if !id.is_empty() {
                         request.playlist_id = id;
-                        request.playlist_index = index as i64;
+                        request.playlist_index = at as i64;
                         request.playlist_length = length;
                     }
                     if queue_mode {
-                        request.queue_index = index as i64;
+                        request.queue_index = at as i64;
                     }
                     app.menu.set(Some(request));
                 });
@@ -502,7 +511,7 @@ pub fn TrackList(
     };
     view! {
         <div class="track-list" class:no-album=!show_album>
-            <Show when=move || show_header && !tracks.with(Vec::is_empty)>
+            <Show when=move || show_header && !shown.with(Vec::is_empty)>
                 <div class="track-header">
                     {show_number.then(|| view! { <span class="number">"#"</span> })}
                     {show_cover.then(|| view! { <span class="row-cover"></span> })}

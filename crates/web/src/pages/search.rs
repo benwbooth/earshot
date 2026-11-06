@@ -64,7 +64,7 @@ fn album_card(album: &Value, subtitle: String) -> impl IntoView + use<> {
     let (id, title) = (s(album, "id"), s(album, "title"));
     let (play_id, play_title) = (id.clone(), title.clone());
     view! {
-        <AlbumCard title=title subtitle=subtitle image=image(album, "coverBig", "cover") seed=id.clone() href=album_href(&id)
+        <AlbumCard title=title subtitle=subtitle image=image(album, "coverBig", "cover") seed=id.clone() href=album_href(&id) album_id=id.clone()
             on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
     }
 }
@@ -549,25 +549,38 @@ fn top_result(search: Search) -> impl IntoView {
         _ => (None, String::new(), String::new(), String::new()),
     };
     let tracks = list(&results, "tracks");
+    // The artist's songs among the results, or the album; pause while they play.
+    let player = app.player;
+    let theirs: Vec<Value> = match &artist {
+        Some(artist) if show_artist => tracks.iter().filter(|t| s(t, "artistId") == s(artist, "id")).cloned().collect(),
+        _ => Vec::new(),
+    };
+    let artist_name = artist.as_ref().map(|a| s(a, "name")).unwrap_or_default();
+    let album_id = album.as_ref().map(|a| s(a, "id")).unwrap_or_default();
+    let playing_this = {
+        let (theirs, artist_name, album_id) = (theirs.clone(), artist_name.clone(), album_id.clone());
+        Memo::new(move |_| if show_artist { player.playing_from(&artist_name, &theirs) } else { player.playing_album(&album_id) })
+    };
     let play = move |event: MouseEvent| {
         event.prevent_default();
-        match (&artist, &album) {
-            (Some(artist), _) if show_artist => {
-                let id = s(artist, "id");
-                let theirs = tracks.iter().filter(|t| s(t, "artistId") == id).cloned().collect();
-                app.player.play_tracks(theirs, 0, s(artist, "name"), None);
-            }
-            (_, Some(album)) => app.play_album(s(album, "id"), s(album, "title"), false),
-            _ => {}
+        if playing_this.get_untracked() {
+            player.toggle();
+            return;
+        }
+        match &album {
+            _ if show_artist => player.play_tracks(theirs.clone(), 0, artist_name.clone(), None),
+            Some(album) => app.play_album(album_id.clone(), s(album, "title"), false),
+            None => {}
         }
     };
     view! {
-        <a class="top-result" href=href>
+        <a class="top-result" class:playing=move || playing_this.get() href=href>
             <Cover src=picture seed=query round=show_artist radius=8/>
             <div class="grow"></div>
             <div class="top-name">{name}</div>
             <div class="top-kind">{kind}</div>
-            <IconButton icon="play" size=22 filled=true tip="Play" on_click=play/>
+            <IconButton size=22 filled=true tip="Play" on_click=play
+                icon=Signal::derive(move || if playing_this.get() && player.playing() { "pause".to_owned() } else { "play".to_owned() })/>
         </a>
     }
 }

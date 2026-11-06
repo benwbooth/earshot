@@ -14,11 +14,21 @@ ColumnLayout {
     property string playlistId: ""
     property int limit: -1
     property bool queueMode: false
+    // Where each song shown sits in `tracks` (explicit songs are left out
+    // while they're hidden), and the songs shown.
+    readonly property var shownAt: {
+        const at = []
+        for (let i = 0; i < (tracks || []).length; ++i)
+            if (Player.allowed(tracks[i]))
+                at.push(i)
+        return at
+    }
+    readonly property var shown: shownAt.map(i => tracks[i])
 
     spacing: 2
 
     RowLayout {
-        visible: list.showHeader && list.tracks.length > 0
+        visible: list.showHeader && list.shown.length > 0
         Layout.fillWidth: true
         Layout.leftMargin: 12
         Layout.rightMargin: 8
@@ -34,7 +44,7 @@ ColumnLayout {
     }
 
     Rectangle {
-        visible: list.showHeader && list.tracks.length > 0
+        visible: list.showHeader && list.shown.length > 0
         Layout.fillWidth: true
         Layout.bottomMargin: 6
         implicitHeight: 1
@@ -42,7 +52,7 @@ ColumnLayout {
     }
 
     Repeater {
-        model: list.limit >= 0 ? list.tracks.slice(0, list.limit) : list.tracks
+        model: list.limit >= 0 ? list.shown.slice(0, list.limit) : list.shown
         delegate: TrackRow {
             required property var modelData
             required property int index
@@ -54,15 +64,15 @@ ColumnLayout {
             showNumber: list.showNumber
             onActivated: {
                 if (list.queueMode)
-                    Player.jump(index)
+                    Player.jump(list.shownAt[index])
                 else
-                    Player.playTracks(list.tracks, index, list.context)
+                    Player.playTracks(list.shown, index, list.context)
             }
             onMenuRequested: anchor => {
                 menu.playlistId = list.playlistId
-                menu.playlistIndex = list.playlistId !== "" ? index : -1
+                menu.playlistIndex = list.playlistId !== "" ? list.shownAt[index] : -1
                 menu.playlistLength = list.tracks.length
-                menu.queueIndex = list.queueMode ? index : -1
+                menu.queueIndex = list.queueMode ? list.shownAt[index] : -1
                 menu.openFor([modelData], anchor)
             }
         }

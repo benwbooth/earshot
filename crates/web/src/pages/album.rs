@@ -19,6 +19,7 @@ fn kind_label(album: &Value) -> String {
         "ep" => "EP",
         "compile" => "COMPILATION",
         "playlist" => "PLAYLIST",
+        "mix" => "SHOW",
         _ => "ALBUM",
     };
     let place = match s(album, "source").as_str() {
@@ -26,6 +27,7 @@ fn kind_label(album: &Value) -> String {
         "soundcloud" => " ON SOUNDCLOUD",
         "bandcamp" => " ON BANDCAMP",
         "archive" => " ON THE INTERNET ARCHIVE",
+        "mixcloud" => " ON MIXCLOUD",
         _ => "",
     };
     format!("{kind}{place}")

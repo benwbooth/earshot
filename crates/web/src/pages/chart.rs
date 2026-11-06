@@ -98,7 +98,7 @@ pub fn ChartPage() -> impl IntoView {
                         let image = if s(&album, "coverBig").is_empty() { s(&album, "cover") } else { s(&album, "coverBig") };
                         let (play_id, play_title) = (album_id.clone(), album_title.clone());
                         view! {
-                            <AlbumCard title=album_title subtitle=s(&album, "artist") image=image seed=album_id.clone() href=album_href(&album_id)
+                            <AlbumCard title=album_title subtitle=s(&album, "artist") image=image seed=album_id.clone() href=album_href(&album_id) album_id=album_id.clone()
                                 on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
                         }
                     }).collect_view()}

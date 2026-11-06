@@ -206,7 +206,7 @@ pub fn ForYouPage() -> impl IntoView {
                                     let image = if s(&album, "coverBig").is_empty() { s(&album, "cover") } else { s(&album, "coverBig") };
                                     let (play_id, play_title) = (id.clone(), title.clone());
                                     view! {
-                                        <AlbumCard title=title subtitle=subtitle image=image seed=id.clone() href=album_href(&id)
+                                        <AlbumCard title=title subtitle=subtitle image=image seed=id.clone() href=album_href(&id) album_id=id.clone()
                                             on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
                                     }
                                 }).collect_view()}

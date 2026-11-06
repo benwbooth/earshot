@@ -13,6 +13,10 @@ Item {
     property bool round: false
     property bool playable: true
     property string placeholderIcon: "album"
+    // The album the play button plays: while it's what's playing, the button
+    // shows pause and pauses (or carries on) instead of starting it again.
+    property string albumId: ""
+    readonly property bool playingThis: albumId !== "" && Player.playingAlbum(albumId)
     readonly property bool listMode: Api.albumList
     readonly property int thumb: 56
 
@@ -50,14 +54,15 @@ Item {
         id: playButton
         visible: card.playable
         filled: true
-        iconName: "play"
+        iconName: card.playingThis && Player.playing ? "pause" : "play"
         iconSize: card.listMode ? 16 : 20
+        tip: card.playingThis && Player.playing ? "Pause" : "Play"
         x: card.listMode ? card.width - width - 8 : art.width - width - 10
-        y: card.listMode ? (card.height - height) / 2 : art.height - height - (hover.hovered ? 10 : 2)
-        opacity: hover.hovered ? 1 : 0
+        y: card.listMode ? (card.height - height) / 2 : art.height - height - (hover.hovered || card.playingThis ? 10 : 2)
+        opacity: hover.hovered || card.playingThis ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 140 } }
         Behavior on y { enabled: !card.listMode; NumberAnimation { duration: 140 } }
-        onClicked: card.playClicked()
+        onClicked: card.playingThis ? Player.toggle() : card.playClicked()
     }
 
     readonly property real textX: listMode ? art.x + thumb + 14 : 0

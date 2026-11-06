@@ -589,6 +589,212 @@ pub fn find_videos(track: &Value, known_video: Option<String>) -> Result<Vec<Str
     Ok(videos)
 }
 
+/// Calls YouTube Music's own API (music.youtube.com): it has the charts, new
+/// releases and moods that youtube.com doesn't show.
+fn music_browse(browse_id: &str, params: Option<&str>) -> Result<Value, String> {
+    let mut body = json!({
+        "browseId": browse_id,
+        "context": { "client": { "clientName": "WEB_REMIX", "clientVersion": "1.20251101.01.00", "hl": "en", "gl": "US" } },
+    });
+    if let Some(params) = params {
+        body["params"] = json!(params);
+    }
+    let answer = post_json("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false", &body)?;
+    if let Some(error) = answer.get("error") {
+        let message = error.get("message").and_then(Value::as_str).unwrap_or("request failed");
+        return Err(format!("YouTube Music: {message}"));
+    }
+    Ok(answer)
+}
+
+/// A YouTube Music page's shelves, as (title, items) in page order.
+fn music_shelves(page: &Value) -> Vec<(String, Vec<Value>)> {
+    let mut found = Vec::new();
+    collect(page, &["musicCarouselShelfRenderer", "gridRenderer"], &mut found);
+    found
+        .into_iter()
+        .map(|(_, shelf)| {
+            let title = shelf.get("header").and_then(|header| first(header, "title")).map(text).unwrap_or_default();
+            let items = shelf.get("contents").or_else(|| shelf.get("items")).and_then(Value::as_array).cloned().unwrap_or_default();
+            (title, items)
+        })
+        .collect()
+}
+
+/// The items of the first shelf with this title.
+fn music_shelf(page: &Value, title: &str) -> Vec<Value> {
+    music_shelves(page).into_iter().find(|(name, _)| name == title).map(|(_, items)| items).unwrap_or_default()
+}
+
+/// What a YouTube Music card or row stands for.
+enum MusicItem {
+    Album(Value),
+    Song(Value),
+}
+
+/// "Album • Artist", "Artist • 2026" or "Chart • YouTube Charts" as (kind, who, year).
+fn music_byline(line: &str) -> (String, String, String) {
+    let (mut kind, mut year, mut who) = (String::new(), String::new(), Vec::new());
+    for part in line.split(" • ").map(str::trim).filter(|part| !part.is_empty()) {
+        match part {
+            "Album" | "Single" | "EP" | "Playlist" | "Chart" | "Song" | "Video" => kind = part.to_lowercase(),
+            _ if part.len() == 4 && part.chars().all(|c| c.is_ascii_digit()) => year = part.to_owned(),
+            _ if part.ends_with(" views") || part.ends_with(" plays") || part.ends_with(" sec") || part.ends_with(" songs") => {}
+            _ => who.push(part),
+        }
+    }
+    (kind, who.join(" • "), year)
+}
+
+/// One card (musicTwoRowItemRenderer) or row (musicResponsiveListItemRenderer)
+/// from YouTube Music: albums open as their YouTube playlist ("OLAK5uy_…"),
+/// which the album page already reads.
+fn music_item(item: &Value) -> Option<MusicItem> {
+    let (renderer, title, byline) = if let Some(card) = item.get("musicTwoRowItemRenderer") {
+        (card, card.get("title").map(text)?, card.get("subtitle").map(text).unwrap_or_default())
+    } else {
+        let row = item.get("musicResponsiveListItemRenderer")?;
+        let columns = row.get("flexColumns").and_then(Value::as_array)?;
+        let column = |at: usize| columns.get(at).and_then(|c| c.pointer("/musicResponsiveListItemFlexColumnRenderer/text")).map(text).unwrap_or_default();
+        (row, column(0), column(1))
+    };
+    let (kind, who, year) = music_byline(&byline);
+    let cover = renderer
+        .get("thumbnailRenderer")
+        .or_else(|| renderer.get("thumbnail"))
+        .and_then(|thumbnail| first(thumbnail, "thumbnails"))
+        .and_then(Value::as_array)
+        .and_then(|sizes| sizes.last())
+        .and_then(|size| size.get("url"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    // Where the card itself leads (not its artist's link).
+    let page_type = renderer
+        .get("navigationEndpoint")
+        .or_else(|| renderer.pointer("/flexColumns/0"))
+        .and_then(|target| first(target, "pageType"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let browse_id = renderer.pointer("/navigationEndpoint/browseEndpoint/browseId").and_then(Value::as_str).unwrap_or("");
+    let mut ids = Vec::new();
+    collect(renderer, &["playlistId", "videoId"], &mut ids);
+    let video = ids.iter().find(|(key, _)| *key == "videoId").and_then(|(_, id)| id.as_str());
+    let album = |id: String, kind: &str| {
+        MusicItem::Album(json!({
+            "id": format!("yt:pl:{id}"), "title": title, "artist": who, "artistId": "",
+            "cover": cover, "coverBig": cover, "year": year, "kind": kind,
+        }))
+    };
+    match page_type {
+        "MUSIC_PAGE_TYPE_ALBUM" => {
+            let list = ids.iter().filter_map(|(_, id)| id.as_str()).find(|id| id.starts_with("OLAK5uy_"))?;
+            Some(album(list.to_owned(), if kind == "single" || kind == "ep" { &kind } else { "album" }))
+        }
+        "MUSIC_PAGE_TYPE_PLAYLIST" => Some(album(browse_id.strip_prefix("VL").unwrap_or(browse_id).to_owned(), "playlist")),
+        _ => video.map(|id| MusicItem::Song(video_track(id, &title, &who, 0))),
+    }
+}
+
+fn music_albums(items: &[Value]) -> Vec<Value> {
+    let mut seen = std::collections::HashSet::new();
+    items
+        .iter()
+        .filter_map(|item| match music_item(item) {
+            Some(MusicItem::Album(album)) => seen.insert(album["id"].as_str().unwrap_or("").to_owned()).then_some(album),
+            _ => None,
+        })
+        .collect()
+}
+
+/// YouTube Music's trending songs, from the chart playlist behind them (which
+/// has the songs' lengths), or as the shelf lists them.
+fn trending(explore: &Value) -> Vec<Value> {
+    let items = music_shelf(explore, "Trending");
+    let mut lists = Vec::new();
+    for item in &items {
+        collect(item, &["playlistId"], &mut lists);
+    }
+    let chart = lists.iter().filter_map(|(_, id)| id.as_str()).find(|id| !id.starts_with("RD"));
+    if let Some(Ok((_, _, tracks))) = chart.map(playlist_contents) {
+        return tracks;
+    }
+    items
+        .iter()
+        .filter_map(|item| match music_item(item) {
+            Some(MusicItem::Song(song)) => Some(song),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The moods YouTube Music's front page offers, in this order when there.
+const MOODS: [&str; 4] = ["Feel good", "Chill", "Focus", "Party"];
+
+/// Playlists YouTube Music picks for each of a few moods: [(mood, playlists)].
+fn moods() -> Vec<(String, Vec<Value>)> {
+    let Ok(page) = music_browse("FEmusic_moods_and_genres", None) else { return Vec::new() };
+    let mut buttons = Vec::new();
+    collect(&page, &["musicNavigationButtonRenderer"], &mut buttons);
+    let wanted: Vec<(String, String)> = MOODS
+        .iter()
+        .filter_map(|mood| {
+            buttons.iter().find_map(|(_, button)| {
+                let name = button.get("buttonText").map(text)?;
+                let params = button.pointer("/clickCommand/browseEndpoint/params")?.as_str()?;
+                (name == *mood).then(|| (name, params.to_owned()))
+            })
+        })
+        .collect();
+    std::thread::scope(|scope| {
+        let jobs: Vec<_> = wanted
+            .iter()
+            .map(|(name, params)| {
+                scope.spawn(move || {
+                    let page = music_browse("FEmusic_moods_and_genres_category", Some(params)).ok()?;
+                    let items: Vec<Value> = music_shelves(&page).into_iter().flat_map(|(_, items)| items).collect();
+                    Some((name.clone(), music_albums(&items).into_iter().take(24).collect::<Vec<_>>()))
+                })
+            })
+            .collect();
+        jobs.into_iter().filter_map(|job| job.join().ok().flatten()).collect()
+    })
+}
+
+/// YouTube Music's front page: trending songs, new albums and singles, the
+/// charts, the top albums and playlists for a few moods.
+pub fn featured() -> Result<Vec<Value>, String> {
+    let (explore, releases, charts, moods) = std::thread::scope(|scope| {
+        let explore = scope.spawn(|| music_browse("FEmusic_explore", None).ok());
+        let releases = scope.spawn(|| music_browse("FEmusic_new_releases_albums", None).ok());
+        let charts = scope.spawn(|| music_browse("FEmusic_charts", None).ok());
+        let moods = scope.spawn(moods);
+        let explore = explore.join().ok().flatten().map(|page| (trending(&page), page));
+        (explore, releases.join().ok().flatten(), charts.join().ok().flatten(), moods.join().unwrap_or_default())
+    });
+    let mut sections = Vec::new();
+    let (songs, explore) = explore.unzip();
+    sections.extend(crate::featured::section("trending", "Trending", "The songs taking off on YouTube Music right now.", Vec::new(), songs.unwrap_or_default()));
+    let mut new_albums = releases.map(|page| music_albums(&music_shelves(&page).into_iter().flat_map(|(_, items)| items).collect::<Vec<_>>())).unwrap_or_default();
+    if new_albums.is_empty() {
+        new_albums = explore.as_ref().map(|page| music_albums(&music_shelf(page, "New albums & singles"))).unwrap_or_default();
+    }
+    new_albums.truncate(48);
+    sections.extend(crate::featured::section("new", "New albums & singles", "Just out on YouTube Music.", new_albums, Vec::new()));
+    if let Some(charts) = &charts {
+        let mut lists = music_albums(&music_shelf(charts, "Video charts"));
+        lists.extend(music_albums(&music_shelf(charts, "Genres")));
+        sections.extend(crate::featured::section("charts", "Charts", "YouTube's weekly charts, overall and by genre.", lists, Vec::new()));
+        let top = music_albums(&music_shelf(charts, "Top albums"));
+        sections.extend(crate::featured::section("top-albums", "Top albums", "The most played albums on YouTube this week.", top, Vec::new()));
+    }
+    for (mood, playlists) in moods {
+        let id = format!("mood-{}", mood.to_lowercase().replace(' ', "-"));
+        sections.extend(crate::featured::section(&id, &mood, "Playlists for the mood, picked by YouTube Music.", playlists, Vec::new()));
+    }
+    Ok(sections)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,6 +826,26 @@ mod tests {
         let songs = mix("jx-kcjc_v00").unwrap();
         assert!(songs.len() > 10, "{} songs", songs.len());
         assert!(songs.iter().all(|s| s["youtubeId"] != "jx-kcjc_v00"));
+    }
+
+    /// Talks to YouTube Music: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_featured() {
+        let sections = featured().unwrap();
+        let ids: Vec<&str> = sections.iter().filter_map(|s| s["id"].as_str()).collect();
+        for wanted in ["trending", "new", "charts", "top-albums", "mood-chill"] {
+            assert!(ids.contains(&wanted), "{wanted} missing from {ids:?}");
+        }
+        let trending = sections[0]["tracks"].as_array().unwrap();
+        assert!(trending.len() >= 10 && trending.iter().all(|t| t["youtubeId"].is_string()), "{} trending songs", trending.len());
+        let new = sections.iter().find(|s| s["id"] == "new").unwrap()["albums"].as_array().unwrap();
+        assert!(new.len() >= 20 && new.iter().all(|a| a["id"].as_str().unwrap().starts_with("yt:pl:OLAK5uy_") && a["artist"] != ""));
+        // Albums, charts and mood playlists all open as YouTube playlists.
+        let album = album(new[0]["id"].as_str().unwrap()).unwrap();
+        assert!(!album["tracks"].as_array().unwrap().is_empty());
+        let chart = sections.iter().find(|s| s["id"] == "charts").unwrap()["albums"][0]["id"].as_str().unwrap().to_owned();
+        assert!(super::album(&chart).unwrap()["tracks"].as_array().unwrap().len() >= 20);
     }
 
     /// Talks to YouTube: `cargo test -- --ignored`.

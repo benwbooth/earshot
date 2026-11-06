@@ -130,6 +130,15 @@ pub fn TopBar() -> impl IntoView {
                                 {label}
                             </button>
                         }).collect_view()}
+                        <div class="menu-separator"></div>
+                        // Leaves songs marked explicit out of song lists, the queue and radio.
+                        <button class="menu-item" on:click=move |_| {
+                            app.player.hide_explicit.update(|on| *on = !*on);
+                            settings_open.set(false);
+                        }>
+                            <Icon name="check" size=14 class=if app.player.hide_explicit.get_untracked() { "check on" } else { "check" }/>
+                            "Hide explicit songs"
+                        </button>
                     </div>
                 </Show>
             </div>

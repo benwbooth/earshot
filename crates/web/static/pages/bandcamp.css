@@ -22,7 +22,22 @@
 .bandcamp-tag .slices { display: flex; flex-wrap: wrap; gap: 8px; }
 .bandcamp-tag .more { color: var(--text-muted); font-size: var(--font-body); }
 
+/* The front page's picks: today's Album of the Day, then shelves */
+.bc-highlight { display: flex; gap: 28px; align-items: center; padding: 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.bc-highlight-art { flex: none; width: 220px; }
+.bc-highlight-art .cover { width: 100%; aspect-ratio: 1; }
+.bc-highlight-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.bc-highlight-title { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.15; overflow-wrap: anywhere; }
+.bc-highlight-title:hover { text-decoration: underline; }
+.bc-highlight-artist { font-size: 16px; font-weight: 600; }
+.bc-highlight-blurb { color: var(--text-muted); font-size: 15px; line-height: 1.45; max-width: 640px; margin-bottom: 6px; }
+.bandcamp .bc-about { margin-top: -14px; color: var(--text-muted); font-size: 13px; }
+.bandcamp .blurb.tight { margin-top: -14px; }
+
 @media (max-width: 760px) {
   .bandcamp .hero, .service-page .hero, .foryou .hero { font-size: 34px; letter-spacing: -0.7px; }
   .bandcamp-tag .hero { font-size: 38px; letter-spacing: -0.8px; }
+  .bc-highlight { flex-direction: column; align-items: stretch; gap: 16px; padding: 16px; }
+  .bc-highlight-art { width: min(260px, 100%); align-self: center; }
+  .bc-highlight-title { font-size: 24px; }
 }

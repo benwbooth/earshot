@@ -20,6 +20,46 @@ Flickable {
     property int waitSeconds: 0
     property int savedMinutesAgo: -1
 
+    // The listener's own stations ("Your stations"), again whenever the library changes.
+    property var saved: []
+    function loadSaved() {
+        Api.call(Backend.call("savedStations", "{}"), function (result) { page.saved = result || [] })
+    }
+    Connections {
+        target: Backend
+        function onLibraryRevisionChanged() { page.loadSaved() }
+    }
+    function removeStation(id) {
+        page.saved = page.saved.filter(item => item.id !== id)
+        Api.call(Backend.call("removeStation", JSON.stringify({ subreddit: id })), null)
+        Nav.notify("Removed r/" + id + " from your stations")
+    }
+
+    // A subreddit typed into the box, kept among "Your stations" once it loads with songs.
+    property string adding: ""
+    property string typedError: ""
+    function same(a, b) { return a.toLowerCase() === b.toLowerCase() }
+    function tuneTo(text) {
+        Api.call(Backend.call("radioStationName", JSON.stringify({ text: text })), function (name) {
+            page.typedError = ""
+            stationField.text = ""
+            page.adding = name
+            page.load(name, false)
+        }, function (message) {
+            page.typedError = message
+        })
+    }
+    // The core skips built-in stations and ones already kept.
+    function keepIfTyped(name, subreddit) {
+        if (adding === "" || !same(adding, name))
+            return
+        adding = ""
+        Api.call(Backend.call("saveStation", JSON.stringify({ subreddit: subreddit })), function (added) {
+            if (added)
+                Nav.notify("Added r/" + subreddit + " to your stations")
+        })
+    }
+
     function load(name, force) {
         station = name
         Api.lastStation = name
@@ -27,8 +67,11 @@ Flickable {
         waitSeconds = 0
         savedMinutesAgo = -1
         countdown.stop()
+        if (adding !== "" && !same(adding, name))
+            adding = ""
         if (Api.radioCache[name] && !force) {
             tracks = Api.radioCache[name]
+            keepIfTyped(name, name)
             return
         }
         tracks = null
@@ -49,6 +92,7 @@ Flickable {
             cache[name] = result.tracks
             Api.radioCache = cache
             page.tracks = result.tracks
+            page.keepIfTyped(name, result.subreddit || name)
         }, function (message) {
             page.loading = false
             if (page.station === name)
@@ -74,7 +118,10 @@ Flickable {
             Player.playTracks(tracks, 0, "r/" + station)
     }
 
-    Component.onCompleted: load(station, false)
+    Component.onCompleted: {
+        load(station, false)
+        loadSaved()
+    }
 
     contentWidth: width
     contentHeight: content.implicitHeight + 64
@@ -113,6 +160,101 @@ Flickable {
             text: "Songs shared by people in music communities on Reddit, chosen by humans rather than algorithms. Pick a station and press play."
             color: Theme.textMuted
             font.pixelSize: Theme.fontLarge
+        }
+
+        // Any subreddit; ones that load with songs are kept under "Your stations".
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            TextField {
+                id: stationField
+                Layout.fillWidth: true
+                Layout.maximumWidth: 520
+                implicitHeight: 44
+                leftPadding: 44
+                placeholderText: "Tune in to any subreddit: r/vaporwave, or a link to one"
+                placeholderTextColor: Theme.textFaint
+                color: Theme.text
+                font.pixelSize: Theme.fontBody + 1
+                selectByMouse: true
+                onAccepted: page.tuneTo(text)
+                onTextEdited: page.typedError = ""
+                background: Rectangle {
+                    radius: height / 2
+                    color: stationField.activeFocus ? Theme.surfaceRaised : Theme.surface
+                    border.color: stationField.activeFocus ? Theme.text : Theme.border
+                }
+                Icon {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "radio"
+                    size: 18
+                    color: Theme.textMuted
+                }
+            }
+            PillButton {
+                text: "Tune in"
+                enabled: stationField.text.trim() !== ""
+                opacity: enabled ? 1 : 0.5
+                onClicked: page.tuneTo(stationField.text)
+            }
+            Item { Layout.fillWidth: true }
+        }
+        Text {
+            visible: page.typedError !== ""
+            Layout.topMargin: -8
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: page.typedError
+            color: Theme.danger
+            font.pixelSize: Theme.fontBody
+        }
+
+        // The listener's own stations, each removable
+        ColumnLayout {
+            visible: page.saved.length > 0
+            Layout.fillWidth: true
+            spacing: 8
+            Text {
+                text: "YOUR STATIONS"
+                color: Theme.textFaint
+                font.pixelSize: Theme.fontSmall - 1
+                font.weight: Font.DemiBold
+                font.letterSpacing: 1.2
+            }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 8
+                Repeater {
+                    model: page.saved
+                    delegate: PillButton {
+                        id: savedPill
+                        required property var modelData
+                        readonly property bool current: page.same(page.station, modelData.id)
+                        width: implicitWidth + 20
+                        rightPadding: 20
+                        text: modelData.name
+                        checkedStyle: current
+                        ToolTip.visible: hovered && !removeButton.hovered
+                        ToolTip.text: modelData.about
+                        ToolTip.delay: 500
+                        onClicked: page.load(modelData.id, false)
+                        IconButton {
+                            id: removeButton
+                            anchors.right: parent.right
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "close"
+                            iconSize: 12
+                            color: savedPill.current ? Theme.background : Theme.textMuted
+                            hoverColor: savedPill.current ? Theme.background : Theme.text
+                            tip: "Remove " + savedPill.modelData.name + " from your stations"
+                            onClicked: page.removeStation(savedPill.modelData.id)
+                        }
+                    }
+                }
+            }
         }
 
         // Station picker, grouped

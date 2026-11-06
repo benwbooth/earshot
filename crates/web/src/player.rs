@@ -48,6 +48,16 @@ pub struct Player {
     pub levels: RwSignal<[f64; crate::levels::BANDS]>,
     /// Why the waveform is still, when the music can't be measured.
     pub levels_note: RwSignal<String>,
+    /// "Hide explicit songs": they're left out of song lists and never played.
+    pub hide_explicit: RwSignal<bool>,
+    /// Where the app's shared state lives, for notices sent after an answer
+    /// arrives (outside any component, where it can't otherwise be found).
+    owner: StoredValue<Option<Owner>>,
+}
+
+/// A song marked explicit (mostly Deezer catalogue songs).
+pub fn explicit(track: &Value) -> bool {
+    track["explicit"].as_bool().unwrap_or(false)
 }
 
 fn shuffled(mut items: Vec<Value>) -> Vec<Value> {
@@ -93,6 +103,8 @@ impl Player {
             started_count: RwSignal::new(0),
             levels: RwSignal::new([0.0; crate::levels::BANDS]),
             levels_note: RwSignal::new(String::new()),
+            hide_explicit: persisted("hideExplicit", false),
+            owner: StoredValue::new(Owner::current()),
         };
         player.wire();
         player
@@ -132,6 +144,43 @@ impl Player {
     /// "pause" while these songs play, otherwise "play".
     pub fn play_icon(&self, context: &str, tracks: &[Value]) -> String {
         if self.playing_from(context, tracks) && self.playing() { "pause".into() } else { "play".into() }
+    }
+
+    /// An album card's play button: whether that album is what's playing
+    /// (started from its card or its page).
+    pub fn playing_album(&self, id: &str) -> bool {
+        !id.is_empty() && self.current().is_some() && self.context_route.with(|r| r.as_deref() == Some(crate::state::album_href(id).as_str()))
+    }
+
+    /// Whether a song may be shown and played: not while it's explicit and
+    /// "Hide explicit songs" is on. Tracked, for lists that follow the setting.
+    pub fn allowed(&self, track: &Value) -> bool {
+        !(explicit(track) && self.hide_explicit.get())
+    }
+
+    pub fn allowed_untracked(&self, track: &Value) -> bool {
+        !(explicit(track) && self.hide_explicit.get_untracked())
+    }
+
+    /// The songs that may be played, copied for the queue.
+    fn keep(&self, tracks: Vec<Value>) -> Vec<Value> {
+        copy(tracks).into_iter().filter(|t| self.allowed_untracked(t)).collect()
+    }
+
+    /// Nothing to play because every song asked for is explicit and hidden.
+    fn notice_hidden(&self, tracks: &[Value]) {
+        if tracks.iter().any(|t| t["key"].is_string()) {
+            self.notify("Explicit songs are hidden (see Settings)");
+        }
+    }
+
+    /// A short notice, also from code that runs once an answer arrives.
+    fn notify(&self, message: impl Into<String>) {
+        let message = message.into();
+        match self.owner.get_value() {
+            Some(owner) => owner.with(|| app().notify(message)),
+            None => app().notify(message),
+        }
     }
 
     pub fn playing(&self) -> bool {
@@ -240,6 +289,42 @@ impl Player {
                 }
             }
         });
+        // Turning on "Hide explicit songs" takes them out of the queue.
+        Effect::new(move |_| {
+            if self.hide_explicit.get() {
+                self.drop_explicit();
+            }
+        });
+    }
+
+    /// Takes hidden explicit songs out of the queue; if one is playing, the
+    /// next song that isn't explicit plays instead.
+    fn drop_explicit(&self) {
+        if self.queue.with_untracked(|q| q.iter().all(|t| self.allowed_untracked(t))) {
+            return;
+        }
+        let index = self.index.get_untracked();
+        let skipping = self.current_untracked().is_some_and(|t| !self.allowed_untracked(&t));
+        // Where the current song (or the next one allowed) ends up.
+        let at = self.queue.with_untracked(|q| q.iter().take(index.max(0) as usize).filter(|t| self.allowed_untracked(t)).count()) as i64;
+        let kept: Vec<Value> = self.queue.get_untracked().into_iter().filter(|t| self.allowed_untracked(t)).collect();
+        let length = kept.len() as i64;
+        self.original.update(|q| q.retain(|t| !explicit(t)));
+        if !skipping {
+            self.queue.set(kept);
+            self.index.set(if index < 0 { -1 } else { at });
+            return;
+        }
+        self.index.set(-1);
+        self.queue.set(kept);
+        if at < length {
+            self.jump(at);
+        } else {
+            self.next_request();
+            self.engine.stop();
+            self.started.set(false);
+            self.loading.set(false);
+        }
     }
 
     fn track_started(&self, track: &Value) {
@@ -296,7 +381,8 @@ impl Player {
                             }
                         }
                     });
-                    let added: Vec<Value> = list(&result, "tracks").into_iter().filter(|t| !seen.contains(&s(t, "key"))).take(15).collect();
+                    let added: Vec<Value> =
+                        list(&result, "tracks").into_iter().filter(|t| !seen.contains(&s(t, "key")) && player.allowed_untracked(t)).take(15).collect();
                     if !added.is_empty() {
                         player.queue.update(|q| q.extend(added.clone()));
                         player.original.update(|q| q.extend(added));
@@ -313,7 +399,7 @@ impl Player {
                     if player.radio_waiting.get_untracked() {
                         player.radio_waiting.set(false);
                         player.loading.set(false);
-                        app().notify(format!("Random radio: {message}"));
+                        player.notify(format!("Random radio: {message}"));
                     }
                 }
             }
@@ -321,13 +407,16 @@ impl Player {
     }
 
     pub fn play_tracks(&self, tracks: Vec<Value>, start: usize, context: String, route: Option<String>) {
-        let mut items = copy(tracks);
+        // Counted among the songs kept, so a hidden explicit one starts the next one instead.
+        let kept_before = tracks.iter().take(start).filter(|t| t["key"].is_string() && self.allowed_untracked(t)).count();
+        let mut items = self.keep(tracks.clone());
         if items.is_empty() {
+            self.notice_hidden(&tracks);
             return;
         }
         let path = window_path();
         self.context_route.set(Some(route.unwrap_or(path)));
-        let mut start = start.min(items.len() - 1);
+        let mut start = kept_before.min(items.len() - 1);
         self.original.set(items.clone());
         if self.shuffle.get_untracked() {
             let first = items.remove(start);
@@ -341,8 +430,12 @@ impl Player {
     }
 
     pub fn shuffle_tracks(&self, tracks: Vec<Value>, context: String, route: Option<String>) {
+        let items = self.keep(tracks.clone());
+        if items.is_empty() {
+            self.notice_hidden(&tracks);
+            return;
+        }
         self.shuffle.set(true);
-        let items = copy(tracks);
         let start = (js_sys::Math::random() * items.len() as f64).floor() as usize;
         self.play_tracks(items, start, context, route);
     }
@@ -359,8 +452,14 @@ impl Player {
         }
     }
 
-    pub fn jump(&self, i: i64) {
-        if i < 0 || i >= self.queue.with_untracked(Vec::len) as i64 {
+    pub fn jump(&self, mut i: i64) {
+        // A hidden explicit song still in the queue is passed over.
+        let index = self.index.get_untracked();
+        let length = self.queue.with_untracked(Vec::len) as i64;
+        while i >= 0 && i < length && !self.queue.with_untracked(|q| self.allowed_untracked(&q[i as usize])) {
+            i += if i < index { -1 } else { 1 };
+        }
+        if i < 0 || i >= length {
             return;
         }
         self.index.set(i);
@@ -533,7 +632,7 @@ impl Player {
     fn fail(&self, message: String) {
         self.loading.set(false);
         self.error.set(message.clone());
-        app().notify(message);
+        self.notify(message);
         self.failures.update_value(|n| *n += 1);
         if self.failures.get_value() < 3 && self.index.get_untracked() + 1 < self.queue.with_untracked(Vec::len) as i64 {
             let player = *self;
@@ -626,8 +725,9 @@ impl Player {
     }
 
     pub fn play_next(&self, tracks: Vec<Value>) {
-        let items = copy(tracks);
+        let items = self.keep(tracks.clone());
         if items.is_empty() {
+            self.notice_hidden(&tracks);
             return;
         }
         if self.current_untracked().is_none() {
@@ -641,12 +741,13 @@ impl Player {
             q.splice(at..at, items.clone());
         });
         self.original.update(|q| q.extend(items));
-        app().notify(message);
+        self.notify(message);
     }
 
     pub fn enqueue(&self, tracks: Vec<Value>) {
-        let items = copy(tracks);
+        let items = self.keep(tracks.clone());
         if items.is_empty() {
+            self.notice_hidden(&tracks);
             return;
         }
         if self.current_untracked().is_none() {
@@ -656,7 +757,7 @@ impl Player {
         let message = if items.len() == 1 { format!("Added \"{}\" to the queue", s(&items[0], "title")) } else { format!("Added {} songs to the queue", items.len()) };
         self.queue.update(|q| q.extend(items.clone()));
         self.original.update(|q| q.extend(items));
-        app().notify(message);
+        self.notify(message);
     }
 
     pub fn remove_at(&self, i: i64) {

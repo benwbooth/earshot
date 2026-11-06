@@ -3,17 +3,25 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Earshot
 
-// Browse SoundCloud, Mixcloud or the Internet Archive by genre or any tag.
+// YouTube, SoundCloud, Mixcloud or the Internet Archive: what the site features
+// on its own front page (charts, trending, new releases, picks), then browsing
+// by genre or any tag.
 Flickable {
     id: page
     readonly property string pageName: "service"
-    property var args: ({})        // { id: "soundcloud" | "mixcloud" | "archive" }
+    property var args: ({})        // { id: "youtube" | "soundcloud" | "mixcloud" | "archive" }
     property string tag: ""
     property string tagLabel: ""
     property var found: null
     property bool loading: false
     property string error: ""
     property int request: -1
+    // The front page: { sections: [{ id, title, subtitle, albums, tracks, round }] }.
+    property var featured: null
+    property bool featuredLoading: false
+    property string featuredError: ""
+    property string openSection: ""     // the section shown in full
+    readonly property int songs: 10     // songs a section shows until opened
 
     readonly property string service: args.id || "soundcloud"
     readonly property var info: ({
@@ -73,7 +81,22 @@ Flickable {
 
     function firstTracks() { return found ? found.tracks : [] }
 
-    Component.onCompleted: show(genreTag(info.genres[0]), genreLabel(info.genres[0]))
+    function loadFeatured() {
+        featuredError = ""
+        featuredLoading = true
+        Api.call(Backend.call("featured", JSON.stringify({ service: service })), function (result) {
+            page.featured = result
+            page.featuredLoading = false
+        }, function (message) {
+            page.featuredLoading = false
+            page.featuredError = message
+        })
+    }
+
+    Component.onCompleted: {
+        loadFeatured()
+        show(genreTag(info.genres[0]), genreLabel(info.genres[0]))
+    }
 
     contentWidth: width
     contentHeight: content.implicitHeight + 64
@@ -107,7 +130,7 @@ Flickable {
         }
         Text {
             Layout.fillWidth: true
-            text: page.tagLabel || page.info.name
+            text: "Discover"
             color: Theme.text
             font.pixelSize: 48
             font.weight: Font.Black
@@ -120,6 +143,85 @@ Flickable {
             color: Theme.textMuted
             font.pixelSize: Theme.fontBody + 1
             wrapMode: Text.Wrap
+        }
+
+        StatusView {
+            loading: page.featuredLoading
+            error: page.featuredError
+            onRetry: page.loadFeatured()
+        }
+
+        // The site's own front page, a section per chart, list or pick.
+        Repeater {
+            model: page.featured ? page.featured.sections : []
+            delegate: ColumnLayout {
+                id: section
+                required property var modelData
+                readonly property bool open: page.openSection === modelData.id
+                readonly property string context: page.info.name + ": " + modelData.title
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 12
+                SectionHeader {
+                    title: section.modelData.title
+                    action: section.open ? "SHOW LESS"
+                          : section.modelData.albums.length > sectionShelf.limit || section.modelData.tracks.length > page.songs ? "SEE ALL" : ""
+                    onActionClicked: page.openSection = section.open ? "" : section.modelData.id
+                }
+                Text {
+                    visible: text !== ""
+                    Layout.fillWidth: true
+                    text: section.modelData.subtitle
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontBody
+                    wrapMode: Text.Wrap
+                }
+                HorizontalShelf {
+                    id: sectionShelf
+                    visible: section.modelData.albums.length > 0
+                    maxRows: section.open ? -1 : 1
+                    Repeater {
+                        model: sectionShelf.take(section.modelData.albums)
+                        delegate: AlbumCard {
+                            required property var modelData
+                            width: sectionShelf.cardWidth
+                            title: modelData.title
+                            subtitle: modelData.artist + (modelData.year ? " · " + modelData.year : "")
+                            image: modelData.coverBig || modelData.cover
+                            seed: modelData.id
+                            round: section.modelData.round === true
+                            onClicked: Nav.album(modelData.id)
+                            albumId: modelData.id
+                            onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
+                        }
+                    }
+                }
+                RowLayout {
+                    visible: section.modelData.tracks.length > 0
+                    spacing: 14
+                    IconButton {
+                        filled: true
+                        iconName: Player.playingFrom(section.context, section.modelData.tracks) && Player.playing ? "pause" : "play"
+                        iconSize: 22
+                        tip: "Play all"
+                        onClicked: Player.playOrToggle(section.modelData.tracks, section.context)
+                    }
+                    PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(section.modelData.tracks, section.context) }
+                }
+                TrackList {
+                    visible: section.modelData.tracks.length > 0
+                    Layout.fillWidth: true
+                    tracks: section.modelData.tracks
+                    limit: section.open ? -1 : page.songs
+                    showAlbum: false
+                    context: section.context
+                }
+            }
+        }
+
+        SectionHeader {
+            Layout.topMargin: 28
+            title: "Browse by genre or tag"
         }
 
         TextField {
@@ -163,6 +265,8 @@ Flickable {
             }
         }
 
+        SectionHeader { title: page.tagLabel }
+
         StatusView {
             loading: page.loading
             error: page.error
@@ -184,6 +288,7 @@ Flickable {
                     image: modelData.coverBig || modelData.cover
                     seed: modelData.id
                     onClicked: Nav.album(modelData.id)
+                    albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
                 }
             }
@@ -194,7 +299,7 @@ Flickable {
             spacing: 14
             IconButton {
                 filled: true
-                iconName: Player.playingFrom(page.info.name + ": " + page.tagLabel, page.found.tracks) && Player.playing ? "pause" : "play"
+                iconName: Player.playingFrom(page.info.name + ": " + page.tagLabel, page.firstTracks()) && Player.playing ? "pause" : "play"
                 iconSize: 22
                 tip: "Play all"
                 onClicked: Player.playOrToggle(page.found.tracks, page.info.name + ": " + page.tagLabel)

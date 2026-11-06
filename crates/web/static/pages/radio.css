@@ -6,6 +6,24 @@
 .station-group-name { color: var(--text-faint); font-size: 11px; font-weight: 600; letter-spacing: 1.2px; }
 .stations { display: flex; flex-wrap: wrap; gap: 8px; }
 .station { display: inline-flex; }
+/* The listener's own stations: an × inside the pill */
+.station.saved { position: relative; }
+.station.saved .pill { padding-right: 36px; }
+.station.saved .icon-button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+.station.saved .icon-button:active:not(:disabled) { transform: translateY(-50%) scale(0.94); }
+.station.saved .pill.checked + .icon-button { color: var(--background); }
+.station.saved .pill.checked + .icon-button:hover { background: rgba(0, 0, 0, 0.1); }
+/* The box for any subreddit */
+.station-add { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.station-field { position: relative; display: block; flex: 1; min-width: 0; max-width: 520px; height: 44px; }
+.station-field > .icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.station-field input {
+  width: 100%; height: 100%; padding: 0 16px 0 44px; border-radius: 22px; outline: none;
+  background: var(--surface); border: 1px solid var(--border); font-size: 15px; text-overflow: ellipsis;
+}
+.station-field input::placeholder { color: var(--text-faint); }
+.station-field input:focus { background: var(--surface-raised); border-color: var(--text); }
+.station-field-error { margin-top: -8px; color: var(--danger); font-size: var(--font-body); }
 .radio-head { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
 .radio-title { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
 .radio-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

@@ -40,9 +40,16 @@ pub fn browse(tag: &str) -> Result<Value, String> {
 }
 
 fn items(q: &str) -> Result<Value, String> {
+    sorted(q, "downloads desc", 36)
+}
+
+/// Items matching `q` in archive.org's order `sort` ("week desc" is the most
+/// downloaded this week, "addeddate desc" the newest), as album cards.
+fn sorted(q: &str, sort: &str, rows: usize) -> Result<Value, String> {
     let url = format!(
-        "https://archive.org/advancedsearch.php?q={}&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=date&rows=36&sort%5B%5D=downloads+desc&output=json",
-        encode(q)
+        "https://archive.org/advancedsearch.php?q={}&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=date&rows={rows}&sort%5B%5D={}&output=json",
+        encode(q),
+        encode(sort)
     );
     let answer = get_json(&url)?;
     let albums: Vec<Value> = answer
@@ -168,9 +175,90 @@ pub fn import(url: &str) -> Result<Value, String> {
     Ok(json!({ "title": album["title"], "tracks": album["tracks"] }))
 }
 
+/// Today's (month, day), in UTC.
+fn today() -> (u32, u32) {
+    let days = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() / 86_400).unwrap_or(0) as i64;
+    month_day(days)
+}
+
+/// The (month, day) of a day counted from 1970-01-01 (Howard Hinnant's civil_from_days).
+fn month_day(days: i64) -> (u32, u32) {
+    let z = days + 719_468;
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * shifted + 2) / 5 + 1) as u32;
+    let month = if shifted < 10 { shifted + 3 } else { shifted - 9 } as u32;
+    (month, day)
+}
+
+/// Concerts in the Live Music Archive played on this day of the year, in the
+/// forty years when most of its tapes were made (archive.org takes no more
+/// dates than that in one search).
+fn on_this_day(month: u32, day: u32) -> String {
+    let leap = |year: i32| year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days: Vec<String> = (1966..2006)
+        .filter(|year| month != 2 || day != 29 || leap(*year))
+        .map(|year| format!("date:[{year}-{month:02}-{day:02} TO {year}-{month:02}-{day:02}]"))
+        .collect();
+    format!("collection:etree AND mediatype:etree AND ({})", days.join(" OR "))
+}
+
+/// The Internet Archive's music front page: concerts played on this day,
+/// what's popular this week and newly added at the Live Music Archive, the
+/// Grateful Dead's most played shows, 78 rpm records and netlabel releases.
+pub fn featured() -> Result<Vec<Value>, String> {
+    const MONTHS: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    let (month, day) = today();
+    let lma = "collection:etree AND mediatype:etree";
+    let wanted: [(&str, &str, String, String, &str); 7] = [
+        ("on-this-day", "On this day", format!("Concerts played on {} {day}, from the Live Music Archive.", MONTHS[month as usize - 1]), on_this_day(month, day), "downloads desc"),
+        ("live-week", "Popular this week", "The Live Music Archive's most played concert recordings this week.".into(), format!("{lma} AND NOT collection:(GratefulDead)"), "week desc"),
+        ("grateful-dead", "Grateful Dead", "The Dead's most played shows this week.".into(), "collection:(GratefulDead) AND mediatype:etree".into(), "week desc"),
+        ("live-new", "Just added", "Fresh tapes at the Live Music Archive, newest first.".into(), lma.into(), "addeddate desc"),
+        ("78rpm", "78s this week", "Records from the Great 78 Project people are playing this week.".into(), "collection:(georgeblood) AND mediatype:audio".into(), "week desc"),
+        ("netlabels-new", "New on netlabels", "Freely shared releases from netlabels, newest first.".into(), "collection:(netlabels) AND mediatype:audio".into(), "addeddate desc"),
+        ("netlabels-week", "Netlabel favourites", "The netlabel releases people are playing this week.".into(), "collection:(netlabels) AND mediatype:audio".into(), "week desc"),
+    ];
+    let answers: Vec<Option<Value>> = std::thread::scope(|scope| {
+        let jobs: Vec<_> = wanted.iter().map(|(_, _, _, q, sort)| scope.spawn(move || sorted(q, sort, 30).ok())).collect();
+        jobs.into_iter().map(|job| job.join().ok().flatten()).collect()
+    });
+    Ok(wanted
+        .iter()
+        .zip(answers)
+        .filter_map(|((id, title, about, _, _), answer)| {
+            let albums = answer.and_then(|a| a["albums"].as_array().cloned()).unwrap_or_default();
+            crate::featured::section(id, title, about, albums, Vec::new())
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_dates() {
+        assert_eq!(month_day(0), (1, 1));
+        assert_eq!(month_day(20_398), (11, 6)); // 2025-11-06
+        assert_eq!(month_day(11_016), (2, 29)); // 2000-02-29
+        assert!(on_this_day(2, 29).matches(" OR ").count() < 15);
+    }
+
+    /// Talks to archive.org: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_featured() {
+        let sections = featured().unwrap();
+        let ids: Vec<&str> = sections.iter().filter_map(|s| s["id"].as_str()).collect();
+        assert_eq!(ids, ["on-this-day", "live-week", "grateful-dead", "live-new", "78rpm", "netlabels-new", "netlabels-week"]);
+        assert!(sections.iter().all(|s| s["albums"].as_array().unwrap().len() >= 10));
+        let week = sections[1]["albums"].as_array().unwrap();
+        assert!(week.iter().all(|a| a["artist"] != "Grateful Dead"), "the Dead have their own shelf");
+    }
 
     #[test]
     fn reads_lengths() {

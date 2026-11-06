@@ -61,6 +61,7 @@ Flickable {
                     image: modelData.coverBig || modelData.cover
                     seed: modelData.id
                     onClicked: Nav.album(modelData.id)
+                    albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
                 }
             }
@@ -173,6 +174,7 @@ Flickable {
                     image: modelData.coverBig || modelData.cover
                     seed: modelData.id
                     onClicked: Nav.album(modelData.id)
+                    albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
                 }
             }
@@ -443,15 +445,20 @@ Flickable {
                         }
                     }
                     IconButton {
+                        // The artist's songs among the results, or the album; pause while they play.
+                        readonly property var artistTracks: topResult.showArtist && page.results ? page.results.tracks.filter(t => t.artistId === topResult.artist.id) : []
+                        readonly property bool playingThis: topResult.showArtist ? Player.playingFrom(topResult.artist.name, artistTracks)
+                                                                                 : !!topResult.album && Player.playingAlbum(topResult.album.id)
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         anchors.margins: 20
                         filled: true
-                        iconName: "play"
+                        iconName: playingThis && Player.playing ? "pause" : "play"
                         iconSize: 22
-                        opacity: topHover.hovered ? 1 : 0
-                        onClicked: topResult.showArtist ? Player.playTracks(page.results.tracks.filter(t => t.artistId === topResult.artist.id), 0, topResult.artist.name)
-                                                        : Api.playAlbum(topResult.album.id, topResult.album.title)
+                        opacity: topHover.hovered || playingThis ? 1 : 0
+                        onClicked: playingThis ? Player.toggle()
+                                   : topResult.showArtist ? Player.playTracks(artistTracks, 0, topResult.artist.name)
+                                   : Api.playAlbum(topResult.album.id, topResult.album.title)
                     }
                 }
             }
@@ -508,6 +515,7 @@ Flickable {
                     image: modelData.coverBig || modelData.cover
                     seed: modelData.id
                     onClicked: Nav.album(modelData.id)
+                    albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
                 }
             }

@@ -1,14 +1,15 @@
-//! YouTube, SoundCloud, Mixcloud or the Internet Archive, by genre or any tag
-//! (qml/ServicePage.qml).
+//! YouTube, SoundCloud, Mixcloud or the Internet Archive: what the site
+//! features on its own front page (charts, trending, new releases, picks),
+//! then browsing by genre or any tag (qml/ServicePage.qml).
 
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::api::{Load, fetch};
-use crate::components::{AlbumCard, IconButton, PillButton, Shelf, StatusView, TrackList};
+use crate::components::{AlbumCard, IconButton, PillButton, SectionHeader, Shelf, StatusView, TrackList};
 use crate::pages::bandcamp::TagField;
-use crate::state::{album_href, app, list, s, service_href};
+use crate::state::{album_href, app, encode, list, s, service_href};
 
 struct Service {
     name: &'static str,
@@ -87,6 +88,97 @@ fn alpha(hex: &str, opacity: f64) -> String {
     format!("rgba({}, {}, {}, {opacity})", channel(1), channel(3), channel(5))
 }
 
+/// Songs a front-page section shows until it's opened in full.
+const SONGS: usize = 10;
+
+/// Albums, playlists, shows or people as cards that open on the album page.
+fn album_cards(albums: Vec<Value>, round: bool) -> impl IntoView {
+    let app = app();
+    albums
+        .into_iter()
+        .map(|album| {
+            let (album_id, title) = (s(&album, "id"), s(&album, "title"));
+            let year = s(&album, "year");
+            let subtitle = if year.is_empty() { s(&album, "artist") } else { format!("{} · {year}", s(&album, "artist")) };
+            let image = if s(&album, "coverBig").is_empty() { s(&album, "cover") } else { s(&album, "coverBig") };
+            let (play_id, play_title) = (album_id.clone(), title.clone());
+            view! {
+                <AlbumCard title=title subtitle=subtitle image=image seed=album_id.clone() href=album_href(&album_id) album_id=album_id.clone() round=round
+                    on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
+            }
+        })
+        .collect_view()
+}
+
+/// One section of the service's front page: a row of cards and/or the first
+/// songs, all of them once opened ("SEE ALL" adds `open=<id>` to the address).
+#[component]
+fn FeaturedSection(section: Value, on: &'static str, #[prop(into)] open: Signal<String>) -> impl IntoView {
+    let player = app().player;
+    let key = s(&section, "id");
+    let (title, about) = (s(&section, "title"), s(&section, "subtitle"));
+    let (albums, songs) = (list(&section, "albums"), list(&section, "tracks"));
+    let round = section["round"].as_bool().unwrap_or(false);
+    let more = albums.len() > 4 || songs.len() > SONGS;
+    let is_open = Memo::new(move |_| open.with(|open| *open == key));
+    let route = service_href(on);
+    let open_href = format!("{route}&open={}", encode(&s(&section, "id")));
+    let name = format!("{}: {title}", service(on).1.name);
+    let has_songs = !songs.is_empty();
+    let tracks = Signal::derive(move || songs.clone());
+    let header = {
+        let route = route.clone();
+        move || {
+            let (action, href) = match (more, is_open.get()) {
+                (false, _) => ("", String::new()),
+                (true, true) => ("SHOW LESS", route.clone()),
+                (true, false) => ("SEE ALL", open_href.clone()),
+            };
+            view! { <SectionHeader title=title.clone() action=action href=href/> }
+        }
+    };
+    let cards = (!albums.is_empty()).then(|| {
+        move || {
+            let shown = albums.clone();
+            if is_open.get() {
+                view! { <Shelf>{album_cards(shown, round)}</Shelf> }.into_any()
+            } else {
+                view! { <Shelf rows=1>{album_cards(shown, round)}</Shelf> }.into_any()
+            }
+        }
+    });
+    let songs_view = has_songs.then(|| {
+        let (play_name, play_route) = (name.clone(), route.clone());
+        let (shuffle_name, shuffle_route) = (name.clone(), route.clone());
+        let icon_name = name.clone();
+        view! {
+            <div class="actions">
+                <IconButton size=22 filled=true tip="Play all"
+                    icon=Signal::derive(move || tracks.with(|list| player.play_icon(&icon_name, list)))
+                    on_click=move |_| {
+                        let list = tracks.get_untracked();
+                        player.play_or_toggle(&play_name, &list, || player.play_tracks(list.clone(), 0, play_name.clone(), Some(play_route.clone())))
+                    }/>
+                <PillButton text="Shuffle" icon="shuffle"
+                    on_click=move |_| player.shuffle_tracks(tracks.get_untracked(), shuffle_name.clone(), Some(shuffle_route.clone()))/>
+            </div>
+            {move || if is_open.get() {
+                view! { <TrackList tracks=tracks show_album=false context=name.clone() route=route.clone()/> }.into_any()
+            } else {
+                view! { <TrackList tracks=tracks show_album=false context=name.clone() route=route.clone() limit=SONGS/> }.into_any()
+            }}
+        }
+    });
+    view! {
+        <section class="featured">
+            {header}
+            {(!about.is_empty()).then(|| view! { <p class="note">{about}</p> })}
+            {cards}
+            {songs_view}
+        </section>
+    }
+}
+
 #[component]
 pub fn ServicePage() -> impl IntoView {
     let app = app();
@@ -122,13 +214,29 @@ pub fn ServicePage() -> impl IntoView {
     let tracks = Signal::derive(move || found.with(|f| f.as_ref().map(|f| list(f, "tracks")).unwrap_or_default()));
     let context = Signal::derive(move || format!("{}: {}", info().name, tag.get().1));
     let show = move |tag: String, label: String| chosen.set(Some((id.get_untracked(), tag, label)));
+    // The site's own front page, and the section opened in full.
+    let featured_retry = RwSignal::new(0u32);
+    let featured = fetch(move || {
+        featured_retry.track();
+        Some(("featured", json!({ "service": id.get() })))
+    });
+    let sections = Memo::new(move |_| featured.with(|l| l.value().map(|v| list(v, "sections")).unwrap_or_default()));
+    let open = Memo::new(move |_| query.with(|q| q.get("open").unwrap_or_default()));
 
     view! {
         <div class="page service-page">
             <div class="wash" style=move || format!("--wash: {}", alpha(info().tint, 0.4))></div>
             <div class="eyebrow">{move || info().name.to_uppercase()}</div>
-            <h1 class="hero">{move || tag.get().1}</h1>
+            <h1 class="hero">"Discover"</h1>
             <p class="blurb">{move || info().blurb}</p>
+            <StatusView
+                loading=Signal::derive(move || featured.with(Load::loading))
+                error=Signal::derive(move || featured.with(Load::error))
+                on_retry=Callback::new(move |_| featured_retry.update(|n| *n += 1))/>
+            {move || sections.get().into_iter().map(|section| view! {
+                <FeaturedSection section=section on=id.get_untracked() open=open/>
+            }).collect_view()}
+            <SectionHeader title="Browse by genre or tag"/>
             <TagField placeholder=Signal::derive(move || info().hint.to_owned()) text=field on_enter=Callback::new(move |text: String| {
                 let text = text.trim().to_owned();
                 if !text.is_empty() {
@@ -141,6 +249,7 @@ pub fn ServicePage() -> impl IntoView {
                         on_click=move |_| show(genre.to_string(), label.to_string())/>
                 }).collect_view()}
             </div>
+            <SectionHeader title=Signal::derive(move || tag.get().1)/>
             <StatusView
                 loading=Signal::derive(move || load.with(Load::loading))
                 error=Signal::derive(move || load.with(Load::error))
@@ -162,7 +271,7 @@ pub fn ServicePage() -> impl IntoView {
                         let image = if s(&album, "coverBig").is_empty() { s(&album, "cover") } else { s(&album, "coverBig") };
                         let (play_id, play_title) = (album_id.clone(), title.clone());
                         view! {
-                            <AlbumCard title=title subtitle=subtitle image=image seed=album_id.clone() href=album_href(&album_id)
+                            <AlbumCard title=title subtitle=subtitle image=image seed=album_id.clone() href=album_href(&album_id) album_id=album_id.clone()
                                 on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
                         }
                     }).collect_view()}

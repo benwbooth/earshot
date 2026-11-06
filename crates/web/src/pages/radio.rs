@@ -10,8 +10,8 @@ use leptos_router::hooks::use_query_map;
 use serde_json::{Value, json};
 
 use crate::api;
-use crate::components::{IconButton, PillButton, StatusView, TrackList};
-use crate::state::{app, list, radio_href, s};
+use crate::components::{Icon, IconButton, PillButton, StatusView, TrackList};
+use crate::state::{App, app, list, radio_href, s};
 
 thread_local! {
     // Kept for the visit, like the Qt app's Api.lastStation and Api.radioCache.
@@ -31,6 +31,9 @@ struct Radio {
     wait_seconds: RwSignal<u64>,
     saved_minutes_ago: RwSignal<i64>,
     ticket: StoredValue<u32>,
+    // A subreddit typed into the box, kept among "Your stations" once it loads.
+    adding: StoredValue<String>,
+    app: App,
 }
 
 impl Radio {
@@ -43,17 +46,37 @@ impl Radio {
     }
 }
 
+/// A typed-in station that loaded with songs joins "Your stations" (the
+/// core skips built-in ones and ones already kept).
+fn keep_if_typed(radio: Radio, name: &str, subreddit: String) {
+    if !radio.adding.with_value(|adding| adding.eq_ignore_ascii_case(name)) {
+        return;
+    }
+    radio.adding.set_value(String::new());
+    let app = radio.app;
+    spawn_local(async move {
+        if let Ok(Value::Bool(true)) = api::call("saveStation", json!({ "subreddit": subreddit })).await {
+            app.revision.update(|r| *r += 1);
+            app.notify(format!("Added r/{subreddit} to your stations"));
+        }
+    });
+}
+
 fn load(radio: Radio, name: String, force: bool) {
     radio.station.set(name.clone());
     LAST.with(|last| *last.borrow_mut() = name.clone());
     radio.error.set(String::new());
     radio.wait_seconds.set(0);
     radio.saved_minutes_ago.set(-1);
+    if !radio.adding.with_value(|adding| adding.eq_ignore_ascii_case(&name)) {
+        radio.adding.set_value(String::new());
+    }
     let ticket = radio.next_ticket();
     if !force {
         if let Some(tracks) = CACHE.with(|cache| cache.borrow().get(&name).cloned()) {
             radio.loading.set(false);
             radio.tracks.set(Some(tracks));
+            keep_if_typed(radio, &name, name.clone());
             return;
         }
     }
@@ -76,6 +99,8 @@ fn load(radio: Radio, name: String, force: bool) {
                     countdown(radio);
                     return;
                 }
+                let subreddit = value["subreddit"].as_str().unwrap_or(&name).to_owned();
+                keep_if_typed(radio, &name, subreddit);
                 CACHE.with(|cache| cache.borrow_mut().insert(name, tracks.clone()));
                 radio.tracks.set(Some(tracks));
             }
@@ -125,8 +150,51 @@ pub fn RadioPage() -> impl IntoView {
         wait_seconds: RwSignal::new(0),
         saved_minutes_ago: RwSignal::new(-1),
         ticket: StoredValue::new(0),
+        adding: StoredValue::new(String::new()),
+        app,
     };
     Effect::new(move |_| load(radio, wanted.get(), false));
+
+    // "Your stations", again whenever the library changes (here or in the app).
+    let saved = RwSignal::new(Vec::<Value>::new());
+    Effect::new(move |_| {
+        app.revision.track();
+        spawn_local(async move {
+            if let Ok(value) = api::call("savedStations", json!({})).await {
+                saved.try_set(value.as_array().cloned().unwrap_or_default());
+            }
+        });
+    });
+    let remove = move |id: String| {
+        saved.update(|list| list.retain(|item| s(item, "id") != id));
+        app.change("removeStation", json!({ "subreddit": id }));
+        app.notify(format!("Removed r/{id} from your stations"));
+    };
+
+    // The box for any subreddit: "r/name", "name" or a link to it.
+    let typed = RwSignal::new(String::new());
+    let typed_error = RwSignal::new(String::new());
+    let tune = move || {
+        let text = typed.get_untracked();
+        spawn_local(async move {
+            match api::call("radioStationName", json!({ "text": text })).await {
+                Ok(value) => {
+                    let name = value.as_str().unwrap_or("").to_owned();
+                    typed_error.try_set(String::new());
+                    typed.try_set(String::new());
+                    radio.adding.try_set_value(name.clone());
+                    if radio.station.get_untracked().eq_ignore_ascii_case(&name) {
+                        load(radio, name, false);
+                    } else {
+                        app.go(radio_href(&name));
+                    }
+                }
+                Err(message) => {
+                    typed_error.try_set(message);
+                }
+            }
+        });
+    };
 
     let station = radio.station;
     let context = move || format!("r/{}", station.get());
@@ -157,6 +225,54 @@ pub fn RadioPage() -> impl IntoView {
             <div class="wash" style="--wash: rgba(255, 69, 0, 0.30)"></div>
             <h1 class="hero">"Reddit radio"</h1>
             <p class="lead">"Songs shared by people in music communities on Reddit, chosen by humans rather than algorithms. Pick a station and press play."</p>
+
+            // Any subreddit; ones that load with songs are kept under "Your stations".
+            <div class="station-add">
+                <label class="station-field">
+                    <Icon name="radio" size=18/>
+                    <input
+                        type="text"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Tune in to any subreddit: r/vaporwave, or a link to one"
+                        prop:value=move || typed.get()
+                        on:input=move |event| {
+                            typed.set(event_target_value(&event));
+                            typed_error.set(String::new());
+                        }
+                        on:keydown=move |event: web_sys::KeyboardEvent| {
+                            if event.key() == "Enter" {
+                                tune()
+                            }
+                        }
+                    />
+                </label>
+                <PillButton text="Tune in" disabled=Signal::derive(move || typed.with(|t| t.trim().is_empty())) on_click=move |_| tune()/>
+            </div>
+            <Show when=move || typed_error.with(|e| !e.is_empty())>
+                <div class="station-field-error">{move || typed_error.get()}</div>
+            </Show>
+
+            // The listener's own stations, each removable
+            <Show when=move || saved.with(|list| !list.is_empty())>
+                <div class="station-group">
+                    <div class="station-group-name">"YOUR STATIONS"</div>
+                    <div class="stations">
+                        {move || saved.get().into_iter().map(|item| {
+                            let id = s(&item, "id");
+                            let (checked_id, go_id, remove_id) = (id.clone(), id.clone(), id.clone());
+                            view! {
+                                <span class="station saved" title=s(&item, "about")>
+                                    <PillButton text=s(&item, "name") checked=Signal::derive(move || station.get().eq_ignore_ascii_case(&checked_id))
+                                        on_click=move |_| app.go(radio_href(&go_id))/>
+                                    <IconButton icon="close" size=13 tip=format!("Remove r/{id} from your stations")
+                                        on_click=move |_| remove(remove_id.clone())/>
+                                </span>
+                            }
+                        }).collect_view()}
+                    </div>
+                </div>
+            </Show>
 
             // Station picker, grouped
             {move || app.stations.with(|groups| groups.as_array().cloned().unwrap_or_default()).into_iter().map(|group| view! {

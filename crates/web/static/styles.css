@@ -240,7 +240,7 @@ h1, h2, h3, p { margin: 0; }
 .album-card .art { position: relative; }
 .album-card .art .cover { width: 100%; aspect-ratio: 1; }
 .album-card .card-play { position: absolute; right: 10px; bottom: 2px; opacity: 0; transition: opacity 140ms, bottom 140ms; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
-.album-card:hover .card-play { opacity: 1; bottom: 10px; }
+.album-card:hover .card-play, .album-card.playing .card-play { opacity: 1; bottom: 10px; }
 .album-card .text { padding-top: 12px; }
 .album-card .title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .album-card .subtitle { margin-top: 4px; color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
@@ -250,7 +250,7 @@ h1, h2, h3, p { margin: 0; }
 .album-card.list .art .cover { width: 56px; height: 56px; border-radius: 6px !important; }
 .album-card.list .text { padding: 0; flex: 1; min-width: 0; }
 .album-card.list .card-play { right: 8px; top: 50%; bottom: auto; transform: translateY(-50%); --box: 40px !important; }
-.album-card.list:hover .card-play { bottom: auto; }
+.album-card.list:hover .card-play, .album-card.list.playing .card-play { bottom: auto; }
 
 .tile {
   position: relative; display: block; overflow: hidden; height: var(--height); border-radius: var(--radius);

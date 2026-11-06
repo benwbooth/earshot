@@ -20,8 +20,8 @@ Flickable {
     function kindLabel() {
         if (!album)
             return ""
-        const kind = { single: "SINGLE", ep: "EP", compile: "COMPILATION", playlist: "PLAYLIST" }[album.kind] || "ALBUM"
-        const where = { youtube: " ON YOUTUBE", soundcloud: " ON SOUNDCLOUD", bandcamp: " ON BANDCAMP", archive: " ON THE INTERNET ARCHIVE" }[album.source] || ""
+        const kind = { single: "SINGLE", ep: "EP", compile: "COMPILATION", playlist: "PLAYLIST", mix: "SHOW" }[album.kind] || "ALBUM"
+        const where = { youtube: " ON YOUTUBE", soundcloud: " ON SOUNDCLOUD", bandcamp: " ON BANDCAMP", archive: " ON THE INTERNET ARCHIVE", mixcloud: " ON MIXCLOUD" }[album.source] || ""
         return kind + where
     }
 

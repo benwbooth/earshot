@@ -21,7 +21,7 @@
 .top-result .top-name { font-size: 28px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .top-result .top-kind { color: var(--text-muted); font-size: var(--font-body); }
 .top-result .icon-button { position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 140ms; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
-.top-result:hover .icon-button { opacity: 1; }
+.top-result:hover .icon-button, .top-result.playing .icon-button { opacity: 1; }
 /* The Qt app shows the top result only when the page is wider than 980 px. */
 @container search (max-width: 916px) { .top-column { display: none; } }
 

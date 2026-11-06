@@ -29,10 +29,13 @@ QtObject {
     // The now-playing card when a song starts: "always", "background" (only
     // while Earshot isn't the window in front) or "never".
     property string nowPlayingCard: "background"
+    // Songs marked explicit are left out of song lists and never played.
+    property bool hideExplicit: false
     property Settings view: Settings {
         category: "view"
         property alias albumList: api.albumList
         property alias nowPlayingCard: api.nowPlayingCard
+        property alias hideExplicit: api.hideExplicit
     }
 
     // Where a song lives on the web: its YouTube video (at its chapter), or its

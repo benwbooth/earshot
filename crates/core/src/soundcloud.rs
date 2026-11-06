@@ -56,6 +56,7 @@ fn api(path: &str) -> Result<Value, String> {
 fn artwork(item: &Value, size: &str) -> String {
     item["artwork_url"]
         .as_str()
+        .or_else(|| item["calculated_artwork_url"].as_str())
         .or_else(|| item.pointer("/user/avatar_url").and_then(Value::as_str))
         .map(|url| url.replace("-large.", &format!("-{size}.")))
         .unwrap_or_default()
@@ -93,18 +94,26 @@ fn track(item: &Value) -> Option<Value> {
     }))
 }
 
+/// SoundCloud's own made-up playlists (trending by genre and the like) have a
+/// name instead of a number: "sc:sp:trending-by-genre:house".
+const SYSTEM_PLAYLIST: &str = "soundcloud:system-playlists:";
+
 fn playlist_card(item: &Value) -> Option<Value> {
-    let id = item["id"].as_u64()?;
+    let id = match item["urn"].as_str().and_then(|urn| urn.strip_prefix(SYSTEM_PLAYLIST)) {
+        Some(name) => format!("sc:sp:{name}"),
+        None => format!("sc:pl:{}", item["id"].as_u64()?),
+    };
+    let count = item["track_count"].as_u64().or_else(|| item["tracks"].as_array().map(|tracks| tracks.len() as u64));
     Some(json!({
-        "id": format!("sc:pl:{id}"),
+        "id": id,
         "title": item["title"],
-        "artist": item.pointer("/user/username").and_then(Value::as_str).unwrap_or(""),
+        "artist": item.pointer("/user/username").and_then(Value::as_str).unwrap_or(if id.starts_with("sc:sp:") { "SoundCloud" } else { "" }),
         "artistId": "",
         "cover": artwork(item, "t300x300"),
         "coverBig": artwork(item, "t500x500"),
         "year": item["release_date"].as_str().or(item["created_at"].as_str()).map(|d| d.chars().take(4).collect::<String>()).unwrap_or_default(),
         "kind": if item["is_album"] == true { "album" } else { "playlist" },
-        "trackCount": item["track_count"],
+        "trackCount": count,
     }))
 }
 
@@ -183,10 +192,57 @@ fn playlist_album(item: &Value) -> Result<Value, String> {
     }))
 }
 
-/// A playlist or album ("sc:pl:<id>").
+/// A playlist or album ("sc:pl:<id>"), or one of SoundCloud's own ("sc:sp:<name>").
 pub fn album(id: &str) -> Result<Value, String> {
+    if let Some(name) = id.strip_prefix("sc:sp:") {
+        return playlist_album(&api(&format!("/system-playlists/{SYSTEM_PLAYLIST}{}?representation=full", encode(name)))?);
+    }
     let number = id.strip_prefix("sc:pl:").ok_or("Unknown SoundCloud playlist")?;
     playlist_album(&api(&format!("/playlists/{number}?representation=full"))?)
+}
+
+/// Every collection in an answer (the items of a "selection").
+fn items(answer: &Value) -> Vec<Value> {
+    answer["collection"].as_array().cloned().unwrap_or_default()
+}
+
+/// Playlists in a selection that open here (SoundCloud's own included).
+fn selection_cards(selection: &Value) -> Vec<Value> {
+    items(&selection["items"])
+        .iter()
+        .filter(|item| matches!(item["kind"].as_str(), Some("playlist" | "system-playlist")))
+        .filter(|item| item["track_count"].as_u64() != Some(0))
+        .filter_map(playlist_card)
+        .collect()
+}
+
+/// SoundCloud's front page: what's trending, its charts, and the selections
+/// on its Discover page (artists to watch, curated playlists, trending by genre).
+pub fn featured() -> Result<Vec<Value>, String> {
+    let (trending, charts, selections) = std::thread::scope(|scope| {
+        let trending = scope.spawn(|| api("/charts?kind=trending&genre=soundcloud%3Agenres%3Aall-music&limit=50"));
+        let charts = scope.spawn(|| api("/charts/selections?limit=10"));
+        let selections = scope.spawn(|| api("/mixed-selections?limit=20"));
+        let done = |job: std::thread::ScopedJoinHandle<'_, Result<Value, String>>| job.join().ok().and_then(Result::ok);
+        (done(trending), done(charts), done(selections))
+    });
+    let mut sections = Vec::new();
+    let songs = trending.map(|answer| items(&answer).iter().filter_map(|entry| track(&entry["track"])).collect()).unwrap_or_default();
+    sections.extend(crate::featured::section("trending", "Trending", "The tracks taking off on SoundCloud right now.", Vec::new(), songs));
+    // One country's charts (the first SoundCloud offers, the US's), not every country's.
+    if let Some(chart) = charts.as_ref().and_then(|answer| items(answer).into_iter().next()) {
+        sections.extend(crate::featured::section("charts", "Charts", "SoundCloud's charts: the top tracks, new and hot, and by genre.", selection_cards(&chart), Vec::new()));
+    }
+    for selection in selections.as_ref().map(items).unwrap_or_default() {
+        let urn = selection["urn"].as_str().unwrap_or("");
+        let id = urn.rsplit(':').next().unwrap_or(urn);
+        let title = selection["title"].as_str().unwrap_or("").trim();
+        let about = selection["description"].as_str().unwrap_or("").trim();
+        // Spotlights on one artist have a sentence for a title.
+        let (title, about) = if title.chars().count() > 40 { ("Spotlight", title) } else { (title, about) };
+        sections.extend(crate::featured::section(id, title, about, selection_cards(&selection), Vec::new()));
+    }
+    Ok(sections)
 }
 
 /// A SoundCloud playlist, album or track link, imported as a playlist.
@@ -228,6 +284,23 @@ mod tests {
         assert!(tracks.len() > 5, "fills in the tracks past the first few: {}", tracks.len());
         let imported = import(playlist["pageUrl"].as_str().unwrap()).unwrap();
         assert_eq!(imported["tracks"].as_array().unwrap().len(), tracks.len());
+    }
+
+    /// Talks to soundcloud.com: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_featured() {
+        let sections = featured().unwrap();
+        assert_eq!(sections[0]["id"], "trending");
+        assert!(sections[0]["tracks"].as_array().unwrap().len() >= 10);
+        let charts = sections.iter().find(|s| s["id"] == "charts").expect("charts");
+        let chart = charts["albums"][0]["id"].as_str().unwrap().to_owned();
+        assert!(album(&chart).unwrap()["tracks"].as_array().unwrap().len() >= 10, "{chart}");
+        // SoundCloud's own playlists (trending by genre) open too.
+        let own = sections.iter().flat_map(|s| s["albums"].as_array().unwrap()).find(|a| a["id"].as_str().unwrap().starts_with("sc:sp:"));
+        let own = own.expect("a SoundCloud playlist")["id"].as_str().unwrap().to_owned();
+        assert!(album(&own).unwrap()["tracks"].as_array().unwrap().len() >= 10, "{own}");
+        assert!(sections.len() >= 4, "{} sections", sections.len());
     }
 
     #[test]

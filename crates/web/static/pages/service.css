@@ -2,3 +2,9 @@
    The hero, blurb and tag box are in bandcamp.css. */
 .service-page .genre-pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .service-page .actions { display: flex; align-items: center; gap: 14px; }
+
+/* The site's own front page: one section per chart, list or pick */
+.service-page .featured { display: flex; flex-direction: column; gap: 12px; }
+.service-page .featured + .featured { margin-top: 8px; }
+.service-page .featured .note { margin-top: -4px; color: var(--text-muted); font-size: var(--font-body); }
+.service-page .featured + .section-header { margin-top: 28px; }

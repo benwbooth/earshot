@@ -1,5 +1,6 @@
-//! Bandcamp: genres and styles, any tag at all (qml/BandcampPage.qml), and a
-//! tag's best-selling, new or random albums (qml/BandcampTagPage.qml).
+//! Bandcamp: the front page's picks, then genres and styles and any tag at
+//! all (qml/BandcampPage.qml), and a tag's best-selling, new or random albums
+//! (qml/BandcampTagPage.qml).
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -12,8 +13,8 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 use crate::api::{self, Load};
-use crate::components::{AlbumCard, Icon, PillButton, SectionHeader, Shelf, StatusView, TileCard};
-use crate::state::{album_href, app, bandcamp_tag_href, encode, list, s, window};
+use crate::components::{AlbumCard, Cover, Icon, PillButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
+use crate::state::{album_href, app, bandcamp_tag_href, encode, list, open_web, s, window};
 
 const TINTS: [&str; 8] = ["#ff5f7e", "#7a5cff", "#3db8ff", "#3ddc97", "#ff8a3d", "#f5c542", "#e05cff", "#5c8aff"];
 const WASH: &str = "--wash: rgba(29, 160, 195, 0.4)";
@@ -141,6 +142,93 @@ pub fn TagField(#[prop(into)] placeholder: Signal<String>, text: RwSignal<String
     }
 }
 
+/// A Bandcamp album as a card: artist and a note (genre, location, what it sold for) below.
+fn bandcamp_album_card(album: &Value) -> impl IntoView + use<> {
+    let app = app();
+    let (id, title, note) = (s(album, "id"), s(album, "title"), s(album, "note"));
+    let subtitle = if note.is_empty() { s(album, "artist") } else { format!("{} · {note}", s(album, "artist")) };
+    let image = if s(album, "coverBig").is_empty() { s(album, "cover") } else { s(album, "coverBig") };
+    let (play_id, play_title) = (id.clone(), title.clone());
+    view! {
+        <AlbumCard title=title subtitle=subtitle image=image seed=id.clone() href=album_href(&id) album_id=id.clone()
+            on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
+    }
+}
+
+/// A Bandcamp Daily story (or show) as a card that opens it on the web, in a new tab.
+#[component]
+fn StoryCard(story: Value) -> impl IntoView {
+    let app = app();
+    let (category, blurb) = (s(&story, "category"), s(&story, "blurb"));
+    let subtitle = [category, blurb].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" · ");
+    view! {
+        <a class="album-card story-card" class:list=move || app.album_list.get() href=s(&story, "url") target="_blank" rel="noopener">
+            <div class="art">
+                <Cover src=s(&story, "image") seed=s(&story, "url") radius=10 placeholder="external"/>
+            </div>
+            <div class="text">
+                <div class="title">{s(&story, "title")}</div>
+                <div class="subtitle">{subtitle}</div>
+            </div>
+        </a>
+    }
+}
+
+/// Today's Album of the Day, big, with what Bandcamp Daily says about it.
+#[component]
+fn Highlight(album: Value) -> impl IntoView {
+    let app = app();
+    let (id, title, article) = (s(&album, "id"), s(&album, "title"), s(&album, "article"));
+    let image = if s(&album, "coverBig").is_empty() { s(&album, "cover") } else { s(&album, "coverBig") };
+    let eyebrow = ["Album of the Day".to_owned(), s(&album, "genre"), s(&album, "date")]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let (play_id, play_title) = (id.clone(), title.clone());
+    view! {
+        <div class="bc-highlight">
+            <a class="bc-highlight-art" href=album_href(&id)>
+                <Cover src=image seed=id.clone() radius=12/>
+            </a>
+            <div class="bc-highlight-text">
+                <div class="eyebrow">{eyebrow}</div>
+                <a class="bc-highlight-title" href=album_href(&id)>{title}</a>
+                <div class="bc-highlight-artist">{s(&album, "artist")}</div>
+                <p class="bc-highlight-blurb">{s(&album, "blurb")}</p>
+                <div class="row">
+                    <PillButton primary=true icon="play" text="Play" on_click=move |_| app.play_album(play_id.clone(), play_title.clone(), false)/>
+                    {(!article.is_empty()).then(|| view! {
+                        <PillButton icon="external" text="Read on Bandcamp Daily" on_click=move |_| open_web(&article)/>
+                    })}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+/// One of the front page's sections: albums, songs or stories (qml/BandcampPage.qml).
+#[component]
+fn FeaturedSection(section: Value) -> impl IntoView {
+    let (title, about, link) = (s(&section, "title"), s(&section, "about"), s(&section, "link"));
+    let rows = section["rows"].as_u64().unwrap_or(1).max(1) as u32;
+    let albums = list(&section, "albums");
+    let tracks = list(&section, "tracks");
+    let stories = list(&section, "articles");
+    view! {
+        <div class="section-header">
+            <h2>{title.clone()}</h2>
+            {(!link.is_empty()).then(|| view! { <a class="section-action" href=link target="_blank" rel="noopener">"OPEN ON THE WEB"</a> })}
+        </div>
+        {(!about.is_empty()).then(|| view! { <p class="bc-about">{about}</p> })}
+        {(!albums.is_empty()).then(|| view! { <Shelf rows=rows>{albums.iter().map(bandcamp_album_card).collect_view()}</Shelf> })}
+        {(!tracks.is_empty()).then(|| view! { <TrackList tracks=Signal::stored(tracks) limit=10 context=title show_header=false/> })}
+        {(!stories.is_empty()).then(|| view! {
+            <Shelf rows=rows>{stories.into_iter().map(|story| view! { <StoryCard story=story/> }).collect_view()}</Shelf>
+        })}
+    }
+}
+
 #[component]
 pub fn BandcampPage() -> impl IntoView {
     let query = use_query_map();
@@ -157,13 +245,29 @@ pub fn BandcampPage() -> impl IntoView {
             app().go(bandcamp_tag_href(words));
         }
     });
+    // Bandcamp's front page: the editors' picks, what's selling, Bandcamp Daily.
+    let reload = RwSignal::new(0u32);
+    let featured = api::fetch(move || {
+        reload.track();
+        Some(("bandcampFeatured", json!({})))
+    });
+    let front = Memo::new(move |_| featured.with(|l| l.value().cloned()));
 
     view! {
         <div class="page bandcamp">
             <div class="wash" style=WASH></div>
             <div class="eyebrow">"BANDCAMP"</div>
-            <h1 class="hero">"Browse by tag"</h1>
-            <p class="blurb">"Best-selling, new and random albums from Bandcamp's artists and labels for any genre or tag. Songs stream from Bandcamp itself."</p>
+            <h1 class="hero">"Discover"</h1>
+            <p class="blurb">"Bandcamp's Album of the Day, its editors' picks, what fans are buying right now and the best-selling and newest albums, then any genre or tag. Songs stream from Bandcamp itself."</p>
+            <StatusView loading=Signal::derive(move || featured.with(Load::loading)) error=Signal::derive(move || featured.with(Load::error))
+                on_retry=Callback::new(move |_| reload.update(|n| *n += 1))/>
+            {move || front.get().map(|front| view! {
+                {(!front["highlight"].is_null()).then(|| view! { <Highlight album=front["highlight"].clone()/> })}
+                {list(&front, "sections").into_iter().map(|section| view! { <FeaturedSection section=section/> }).collect_view()}
+            })}
+
+            <SectionHeader title="Browse by tag"/>
+            <p class="blurb tight">"Best-selling, new and random albums from Bandcamp's artists and labels for any genre or tag."</p>
             // Any tag at all, not only the genres below.
             <TagField placeholder="Filter tags, or type any tag: chiptune, vaporwave…" text=field on_enter=open_tag/>
             <StatusView loading=Signal::derive(move || tags.with(Load::loading)) error=Signal::derive(move || tags.with(Load::error)) on_retry=retry/>
@@ -359,7 +463,7 @@ pub fn BandcampTagPage() -> impl IntoView {
                             let image = if s(&album, "coverBig").is_empty() { s(&album, "cover") } else { s(&album, "coverBig") };
                             let (play_id, play_title) = (id.clone(), title.clone());
                             view! {
-                                <AlbumCard title=title subtitle=subtitle image=image seed=id.clone() href=album_href(&id)
+                                <AlbumCard title=title subtitle=subtitle image=image seed=id.clone() href=album_href(&id) album_id=id.clone()
                                     on_play=Callback::new(move |_| app.play_album(play_id.clone(), play_title.clone(), false))/>
                             }
                         }

@@ -95,7 +95,7 @@ QtObject {
                 seen[track.key] = true
                 if (track.youtubeId) seen["yt:" + track.youtubeId] = true
             }
-            const added = result.tracks.filter(track => !seen[track.key]).slice(0, 15)
+            const added = result.tracks.filter(track => !seen[track.key] && allowed(track)).slice(0, 15)
             if (added.length > 0) {
                 queue = queue.concat(added)
                 originalQueue = originalQueue.concat(added)
@@ -200,8 +200,60 @@ QtObject {
             playTracks(tracks, 0, contextName, route)
     }
 
+    // An album card's play button: whether that album is what's playing
+    // (started from its card or its page).
+    function playingAlbum(id) {
+        return current !== null && !!id && !!contextRoute && contextRoute.page === "album"
+            && !!contextRoute.args && String(contextRoute.args.id) === String(id)
+    }
+
+    // Explicit songs are left out everywhere while "Hide explicit songs" is on.
+    function allowed(track) {
+        return !(Api.hideExplicit && track && track.explicit)
+    }
+
     function copy(tracks) {
-        return (tracks || []).filter(t => t && t.key).map(t => Object.assign({}, t))
+        return (tracks || []).filter(t => t && t.key && allowed(t)).map(t => Object.assign({}, t))
+    }
+    // Nothing to play because every song asked for is explicit and hidden.
+    function noticeHidden(tracks) {
+        if ((tracks || []).some(t => t && t.key))
+            Nav.notify("Explicit songs are hidden (see Settings)")
+    }
+
+    // Turning on "Hide explicit songs" takes them out of the queue; if one is
+    // playing, the next song that isn't explicit plays instead.
+    property Connections explicitSetting: Connections {
+        target: Api
+        function onHideExplicitChanged() {
+            if (Api.hideExplicit)
+                player.dropExplicit()
+        }
+    }
+    function dropExplicit() {
+        if (!queue.some(t => !allowed(t)))
+            return
+        const skipping = current !== null && !allowed(current)
+        // Where the current song (or the next one allowed) ends up.
+        const at = queue.slice(0, Math.max(0, index)).filter(allowed).length
+        const kept = queue.filter(allowed)
+        originalQueue = originalQueue.filter(allowed)
+        if (!skipping) {
+            queue = kept
+            index = index < 0 ? -1 : at
+            return
+        }
+        index = -1
+        queue = kept
+        if (at < kept.length) {
+            jump(at)
+        } else {
+            if (engine)
+                engine.stop()
+            started = false
+            loading = false
+            wantPlaying = false
+        }
     }
 
     function shuffled(list) {
@@ -219,10 +271,14 @@ QtObject {
 
     function playTracks(tracks, start, contextName, route) {
         let list = copy(tracks)
-        if (list.length === 0)
+        if (list.length === 0) {
+            noticeHidden(tracks)
             return
+        }
         contextRoute = route || { page: Nav.current, args: Object.assign({}, Nav.currentArgs) }
-        start = Math.max(0, Math.min(start || 0, list.length - 1))
+        // Counted among the songs kept, so a hidden explicit one starts the next one instead.
+        start = (tracks || []).slice(0, Math.max(0, start || 0)).filter(t => t && t.key && allowed(t)).length
+        start = Math.max(0, Math.min(start, list.length - 1))
         originalQueue = list.slice()
         if (shuffle) {
             const first = list.splice(start, 1)[0]
@@ -236,8 +292,12 @@ QtObject {
     }
 
     function shuffleTracks(tracks, contextName, route) {
-        shuffle = true
         const list = copy(tracks)
+        if (list.length === 0) {
+            noticeHidden(tracks)
+            return
+        }
+        shuffle = true
         playTracks(list, Math.floor(Math.random() * list.length), contextName, route)
     }
 
@@ -252,6 +312,9 @@ QtObject {
     }
 
     function jump(i) {
+        // A hidden explicit song still in the queue is passed over.
+        while (i >= 0 && i < queue.length && !allowed(queue[i]))
+            i += i < index ? -1 : 1
         if (i < 0 || i >= queue.length)
             return
         index = i
@@ -481,8 +544,10 @@ QtObject {
 
     function playNext(tracks) {
         const list = copy(tracks)
-        if (list.length === 0)
+        if (list.length === 0) {
+            noticeHidden(tracks)
             return
+        }
         if (!current) {
             playTracks(list, 0, "")
             return
@@ -496,8 +561,10 @@ QtObject {
 
     function enqueue(tracks) {
         const list = copy(tracks)
-        if (list.length === 0)
+        if (list.length === 0) {
+            noticeHidden(tracks)
             return
+        }
         if (!current) {
             playTracks(list, 0, "")
             return
