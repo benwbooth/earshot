@@ -250,7 +250,8 @@ pub fn TabBar() -> impl IntoView {
     }
 }
 
-/// The seek bar and volume slider.
+/// The seek bar and volume slider. With `percent`, a small bubble above the
+/// knob shows the value as a percentage while it's dragged or pointed at.
 #[component]
 fn Slider(
     #[prop(into)] value: Signal<f64>,
@@ -259,13 +260,19 @@ fn Slider(
     #[prop(optional, into)] dragging: Option<RwSignal<Option<f64>>>,
     #[prop(into)] on_change: Callback<f64>,
     #[prop(optional, into)] class: String,
+    #[prop(optional)] percent: bool,
 ) -> impl IntoView {
     let local = dragging.unwrap_or_else(|| RwSignal::new(None));
     let shown = move || local.get().unwrap_or_else(|| value.get());
+    let fill = move || (shown() / max.get().max(0.0001) * 100.0).clamp(0.0, 100.0);
     view! {
+        <span class=format!("slider-wrap {class}")>
+        {percent.then(|| view! {
+            <span class="slider-tip" style=move || format!("left:{}%", fill())>{move || format!("{:.0}%", fill())}</span>
+        })}
         <input
             type="range"
-            class=format!("slider {class}")
+            class="slider"
             min="0"
             step="any"
             prop:max=move || max.get().max(0.0001)
@@ -283,6 +290,7 @@ fn Slider(
                 on_change.run(v);
             }
         />
+        </span>
     }
 }
 
@@ -401,7 +409,7 @@ pub fn PlayerBar() -> impl IntoView {
                     size=18 class="desktop-only"
                     tip=Signal::derive(move || if player.muted.get() { "Unmute".to_owned() } else { "Mute".to_owned() })
                     on_click=move |_| player.muted.update(|m| *m = !*m)/>
-                <Slider class="volume-slider desktop-only" value=Signal::derive(move || player.volume.get()) max=1.0
+                <Slider class="volume-slider desktop-only" percent=true value=Signal::derive(move || player.volume.get()) max=1.0
                     on_change=move |v| { player.volume.set(v); player.muted.set(false); }/>
             </div>
             <div class="mobile-progress" style=move || format!("--fill:{}%", (player.position() / player.length().max(1.0) * 100.0).clamp(0.0, 100.0))></div>

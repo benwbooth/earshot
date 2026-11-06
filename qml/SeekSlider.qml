@@ -2,10 +2,34 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Earshot
 
-// A thin slider that thickens and shows its knob on hover.
+// A thin slider that thickens and shows its knob on hover. With `tip`, a
+// small bubble above the knob shows it (the volume's percentage) while the
+// slider is dragged or pointed at.
 Slider {
     id: slider
+    property string tip: ""
     hoverEnabled: true
+
+    Rectangle {
+        visible: slider.tip !== "" && (slider.pressed || slider.hovered)
+        x: slider.leftPadding + slider.visualPosition * slider.availableWidth - width / 2
+        y: -height - 6
+        z: 10
+        width: bubbleText.implicitWidth + 14
+        height: bubbleText.implicitHeight + 8
+        radius: 6
+        color: Theme.surfaceRaised
+        border.color: Theme.border
+        Text {
+            id: bubbleText
+            anchors.centerIn: parent
+            text: slider.tip
+            color: Theme.text
+            font.pixelSize: Theme.fontSmall
+            font.weight: Font.DemiBold
+            font.features: { "tnum": 1 }
+        }
+    }
     focusPolicy: Qt.NoFocus
     implicitHeight: 16
     padding: 0

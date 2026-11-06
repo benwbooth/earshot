@@ -358,6 +358,15 @@ a.song-artist:hover { color: var(--text); }
 .volume { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .volume-slider { width: 110px; flex: none !important; }
 .mobile-progress { display: none; }
+.slider-wrap { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
+.slider-wrap .slider { width: 100%; }
+/* The volume's percentage above the knob, while it's dragged or pointed at */
+.slider-tip {
+  position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%); display: none; pointer-events: none;
+  padding: 3px 7px; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--border);
+  color: var(--text); font-size: var(--font-small); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.slider-wrap:hover .slider-tip, .slider-wrap:active .slider-tip, .slider-wrap:focus-within .slider-tip { display: block; }
 
 .slider {
   -webkit-appearance: none; appearance: none; flex: 1; height: 16px; margin: 0; background: transparent; cursor: pointer;

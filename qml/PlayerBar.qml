@@ -265,6 +265,7 @@ Rectangle {
                 from: 0
                 to: 1
                 value: Player.volume
+                tip: Math.round(value * 100) + "%"
                 onMoved: {
                     Player.volume = value
                     Player.muted = false
