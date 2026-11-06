@@ -1,0 +1,13 @@
+{
+  "name": "Earshot",
+  "short_name": "Earshot",
+  "description": "Charts by genre and era, Reddit radio, albums, playlists and mixes made for you.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0f14",
+  "theme_color": "#090b0f",
+  "icons": [
+    { "src": "/icons/earshot-app.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/earshot-256.png", "sizes": "256x256", "type": "image/png" }
+  ]
+}

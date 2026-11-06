@@ -1,0 +1,12 @@
+[package]
+name = "earshot-core"
+description = "Earshot's music services (YouTube, Bandcamp, SoundCloud, Mixcloud, the Internet Archive, Deezer, Reddit) and library, shared by the Qt app and the web server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+directories = "6.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ureq = { version = "3.1", features = ["json"] }

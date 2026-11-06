@@ -1,0 +1,15 @@
+/* Home (qml/HomePage.qml) */
+.quick-picks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 8px; }
+@media (min-width: 1349px) { .quick-picks { grid-template-columns: repeat(3, 1fr); } }
+.quick {
+  display: flex; align-items: center; gap: 14px; min-height: 64px; border-radius: 8px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.06); cursor: pointer; transition: background-color 120ms;
+}
+.quick:hover { background: var(--surface-hover); }
+.quick > .cover { width: 64px; align-self: stretch; height: auto; min-height: 64px; border-radius: 8px 0 0 8px !important; }
+.quick-text { flex: 1; min-width: 0; padding: 8px 0; }
+.quick-text .title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.quick.current .quick-text .title { color: var(--accent); }
+.quick-text .subtitle { margin-top: 2px; color: var(--text-muted); font-size: 13px; }
+.quick .icon-button { margin-right: 10px; opacity: 0; transition: opacity 140ms; }
+.quick:hover .icon-button, .quick.current .icon-button { opacity: 1; }

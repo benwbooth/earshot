@@ -1,0 +1,379 @@
+//! What every part of the interface shares: the library (playlists, liked
+//! songs, saved albums), settings kept in the browser, notices, the open menu
+//! and dialog, and helpers matching the Qt app's Theme and Api.
+
+use std::collections::HashSet;
+
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use serde_json::{Value, json};
+use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
+
+use crate::api;
+use crate::player::Player;
+
+/// A text field of a JSON object ("" when missing).
+pub fn s(value: &Value, key: &str) -> String {
+    match &value[key] {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        _ => String::new(),
+    }
+}
+
+pub fn num(value: &Value, key: &str) -> f64 {
+    value[key].as_f64().unwrap_or(0.0)
+}
+
+pub fn list(value: &Value, key: &str) -> Vec<Value> {
+    value[key].as_array().cloned().unwrap_or_default()
+}
+
+/// 3:07, or 1:02:03.
+pub fn duration(seconds: f64) -> String {
+    let seconds = seconds.max(0.0).floor() as u64;
+    let (h, m, s) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m}:{s:02}") }
+}
+
+/// 42 min, or 1 hr 5 min.
+pub fn long_duration(seconds: f64) -> String {
+    let minutes = (seconds / 60.0).round() as u64;
+    if minutes < 60 { format!("{minutes} min") } else { format!("{} hr {} min", minutes / 60, minutes % 60) }
+}
+
+pub fn encode(text: &str) -> String {
+    js_sys::encode_uri_component(text).as_string().unwrap_or_default()
+}
+
+// Addresses of pages, the same names the Qt app uses.
+pub fn album_href(id: &str) -> String {
+    format!("/album?id={}", encode(id))
+}
+pub fn artist_href(id: &str) -> String {
+    format!("/artist?id={}", encode(id))
+}
+pub fn playlist_href(id: &str) -> String {
+    format!("/playlist?id={}", encode(id))
+}
+pub fn chart_href(kind: &str, id: &str) -> String {
+    format!("/chart?kind={}&id={}", encode(kind), encode(id))
+}
+pub fn radio_href(station: &str) -> String {
+    if station.is_empty() { "/radio".to_owned() } else { format!("/radio?station={}", encode(station)) }
+}
+pub fn service_href(id: &str) -> String {
+    format!("/service?id={}", encode(id))
+}
+pub fn bandcamp_tag_href(tag: &str) -> String {
+    format!("/bandcamp/tag?tag={}", encode(tag))
+}
+pub fn search_href(query: &str) -> String {
+    format!("/search?q={}", encode(query))
+}
+
+/// Where a song lives on the web: its YouTube video (at its chapter), or its
+/// page on Bandcamp, SoundCloud, Mixcloud or the Internet Archive.
+pub fn song_page(track: &Value, found: Option<&String>) -> String {
+    if track.is_null() {
+        return String::new();
+    }
+    let page = s(track, "pageUrl");
+    if !page.is_empty() {
+        return page;
+    }
+    let video = track["youtubeId"].as_str().map(str::to_owned).or_else(|| found.cloned());
+    if let Some(video) = video {
+        let start = num(track, "start");
+        return format!("https://www.youtube.com/watch?v={video}{}", if start > 0.0 { format!("&t={}s", start.floor()) } else { String::new() });
+    }
+    let key = s(track, "key");
+    if let Some(id) = key.strip_prefix("dz:") {
+        return format!("https://www.deezer.com/track/{id}");
+    }
+    String::new()
+}
+
+pub fn album_page(album: &Value) -> String {
+    let page = s(album, "pageUrl");
+    if !page.is_empty() {
+        return page;
+    }
+    let id = s(album, "id");
+    if let Some(list) = id.strip_prefix("yt:pl:") {
+        return format!("https://www.youtube.com/playlist?list={list}");
+    }
+    if let Some(video) = id.strip_prefix("yt:v:") {
+        return format!("https://www.youtube.com/watch?v={video}");
+    }
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+        return format!("https://www.deezer.com/album/{id}");
+    }
+    String::new()
+}
+
+/// "YouTube", "Bandcamp"… for "Open on …".
+pub fn site_name(url: &str) -> &'static str {
+    for (host, name) in [
+        ("youtube.com", "YouTube"),
+        ("soundcloud.com", "SoundCloud"),
+        ("bandcamp.com", "Bandcamp"),
+        ("mixcloud.com", "Mixcloud"),
+        ("archive.org", "the Internet Archive"),
+        ("deezer.com", "Deezer"),
+    ] {
+        if url.contains(host) {
+            return name;
+        }
+    }
+    "the web"
+}
+
+pub fn window() -> web_sys::Window {
+    web_sys::window().expect("window")
+}
+
+fn storage() -> Option<web_sys::Storage> {
+    window().local_storage().ok().flatten()
+}
+
+/// A setting kept in the browser between visits.
+pub fn stored<T: serde::de::DeserializeOwned>(key: &str, default: T) -> T {
+    storage()
+        .and_then(|storage| storage.get_item(&format!("earshot.{key}")).ok().flatten())
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(default)
+}
+
+pub fn store<T: serde::Serialize>(key: &str, value: &T) {
+    if let (Some(storage), Ok(text)) = (storage(), serde_json::to_string(value)) {
+        let _ = storage.set_item(&format!("earshot.{key}"), &text);
+    }
+}
+
+/// A signal saved to the browser whenever it changes.
+pub fn persisted<T>(key: &'static str, default: T) -> RwSignal<T>
+where
+    T: serde::Serialize + serde::de::DeserializeOwned + Clone + Send + Sync + 'static,
+{
+    let signal = RwSignal::new(stored(key, default));
+    Effect::new(move |_| store(key, &signal.get()));
+    signal
+}
+
+/// The song menu (Play next, Add to playlist…) and what it acts on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MenuRequest {
+    pub tracks: Vec<Value>,
+    pub x: f64,
+    pub y: f64,
+    pub playlist_id: String,
+    pub playlist_index: i64,
+    pub playlist_length: usize,
+    pub queue_index: i64,
+}
+
+impl MenuRequest {
+    pub fn new(tracks: Vec<Value>, x: f64, y: f64) -> Self {
+        Self { tracks, x, y, playlist_id: String::new(), playlist_index: -1, playlist_length: 0, queue_index: -1 }
+    }
+}
+
+/// A question with a text field: a new playlist's name, a link to import…
+#[derive(Clone, Debug, PartialEq)]
+pub enum Prompt {
+    NewPlaylist(Vec<Value>),
+    Import,
+    Rename(String, String),
+}
+
+#[derive(Clone, Copy)]
+pub struct App {
+    /// Moves on whenever the library changes (here, in another tab or in the Qt app).
+    pub revision: RwSignal<u32>,
+    /// { playlists: [summaries], albums: [saved albums] }
+    pub library: RwSignal<Value>,
+    pub liked: RwSignal<HashSet<String>>,
+    /// Albums as a list instead of a grid of covers.
+    pub album_list: RwSignal<bool>,
+    /// "always", "background" or "never".
+    pub now_playing_card: RwSignal<String>,
+    pub recent_searches: RwSignal<Vec<String>>,
+    pub toast: RwSignal<Option<(u32, String)>>,
+    pub menu: RwSignal<Option<MenuRequest>>,
+    pub prompt: RwSignal<Option<Prompt>>,
+    pub sidebar_width: RwSignal<f64>,
+    /// Radio stations (they never change while running).
+    pub stations: RwSignal<Value>,
+    pub player: Player,
+    navigate: StoredValue<Option<Callback<String>>>,
+    /// The search box's text, kept so it matches the search page.
+    pub query: RwSignal<String>,
+}
+
+pub fn app() -> App {
+    expect_context::<App>()
+}
+
+impl App {
+    pub fn new() -> Self {
+        let app = Self {
+            revision: RwSignal::new(0),
+            library: RwSignal::new(json!({ "playlists": [], "albums": [] })),
+            liked: RwSignal::new(HashSet::new()),
+            album_list: persisted("albumList", false),
+            now_playing_card: persisted("nowPlayingCard", "background".to_owned()),
+            recent_searches: persisted("recentSearches", Vec::new()),
+            toast: RwSignal::new(None),
+            menu: RwSignal::new(None),
+            prompt: RwSignal::new(None),
+            sidebar_width: persisted("sidebarWidth", 248.0),
+            stations: RwSignal::new(Value::Null),
+            player: Player::new(),
+            navigate: StoredValue::new(None),
+            query: RwSignal::new(String::new()),
+        };
+        // The library, again whenever it changes.
+        Effect::new(move |_| {
+            app.revision.track();
+            spawn_local(async move {
+                if let Ok(library) = api::call("library", json!({})).await {
+                    app.library.set(library);
+                }
+                if let Ok(liked) = api::call("playlist", json!({ "id": "liked" })).await {
+                    app.liked.set(list(&liked, "tracks").iter().map(|t| s(t, "key")).collect());
+                }
+            });
+        });
+        spawn_local(async move {
+            if let Ok(stations) = api::call("radioStations", json!({})).await {
+                app.stations.set(stations);
+            }
+        });
+        app.listen_for_changes();
+        app
+    }
+
+    /// The server says when the library changes, so every window stays current.
+    fn listen_for_changes(self) {
+        let Ok(source) = web_sys::EventSource::new("/api/events") else { return };
+        let revision = self.revision;
+        let on_change = Closure::<dyn Fn(web_sys::Event)>::new(move |_| revision.update(|r| *r += 1));
+        let _ = source.add_event_listener_with_callback("library", on_change.as_ref().unchecked_ref());
+        on_change.forget();
+        std::mem::forget(source);
+    }
+
+    pub fn set_navigate(&self, navigate: Callback<String>) {
+        self.navigate.set_value(Some(navigate));
+    }
+
+    pub fn go(&self, path: impl Into<String>) {
+        if let Some(navigate) = self.navigate.get_value() {
+            navigate.run(path.into());
+        }
+    }
+
+    pub fn notify(&self, message: impl Into<String>) {
+        let id = self.toast.with_untracked(|t| t.as_ref().map(|(id, _)| id + 1).unwrap_or(1));
+        self.toast.set(Some((id, message.into())));
+        let toast = self.toast;
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(3200).await;
+            if toast.with_untracked(|t| t.as_ref().map(|(current, _)| *current) == Some(id)) {
+                toast.set(None);
+            }
+        });
+    }
+
+    /// A library change: tell the server, then show the result.
+    pub fn change(&self, method: &'static str, args: Value) {
+        let revision = self.revision;
+        spawn_local(async move {
+            let _ = api::call(method, args).await;
+            revision.update(|r| *r += 1);
+        });
+    }
+
+    pub fn is_liked(&self, key: &str) -> bool {
+        self.liked.with(|liked| liked.contains(key))
+    }
+
+    pub fn set_liked(&self, track: &Value, liked: bool) {
+        let key = s(track, "key");
+        self.liked.update(|set| {
+            if liked {
+                set.insert(key);
+            } else {
+                set.remove(&key);
+            }
+        });
+        self.change("setLiked", json!({ "track": track, "liked": liked }));
+    }
+
+    pub fn playlists(&self) -> Vec<Value> {
+        self.library.with(|library| list(library, "playlists"))
+    }
+
+    pub fn saved_albums(&self) -> Vec<Value> {
+        self.library.with(|library| list(library, "albums"))
+    }
+
+    pub fn is_album_saved(&self, id: &str) -> bool {
+        self.library.with(|library| library["albums"].as_array().is_some_and(|albums| albums.iter().any(|a| s(a, "id") == id)))
+    }
+
+    pub fn add_to_playlist(&self, id: String, name: String, tracks: Vec<Value>) {
+        let app = *self;
+        spawn_local(async move {
+            let added = api::call("addToPlaylist", json!({ "id": id, "tracks": tracks })).await.ok().and_then(|v| v.as_u64()).unwrap_or(0);
+            app.revision.update(|r| *r += 1);
+            app.notify(match added {
+                0 => format!("Already in {name}"),
+                1 => format!("Added 1 song to {name}"),
+                n => format!("Added {n} songs to {name}"),
+            });
+        });
+    }
+
+    /// Fetches an album's songs and plays them from the top (or shuffled).
+    pub fn play_album(&self, id: String, title: String, shuffle: bool) {
+        let app = *self;
+        app.notify(format!("Loading {}…", if title.is_empty() { "album" } else { &title }));
+        spawn_local(async move {
+            match api::call("album", json!({ "id": id })).await {
+                Ok(album) => {
+                    let route = album_href(&id);
+                    let tracks = list(&album, "tracks");
+                    if shuffle {
+                        app.player.shuffle_tracks(tracks, s(&album, "title"), Some(route));
+                    } else {
+                        app.player.play_tracks(tracks, 0, s(&album, "title"), Some(route));
+                    }
+                }
+                Err(message) => app.notify(message),
+            }
+        });
+    }
+
+    pub fn add_search(&self, query: &str) {
+        let query = query.trim().to_owned();
+        if query.chars().count() < 2 {
+            return;
+        }
+        let lower = query.to_lowercase();
+        self.recent_searches.update(|items| {
+            // A longer search replaces the half-typed one it grew from.
+            items.retain(|item| item.to_lowercase() != lower && !lower.starts_with(&item.to_lowercase()));
+            items.insert(0, query);
+            items.truncate(30);
+        });
+    }
+}
+
+pub fn open_web(url: &str) {
+    if !url.is_empty() {
+        let _ = window().open_with_url_and_target(url, "_blank");
+    }
+}

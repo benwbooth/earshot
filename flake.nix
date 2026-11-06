@@ -83,13 +83,14 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.clang pkgs.mold qmake qtEnv ];
+          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.clang pkgs.mold qmake qtEnv ];
           hardeningDisable = [ "fortify" ];
           shellHook = ''
             export QMAKE=${qmake}/bin/earshot-qmake6
             export QT_VERSION_MAJOR=6
             unset QML2_IMPORT_PATH
             export QT_FORCE_STDERR_LOGGING=1
+            export INTER_TTF=${pkgs.inter}/share/fonts/truetype/InterVariable.ttf
             export LIBCLANG_PATH=${pkgs.llvmPackages.libclang.lib}/lib
             export QT_PLUGIN_PATH=${qtEnv}/${pkgs.qt6.qtbase.qtPluginPrefix}
             export QML_IMPORT_PATH=${qtEnv}/${pkgs.qt6.qtbase.qtQmlPrefix}
