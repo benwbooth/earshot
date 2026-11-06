@@ -101,7 +101,7 @@ pub fn LibraryPage() -> impl IntoView {
             <h1 class="hero">"More"</h1>
             <div class="library-list">
                 <div class="nav-heading">"DISCOVER"</div>
-                <Entry icon="sparkle" label="Made for you" href="/foryou" detail=none/>
+                <Entry icon="trending" label="Trending" href="/trending" detail=none/>
                 <Entry icon="youtube" label="YouTube" href=service_href("youtube") detail=none/>
                 <Entry icon="radio" label="Reddit radio" href="/radio" detail=none/>
                 <Entry icon="tag" label="Bandcamp" href="/bandcamp" detail=none/>

@@ -3,13 +3,17 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Earshot
 
-// Made for you: Discover Weekly, Daily Mixes, Release Radar and albums
+// Home, made for you: Discover Weekly, Daily Mixes, Release Radar and albums
 // picked from what you listen to in Earshot.
 Flickable {
     id: page
-    readonly property string pageName: "foryou"
+    readonly property string pageName: "home"
     property var args: ({})
     property var made: Api.forYouCache
+    readonly property string greeting: {
+        const hour = new Date().getHours()
+        return hour < 5 ? "Up late?" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+    }
     property bool loading: false
     property string error: ""
     property string selected: "discover-weekly"
@@ -80,7 +84,7 @@ Flickable {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "From what you listen to"
+                    text: page.greeting
                     color: Theme.text
                     font.pixelSize: 48
                     font.weight: Font.Black
@@ -166,9 +170,9 @@ Flickable {
                     iconName: pause ? "pause" : "play"
                     iconSize: 22
                     tip: pause ? "Pause" : "Play"
-                    onClicked: Player.playOrToggle(page.mix.tracks, page.mix.title, { page: "foryou", args: {} })
+                    onClicked: Player.playOrToggle(page.mix.tracks, page.mix.title, { page: "home", args: {} })
                 }
-                PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.mix.tracks, page.mix.title, { page: "foryou", args: {} }) }
+                PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.mix.tracks, page.mix.title, { page: "home", args: {} }) }
                 PillButton {
                     text: "Save as playlist"
                     iconName: "plus"
@@ -224,5 +228,8 @@ Flickable {
                 }
             }
         }
+
+        // Below the mixes: browse by era and genre, and Reddit radio.
+        BrowseSections { Layout.topMargin: 16 }
     }
 }

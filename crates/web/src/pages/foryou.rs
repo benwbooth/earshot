@@ -10,10 +10,12 @@ use web_sys::MouseEvent;
 
 use crate::api;
 use crate::components::{AlbumCard, PillButton, PlayButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
+use crate::pages::home::BrowseSections;
 use crate::state::{album_href, app, list, s};
 
 const TINTS: [&str; 4] = ["#7a5cff", "#ff5f7e", "#3db8ff", "#3ddc97"];
-const ROUTE: &str = "/foryou";
+/// Made for you is the home page.
+const ROUTE: &str = "/";
 
 thread_local! {
     // Kept for the visit, like the Qt app's Api.forYouCache.
@@ -36,6 +38,20 @@ fn show_songs() {
     let below = window().inner_height().ok().and_then(|h| h.as_f64()).unwrap_or(0.0) - 160.0;
     if songs.get_bounding_client_rect().top() > below {
         songs.scroll_into_view_with_bool(true);
+    }
+}
+
+/// "Good afternoon", above the mixes.
+fn greeting() -> &'static str {
+    let hour = js_sys::Date::new_0().get_hours();
+    if hour < 5 {
+        "Up late?"
+    } else if hour < 12 {
+        "Good morning"
+    } else if hour < 18 {
+        "Good afternoon"
+    } else {
+        "Good evening"
     }
 }
 
@@ -112,7 +128,7 @@ pub fn ForYouPage() -> impl IntoView {
             <div class="intro">
                 <div class="intro-text">
                     <div class="eyebrow">"MADE FOR YOU"</div>
-                    <h1 class="hero">"From what you listen to"</h1>
+                    <h1 class="hero">{greeting()}</h1>
                     <p class="blurb">"Mixes of new songs like your favourites, new releases from your artists and albums you might like. Your listening history stays on this computer."</p>
                 </div>
                 <Show when=ready>
@@ -222,6 +238,9 @@ pub fn ForYouPage() -> impl IntoView {
                     </div>
                 }
             }).collect_view()}
+
+            // Below the mixes: browse by era and genre, and Reddit radio.
+            <BrowseSections/>
         </div>
     }
 }

@@ -197,7 +197,7 @@ pub fn Sidebar() -> impl IntoView {
         <nav class="sidebar" style=move || format!("--sidebar:{}px", app.sidebar_width.get())>
             <NavItem icon="home" label="Home" href="/"/>
             <NavItem icon="search" label="Search" href="/search"/>
-            <NavItem icon="sparkle" label="Made for you" href="/foryou"/>
+            <NavItem icon="trending" label="Trending" href="/trending"/>
             <NavItem icon="youtube" label="YouTube" href=service_href("youtube")/>
             <NavItem icon="radio" label="Reddit radio" href="/radio"/>
             <NavItem icon="tag" label="Bandcamp" href="/bandcamp"/>
@@ -252,7 +252,7 @@ pub fn TabBar() -> impl IntoView {
         <nav class="tabbar">
             <NavItem icon="home" label="Home" href="/" tab=true/>
             <NavItem icon="search" label="Search" href="/search" tab=true/>
-            <NavItem icon="sparkle" label="For you" href="/foryou" tab=true/>
+            <NavItem icon="trending" label="Trending" href="/trending" tab=true/>
             <NavItem icon="radio" label="Radio" href="/radio" tab=true/>
             // Everything else the sidebar has: the other sources, the queue and the library.
             <NavItem icon="more" label="More" href="/library" tab=true/>

@@ -197,9 +197,11 @@ ApplicationWindow {
 
 
     readonly property var pages: ({
-        home: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
+        home: forYouPage, trending: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
         artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage,
-        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage, service: servicePage, foryou: forYouPage
+        bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage, service: servicePage,
+        // Made for you is Home now; "foryou" is kept for places saved before.
+        foryou: forYouPage
     })
 
     function navigate(page, args) {
@@ -210,7 +212,7 @@ ApplicationWindow {
         const top = stack.currentItem
         if (top && top.pageName === page && JSON.stringify(top.args) === JSON.stringify(args))
             return
-        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "foryou" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
+        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "foryou" || page === "trending" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
             stack.replace(null, component, { args: args })
         else
             stack.push(component, { args: args })
@@ -328,7 +330,7 @@ ApplicationWindow {
                 StackView {
                     id: stack
                     anchors.fill: parent
-                    initialItem: homePage
+                    initialItem: forYouPage
                     onCurrentItemChanged: window.syncNav()
                     pushEnter: Transition {
                         NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 }

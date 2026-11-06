@@ -3,9 +3,11 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Earshot
 
+// Trending: quick picks and the top songs and albums. (The eras, genres and
+// Reddit radio are on the home page, in BrowseSections.)
 Flickable {
     id: page
-    readonly property string pageName: "home"
+    readonly property string pageName: "trending"
     property var args: ({})
     property var data_: Api.homeCache
     property bool loading: false
@@ -35,11 +37,6 @@ Flickable {
     ScrollBar.vertical: ScrollBar {}
     KineticScroll { view: page }
 
-    readonly property string greeting: {
-        const hour = new Date().getHours()
-        return hour < 5 ? "Up late?" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
-    }
-
     // Soft colour wash behind the header
     Rectangle {
         width: parent.width
@@ -58,7 +55,7 @@ Flickable {
         spacing: 20
 
         Text {
-            text: page.greeting
+            text: "Trending"
             color: Theme.text
             font.pixelSize: Theme.fontHero
             font.weight: Font.Black
@@ -66,7 +63,7 @@ Flickable {
         }
         Text {
             Layout.topMargin: -12
-            text: "What's popular now, the hits of every decade, and songs people are sharing on Reddit."
+            text: "What's popular right now: the top songs and albums."
             color: Theme.textMuted
             font.pixelSize: Theme.fontLarge
             Layout.fillWidth: true
@@ -168,75 +165,6 @@ Flickable {
                     onClicked: Nav.album(modelData.id)
                     albumId: modelData.id
                     onPlayClicked: Api.playAlbum(modelData.id, modelData.title)
-                }
-            }
-        }
-
-        SectionHeader { visible: !!page.data_; title: "Browse by era" }
-        HorizontalShelf {
-            id: eraShelf
-            albums: false
-            visible: !!page.data_
-            minCardWidth: 150
-            spacing: 14
-            Repeater {
-                model: page.data_ ? page.data_.eras : []
-                delegate: TileCard {
-                    required property var modelData
-                    width: eraShelf.cardWidth
-                    implicitHeight: 84
-                    title: modelData.name
-                    subtitle: "Greatest hits"
-                    tint: modelData.color
-                    onClicked: Nav.open("chart", { kind: "era", id: modelData.id })
-                }
-            }
-        }
-
-        SectionHeader { visible: !!page.data_; title: "Browse by genre" }
-        HorizontalShelf {
-            id: genreShelf
-            albums: false
-            visible: !!page.data_
-            minCardWidth: 200
-            spacing: 14
-            Repeater {
-                model: page.data_ ? page.data_.genres : []
-                delegate: TileCard {
-                    required property var modelData
-                    required property int index
-                    width: genreShelf.cardWidth
-                    title: modelData.name
-                    image: modelData.picture
-                    tint: ["#ff5f7e", "#7a5cff", "#3db8ff", "#3ddc97", "#f5c542", "#ff8a3d", "#d36cff"][index % 7]
-                    onClicked: Nav.open("chart", { kind: "genre", id: modelData.id })
-                }
-            }
-        }
-
-        SectionHeader {
-            visible: !!page.data_
-            title: "Reddit radio"
-            action: "ALL STATIONS"
-            onActionClicked: Nav.open("radio")
-        }
-        HorizontalShelf {
-            id: radioShelf
-            albums: false
-            visible: !!page.data_
-            minCardWidth: 200
-            spacing: 14
-            maxRows: 1
-            Repeater {
-                model: radioShelf.take(JSON.parse(Backend.radioStations())[0].stations)
-                delegate: TileCard {
-                    required property var modelData
-                    required property int index
-                    width: radioShelf.cardWidth
-                    title: modelData.name
-                    subtitle: modelData.about
-                    tint: ["#ff4500", "#ff8a3d", "#ff5f7e", "#d36cff", "#7a5cff", "#3db8ff"][index % 6]
-                    onClicked: Nav.open("radio", { station: modelData.id })
                 }
             }
         }

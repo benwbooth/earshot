@@ -31,7 +31,8 @@ fn Shell() -> impl IntoView {
             <Sidebar/>
             <main class="content">
                 <Routes fallback=|| view! { <pages::NotFound/> }>
-                    <Route path=path!("/") view=pages::home::HomePage/>
+                    <Route path=path!("/") view=pages::foryou::ForYouPage/>
+                    <Route path=path!("/trending") view=pages::home::TrendingPage/>
                     <Route path=path!("/search") view=pages::search::SearchPage/>
                     <Route path=path!("/album") view=pages::album::AlbumPage/>
                     <Route path=path!("/artist") view=pages::artist::ArtistPage/>
@@ -44,6 +45,7 @@ fn Shell() -> impl IntoView {
                     <Route path=path!("/bandcamp") view=pages::bandcamp::BandcampPage/>
                     <Route path=path!("/bandcamp/tag") view=pages::bandcamp::BandcampTagPage/>
                     <Route path=path!("/service") view=pages::service::ServicePage/>
+                    // Made for you moved to the home page; old links still work.
                     <Route path=path!("/foryou") view=pages::foryou::ForYouPage/>
                 </Routes>
             </main>

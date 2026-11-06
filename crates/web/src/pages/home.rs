@@ -1,5 +1,6 @@
-//! Home: a greeting, quick picks, trending songs and albums, eras, genres and
-//! Reddit radio stations (qml/HomePage.qml).
+//! Trending (qml/HomePage.qml): quick picks and trending songs and albums;
+//! and [`BrowseSections`], the eras, genres and Reddit radio stations shown
+//! under Made for you on the home page (qml/BrowseSections.qml).
 
 use leptos::prelude::*;
 use serde_json::{Value, json};
@@ -8,43 +9,36 @@ use crate::api::{Load, fetch};
 use crate::components::{AlbumCard, Cover, PlayButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
 use crate::state::{album_href, app, chart_href, list, radio_href, s};
 
+const ROUTE: &str = "/trending";
+
 thread_local! {
     // Kept for the visit, like the Qt app's Api.homeCache.
     static CACHE: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
 }
 
-fn greeting() -> &'static str {
-    let hour = js_sys::Date::new_0().get_hours();
-    if hour < 5 {
-        "Up late?"
-    } else if hour < 12 {
-        "Good morning"
-    } else if hour < 18 {
-        "Good afternoon"
-    } else {
-        "Good evening"
-    }
-}
-
-#[component]
-pub fn HomePage() -> impl IntoView {
-    let app = app();
-    let player = app.player;
-    let retry = RwSignal::new(0u32);
-    let cached = CACHE.with(|c| c.borrow().clone());
-    let load = if let Some(value) = cached {
-        RwSignal::new(Load::Ready(value))
-    } else {
-        fetch(move || {
+/// The charts, eras and genres ("home" on the server), loaded once a visit.
+fn charts(retry: RwSignal<u32>) -> RwSignal<Load> {
+    let load = match CACHE.with(|c| c.borrow().clone()) {
+        Some(value) => RwSignal::new(Load::Ready(value)),
+        None => fetch(move || {
             retry.track();
             Some(("home", json!({})))
-        })
+        }),
     };
     Effect::new(move |_| {
         if let Load::Ready(value) = load.get() {
             CACHE.with(|c| *c.borrow_mut() = Some(value));
         }
     });
+    load
+}
+
+#[component]
+pub fn TrendingPage() -> impl IntoView {
+    let app = app();
+    let player = app.player;
+    let retry = RwSignal::new(0u32);
+    let load = charts(retry);
     let data = Memo::new(move |_| load.with(|l| l.value().cloned()));
     let tracks = Signal::derive(move || data.with(|d| d.as_ref().map(|d| list(d, "tracks")).unwrap_or_default()));
     let ready = move || data.with(Option::is_some);
@@ -52,8 +46,8 @@ pub fn HomePage() -> impl IntoView {
     view! {
         <div class="page home">
             <div class="wash" style="--wash: rgba(122, 92, 255, 0.28)"></div>
-            <h1 class="hero">{greeting()}</h1>
-            <p class="lead">"What's popular now, the hits of every decade, and songs people are sharing on Reddit."</p>
+            <h1 class="hero">"Trending"</h1>
+            <p class="lead">"What's popular right now: the top songs and albums."</p>
             <StatusView loading=Signal::derive(move || load.with(Load::loading)) error=Signal::derive(move || load.with(Load::error))
                 on_retry=Callback::new(move |_| retry.update(|n| *n += 1))/>
             <Show when=ready>
@@ -63,7 +57,7 @@ pub fn HomePage() -> impl IntoView {
                         let key = s(&track, "key");
                         let is_current = Memo::new(move |_| player.current_key() == key);
                         let play = move || if is_current.get_untracked() { player.toggle() } else {
-                            player.play_tracks(tracks.get_untracked(), index, "Trending now".into(), Some("/".into()))
+                            player.play_tracks(tracks.get_untracked(), index, "Trending now".into(), Some(ROUTE.into()))
                         };
                         view! {
                             <div class="quick" class:current=move || is_current.get() on:click=move |_| play()>
@@ -79,7 +73,7 @@ pub fn HomePage() -> impl IntoView {
                 </div>
 
                 <SectionHeader title="Trending songs" action="SEE ALL" href=chart_href("genre", "0")/>
-                <TrackList tracks=tracks limit=10 context="Trending songs" show_header=false route="/".to_owned()/>
+                <TrackList tracks=tracks limit=10 context="Trending songs" show_header=false route=ROUTE.to_owned()/>
 
                 <SectionHeader title="Popular albums" action="SEE ALL" href=chart_href("genre", "0")/>
                 <Shelf rows=1>
@@ -93,7 +87,23 @@ pub fn HomePage() -> impl IntoView {
                         }
                     }).collect_view()}
                 </Shelf>
+            </Show>
+        </div>
+    }
+}
 
+/// Browse by era and genre, and Reddit radio: the home page's sections under Made for you.
+#[component]
+pub fn BrowseSections() -> impl IntoView {
+    let app = app();
+    let retry = RwSignal::new(0u32);
+    let load = charts(retry);
+    let data = Memo::new(move |_| load.with(|l| l.value().cloned()));
+    let ready = move || data.with(Option::is_some);
+
+    view! {
+        <div class="browse-sections">
+            <Show when=ready>
                 <SectionHeader title="Browse by era"/>
                 <Shelf albums=false min=150 gap=14>
                     {move || data.get().map(|d| list(&d, "eras")).unwrap_or_default().into_iter().map(|era| view! {
@@ -108,16 +118,16 @@ pub fn HomePage() -> impl IntoView {
                         view! { <TileCard title=s(&genre, "name") image=s(&genre, "picture") tint=tint href=chart_href("genre", &s(&genre, "id"))/> }
                     }).collect_view()}
                 </Shelf>
-
-                <SectionHeader title="Reddit radio" action="ALL STATIONS" href="/radio"/>
-                <Shelf albums=false min=200 gap=14 rows=1>
-                    {move || app.stations.with(|groups| groups.as_array().and_then(|g| g.first()).map(|g| list(g, "stations")).unwrap_or_default())
-                        .into_iter().enumerate().map(|(index, station)| {
-                            let tint = ["#ff4500", "#ff8a3d", "#ff5f7e", "#d36cff", "#7a5cff", "#3db8ff"][index % 6];
-                            view! { <TileCard title=s(&station, "name") subtitle=s(&station, "about") tint=tint href=radio_href(&s(&station, "id"))/> }
-                        }).collect_view()}
-                </Shelf>
             </Show>
+
+            <SectionHeader title="Reddit radio" action="ALL STATIONS" href="/radio"/>
+            <Shelf albums=false min=200 gap=14 rows=1>
+                {move || app.stations.with(|groups| groups.as_array().and_then(|g| g.first()).map(|g| list(g, "stations")).unwrap_or_default())
+                    .into_iter().enumerate().map(|(index, station)| {
+                        let tint = ["#ff4500", "#ff8a3d", "#ff5f7e", "#d36cff", "#7a5cff", "#3db8ff"][index % 6];
+                        view! { <TileCard title=s(&station, "name") subtitle=s(&station, "about") tint=tint href=radio_href(&s(&station, "id"))/> }
+                    }).collect_view()}
+            </Shelf>
         </div>
     }
 }

@@ -10,6 +10,8 @@
 
 .foryou .mix-songs, .foryou .album-section { display: flex; flex-direction: column; gap: 12px; }
 .foryou .album-section { margin-top: 16px; }
+/* The home page's browse sections under the mixes */
+.foryou .browse-sections { display: flex; flex-direction: column; gap: 20px; margin-top: 16px; }
 .foryou .mix-songs { scroll-margin-top: 24px; }
 .foryou .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 
