@@ -38,6 +38,16 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.1" date="2026-11-07">
+      <description>
+        <ul>
+          <li>YouTube searches put songs, music videos and albums first, and add YouTube Music's when YouTube's own results have little music in them.</li>
+          <li>A "Prefer music in YouTube results" setting.</li>
+          <li>The waveform hides while nothing plays.</li>
+          <li>Recent searches close when you click elsewhere.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-05">
       <description>
         <p>First release.</p>
