@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>io.github.benwbooth.Earshot</id>
   <name>Earshot</name>
-  <summary>Charts, Reddit radio, albums and playlists, played from YouTube</summary>
+  <summary>Music from YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <developer id="io.github.benwbooth">
@@ -10,16 +10,19 @@
   </developer>
   <description>
     <p>
-      Earshot is a desktop music player in the spirit of Headset: popular music by genre and era,
-      a radio made of songs people share on Reddit, and YouTube as the music source, with real
-      albums, artist pages and playlists.
+      Earshot is a music player for all of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud
+      and the Internet Archive, in one library. Search them all at once, play full albums and
+      soundtracks, and let Earshot find more music like what you play. Free, with no account.
     </p>
     <ul>
-      <li>Charts for 20+ genres and every decade from the 50s to the 2020s</li>
-      <li>About 50 music subreddits as radio stations</li>
-      <li>YouTube playlists and timestamped soundtrack videos open as albums</li>
-      <li>Playlists, liked songs and saved albums kept on your computer</li>
-      <li>A mini player, a tray icon and a now-playing card</li>
+      <li>YouTube's songs, music videos, playlists and full albums, with music first in search results</li>
+      <li>Full-length album and soundtrack videos split into their songs</li>
+      <li>Bandcamp by genre or any tag, SoundCloud, Mixcloud's DJ mixes and the Internet Archive's live concerts</li>
+      <li>Discover Weekly, Daily Mixes and Release Radar from what you play, kept on your computer</li>
+      <li>Random radio that keeps playing songs like the last ones when the queue ends</li>
+      <li>Charts by genre and era, and radio stations made of songs shared on Reddit</li>
+      <li>Playlists, liked songs and saved albums; a mini player, tray icon and now-playing card</li>
+      <li>A web version for phones that shares your library</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.benwbooth.Earshot.desktop</launchable>
@@ -28,12 +31,24 @@
   <url type="vcs-browser">https://github.com/benwbooth/earshot</url>
   <screenshots>
     <screenshot type="default">
-      <image>https://benwbooth.github.io/earshot/home.png</image>
-      <caption>Home: trending songs, albums and charts</caption>
+      <image>https://benwbooth.github.io/earshot/screenshots/search.webp</image>
+      <caption>Search YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive at once</caption>
     </screenshot>
     <screenshot>
-      <image>https://benwbooth.github.io/earshot/album.png</image>
+      <image>https://benwbooth.github.io/earshot/screenshots/album.webp</image>
       <caption>An album</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://benwbooth.github.io/earshot/screenshots/home.webp</image>
+      <caption>Made for you: Discover Weekly and Daily Mixes</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://benwbooth.github.io/earshot/screenshots/bandcamp.webp</image>
+      <caption>Bandcamp by tag</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://benwbooth.github.io/earshot/screenshots/artist.webp</image>
+      <caption>An artist</caption>
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1"/>

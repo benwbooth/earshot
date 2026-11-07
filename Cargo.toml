@@ -13,7 +13,7 @@ name = "earshot"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "A modern desktop music player: charts by genre and era, Reddit radio, albums and playlists, played from YouTube"
+description = "A desktop and web music player for all of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive"
 repository = "https://github.com/benwbooth/earshot"
 
 [dependencies]

@@ -1,5 +1,5 @@
 {
-  description = "Earshot: a modern desktop music player (Rust + Qt Quick via cxx-qt)";
+  description = "Earshot: a desktop and web music player for YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive (Rust + Qt Quick)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -150,7 +150,7 @@
           '';
 
           meta = {
-            description = "A modern desktop music player with charts, Reddit radio, albums and playlists";
+            description = "A music player for all of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive";
             license = lib.licenses.mit;
             mainProgram = "earshot";
           };

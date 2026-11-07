@@ -9,7 +9,7 @@ cask "earshot" do
 
   url "https://github.com/benwbooth/earshot/releases/download/v#{version}/Earshot-#{version}-macos-arm64.dmg"
   name "Earshot"
-  desc "Music player for charts, Reddit radio, albums and playlists, played from YouTube"
+  desc "Music player for YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive"
   homepage "https://benwbooth.github.io/earshot/"
 
   depends_on arch: :arm64
