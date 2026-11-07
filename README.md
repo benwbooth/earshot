@@ -1,17 +1,18 @@
 # Earshot
 
-**A music player for your desktop that finds the music for you.** Charts for every genre and decade, radio stations
-made of the songs people share on Reddit, real albums and artist pages, and mixes built from what you play — all
-free, with no account to sign up for.
+**A music player for all of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive, in one
+library.** Search them all at once, play full albums and soundtracks, keep your playlists in one place, and let
+Earshot find more music like what you play. For Windows, macOS and Linux, with a web version for your phone. Free,
+with no account to sign up for.
 
-![Earshot's home screen: mixes made for you](docs/screenshots/home.webp)
+![Searching YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive at once](docs/screenshots/search.webp)
 
 | | |
 |---|---|
-| ![An album](docs/screenshots/album.webp) | ![An artist](docs/screenshots/artist.webp) |
-| ![Search across every service](docs/screenshots/search.webp) | ![Reddit radio](docs/screenshots/radio.webp) |
+| ![An album](docs/screenshots/album.webp) | ![YouTube's albums, soundtracks and songs](docs/screenshots/youtube.webp) |
+| ![Made for you: Discover Weekly and Daily Mixes](docs/screenshots/home.webp) | ![An artist](docs/screenshots/artist.webp) |
 | ![Bandcamp by tag](docs/screenshots/bandcamp.webp) | ![SoundCloud](docs/screenshots/soundcloud.webp) |
-| ![Your albums as covers](docs/screenshots/albums-grid.webp) | ![…or as a list](docs/screenshots/albums-list.webp) |
+| ![Your albums](docs/screenshots/albums-grid.webp) | ![Reddit radio](docs/screenshots/radio.webp) |
 
 **Mini player** and the **now-playing card**:
 
@@ -29,25 +30,38 @@ free, with no account to sign up for.
 
 ## What you can do
 
-- **Discover what's popular**: trending songs and albums, plus charts for 20+ genres and every decade from the 50s
-  to today.
-- **Listen to Reddit radio**: about 50 music communities (r/listentothis, r/indieheads, r/jazz, r/synthwave…),
-  played in the order their members rank them. Save any station as a playlist.
-- **Search everywhere at once**: songs, albums and artists, plus YouTube, Bandcamp, SoundCloud, Mixcloud and the
-  Internet Archive for live sets, covers, DJ mixes, concert recordings and independent releases.
-- **Browse like a record shop**: Bandcamp by genre or any tag, YouTube's full albums and soundtracks by mood,
-  Mixcloud's popular shows, and the Internet Archive's live concerts and 78 rpm records.
+- **All of YouTube's music**: search songs, music videos, playlists and full albums, with music ahead of everything
+  else in the results. Full-length album and soundtrack videos open as albums, split into their songs.
+- **Everything else in the same place**: Bandcamp, SoundCloud, Mixcloud and the Internet Archive sit right next to
+  YouTube. One search covers them all, and their songs go in the same playlists and queue.
+- **Browse like a record shop**: YouTube's albums and soundtracks by genre or mood, Bandcamp by genre or any tag,
+  SoundCloud's trending tracks, Mixcloud's DJ mixes, and the Internet Archive's live concerts and 78 rpm records.
 - **Albums and artists, properly**: full track lists, artwork, release dates and complete discographies. Save the
   albums you love to **Your albums**.
-- **Made for you**: Discover Weekly, Daily Mixes, Release Radar and Albums for you, built from what you listen to.
-  Your listening history never leaves your computer.
+- **Made for you**: Discover Weekly, Daily Mixes, Release Radar and Albums for you, built from what you play on
+  any of the services. Your listening history never leaves your computer.
 - **Never run out**: turn on random radio (the dice next to repeat) and Earshot keeps playing songs like the last
   ones when your queue ends.
 - **Playlists your way**: create, reorder and filter playlists, heart songs into **Liked songs**, and import
   playlists from YouTube, SoundCloud or Mixcloud by pasting a link.
-- **Stays out of the way**: a small now-playing card when a song starts, a tray icon, media keys, and it reopens
-  right where you left it.
+- **More ways to discover**: trending songs and albums, charts for 20+ genres and every decade from the 50s to
+  today, and radio stations made of the songs shared in about 50 music communities on Reddit.
+- **Stays out of the way**: a mini player, a small now-playing card when a song starts, a tray icon, media keys,
+  and it reopens right where you left it.
 - **On your phone too**: the web version runs in any browser and shares your playlists with the app.
+
+## Where the music comes from
+
+Earshot plays everything from the services themselves, in their own players. Nothing is downloaded.
+
+- **YouTube**: most of the music. Songs, official videos, playlists, full albums, soundtracks and live sets, found
+  with YouTube's own search and YouTube Music's.
+- **Bandcamp**: independent artists and labels, by genre or tag, with Bandcamp's own picks of the day.
+- **SoundCloud**: tracks, remixes and playlists from artists, DJs and producers.
+- **Mixcloud**: DJ mixes and radio shows.
+- **The Internet Archive**: live concerts from the Live Music Archive, 78 rpm records and netlabel releases.
+- **Deezer's catalogue**: album and artist details and artwork (the songs themselves play from YouTube).
+- **Reddit**: the songs people share in music communities, for Reddit radio.
 
 ## Download
 
