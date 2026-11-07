@@ -483,6 +483,17 @@ pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) ->
             .unwrap_or_else(|| (saved["radar"].clone(), saved["albums"].clone()));
         (weekly, daily, radar, albums)
     });
+    // Bandcamp songs found by search come without their length; fill it in
+    // (once: the mixes are saved with it).
+    let (mut weekly, mut daily) = (weekly, daily);
+    if let Some(tracks) = weekly["tracks"].as_array_mut() {
+        bandcamp::fill_durations(tracks);
+    }
+    for mix in daily.as_array_mut().into_iter().flatten() {
+        if let Some(tracks) = mix["tracks"].as_array_mut() {
+            bandcamp::fill_durations(tracks);
+        }
+    }
 
     let result = json!({ "week": week, "day": today, "seeds": seeds, "made": MADE_BY, "weekly": weekly, "daily": daily, "radar": radar, "albums": albums });
     if let Some(path) = saved_path() {

@@ -401,7 +401,8 @@ pub fn TrackRow(
         <div
             class="track-row"
             class:current=move || is_current.get()
-            on:dblclick=move |_| on_play.run(())
+            // The song that's on pauses or carries on; any other starts.
+            on:dblclick=move |_| toggle_or_play()
             on:contextmenu=move |event: MouseEvent| {
                 event.prevent_default();
                 on_menu.run(opens_menu(vec![context_track.clone()], &event));

@@ -617,6 +617,41 @@ pub fn stream(track: &Value) -> Result<String, String> {
         .ok_or_else(|| "Bandcamp doesn't stream this song.".to_owned())
 }
 
+/// Fills in the length of Bandcamp songs that came without one (Bandcamp's
+/// search doesn't say), from each song's own page, a few at a time.
+pub fn fill_durations(tracks: &mut [Value]) {
+    let missing: Vec<usize> = tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t["service"] == "bandcamp" && t["duration"].as_f64().unwrap_or(0.0) <= 0.0 && t["pageUrl"].is_string())
+        .map(|(index, _)| index)
+        .collect();
+    for chunk in missing.chunks(6) {
+        let found: Vec<(usize, Option<u64>)> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = chunk
+                .iter()
+                .map(|&index| {
+                    let track = &tracks[index];
+                    scope.spawn(move || {
+                        let page = track["pageUrl"].as_str()?;
+                        let wanted = track["bandcampTrackId"].as_u64();
+                        let (data, _) = page_data(page).ok()?;
+                        let songs = data["trackinfo"].as_array()?;
+                        let song = songs.iter().find(|s| wanted.is_some() && s["track_id"].as_u64() == wanted).or_else(|| songs.first())?;
+                        song["duration"].as_f64().map(|seconds| seconds.round() as u64).filter(|seconds| *seconds > 0)
+                    })
+                })
+                .collect();
+            chunk.iter().copied().zip(jobs.into_iter().map(|job| job.join().ok().flatten())).collect()
+        });
+        for (index, duration) in found {
+            if let Some(duration) = duration {
+                tracks[index]["duration"] = json!(duration);
+            }
+        }
+    }
+}
+
 /// A Bandcamp album or track link, imported as a playlist.
 pub fn import(url: &str) -> Result<Value, String> {
     let album = album(&format!("bc:{url}"))?;

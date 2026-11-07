@@ -270,9 +270,10 @@ h1, h2, h3, p { margin: 0; }
 .spinner.small { width: 44px; height: 44px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Waveform: six bars measured from the music (levels.rs sets their heights) */
-.waveform { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; flex: none; }
-.waveform i { width: 3px; height: 15%; border-radius: 1.5px; background: var(--accent); transition: height 40ms linear; }
+/* Waveform: six bars measured from the music (levels.rs sets their heights),
+   growing up and down from the middle like the Qt app's, dots when quiet */
+.waveform { display: inline-flex; align-items: center; gap: 2px; height: 14px; flex: none; }
+.waveform i { width: 3px; height: 15%; min-height: 3px; border-radius: 99px; background: var(--accent); transition: height 60ms ease-out; }
 .waveform.small i { width: 2.5px; }
 
 /* Long text glides sideways instead of wrapping (only when it doesn't fit) */
@@ -446,4 +447,35 @@ a.song-artist:hover { color: var(--text); }
   .track-row .row-like:not(:has(.icon[style*="heart-filled"])) { display: none; }
   .row-time { display: none; }
   .quick-picks { grid-template-columns: 1fr !important; }
+  .playerbar .song-text { cursor: pointer; }
 }
+
+/* Phones' Now playing page, opened from the song at the bottom */
+.now-playing {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: 18px;
+  padding: calc(10px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 30%, var(--background)), var(--background) 65%);
+  overflow-y: auto; animation: np-up 180ms ease-out;
+}
+@keyframes np-up { from { transform: translateY(24px); opacity: 0; } }
+.np-top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.np-from { display: flex; flex-direction: column; align-items: stretch; text-align: center; min-width: 0; color: var(--text); font-size: var(--font-small); font-weight: 600; }
+.np-from .marquee { width: 100%; }
+.np-label { color: var(--text-muted); font-size: 10px; letter-spacing: 1.2px; }
+.np-art { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.np-art .cover { width: min(100%, 52vh); aspect-ratio: 1; height: auto; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+.np-song { display: flex; align-items: center; gap: 12px; }
+.np-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.np-title { font-size: 22px; font-weight: 800; }
+.np-artist { color: var(--text-muted); font-size: var(--font-body); }
+.np-song .waveform { height: 18px; }
+.np-song .like .icon[style*="heart-filled"] { background: var(--accent); }
+.np-seek { display: flex; flex-direction: column; gap: 6px; }
+.np-seek .slider-wrap { width: 100%; }
+.np-times { display: flex; justify-content: space-between; color: var(--text-muted); font-size: var(--font-small); font-variant-numeric: tabular-nums; }
+.np-controls { display: flex; align-items: center; justify-content: space-between; }
+.np-play, .np-play .play-button { width: 68px; height: 68px; display: flex; align-items: center; justify-content: center; }
+.np-error { text-align: center; }
+.np-extras { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.np-volume { flex: 1; display: flex; align-items: center; gap: 8px; max-width: 220px; }
+.np-volume .slider-wrap, .np-volume .volume-slider { flex: 1 !important; width: auto; }

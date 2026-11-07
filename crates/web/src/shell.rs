@@ -321,19 +321,34 @@ pub fn PlayerBar() -> impl IntoView {
     let seeking = RwSignal::new(None);
     let location = use_location();
     let on_queue = move || location.pathname.get() == "/queue";
+    // On phones the song at the bottom opens the Now playing page, with every control.
+    let sheet = RwSignal::new(false);
+    let open = move || if is_phone() { sheet.set(true) } else { player.open_source() };
+    Effect::new(move |_| {
+        if !has() {
+            sheet.set(false);
+        }
+    });
     view! {
         <footer class="playerbar">
+            <NowPlaying open=sheet/>
             <div class="song">
                 <Show when=has>
-                    <button class="bar-cover" on:click=move |_| player.open_source() title="Go to what's playing">
+                    <button class="bar-cover" on:click=move |_| open() title="Go to what's playing">
                         <Cover src=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "cover")).unwrap_or_default()))
                             seed=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "key")).unwrap_or_default())) radius=8/>
                     </button>
                 </Show>
-                <div class="song-text">
+                <div class="song-text" on:click=move |event: MouseEvent| if has() && is_phone() {
+                    event.prevent_default();
+                    sheet.set(true);
+                }>
                     <div class="song-title-row">
                         <Show when=has><Waveform/></Show>
-                        <button class="song-title" on:click=move |_| if has() { player.open_source() }>
+                        <button class="song-title" on:click=move |event: MouseEvent| if has() && !is_phone() {
+                            event.stop_propagation();
+                            player.open_source();
+                        }>
                             <Marquee text=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "title")).unwrap_or_else(|| "Nothing playing".to_owned())))/>
                         </button>
                     </div>
@@ -424,6 +439,122 @@ pub fn PlayerBar() -> impl IntoView {
             </div>
             <div class="mobile-progress" style=move || format!("--fill:{}%", (player.position() / player.length().max(1.0) * 100.0).clamp(0.0, 100.0))></div>
         </footer>
+    }
+}
+
+/// A phone-sized window (the layout with tabs at the bottom).
+fn is_phone() -> bool {
+    window().inner_width().ok().and_then(|w| w.as_f64()).is_some_and(|w| w <= 760.0)
+}
+
+/// Phones' Now playing page: the song large, with every control the
+/// desktop's player bar has (seek, shuffle, repeat, random radio, queue,
+/// volume, like, the song's own page).
+#[component]
+fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
+    let app = app();
+    let player = app.player;
+    let track = Memo::new(move |_| player.current());
+    let field = move |key: &'static str| Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, key)).unwrap_or_default()));
+    let liked = move || track.with(|t| t.as_ref().is_some_and(|t| app.is_liked(&s(t, "key"))));
+    let page = Memo::new(move |_| {
+        track.with(|t| t.as_ref().map(|t| {
+            let found = player.found.with(|f| f.get(&s(t, "key")).and_then(|v| v.first().cloned()));
+            song_page(t, found.as_ref())
+        }))
+        .unwrap_or_default()
+    });
+    let seeking = RwSignal::new(None);
+    let close = move || open.set(false);
+    let cover = Signal::derive(move || track.with(|t| t.as_ref().map(|t| if s(t, "coverBig").is_empty() { s(t, "cover") } else { s(t, "coverBig") }).unwrap_or_default()));
+    view! {
+        <Show when=move || open.get()>
+            <div class="now-playing" role="dialog" aria-label="Now playing">
+                <div class="np-top">
+                    <IconButton icon="down" size=22 tip="Close" on_click=move |_| close()/>
+                    <button class="np-from" on:click=move |_| { close(); player.open_source(); }>
+                        <span class="np-label">"PLAYING FROM"</span>
+                        <Marquee text=Signal::derive(move || { let c = player.context.get(); if c.is_empty() { "Your queue".to_owned() } else { c } })/>
+                    </button>
+                    <IconButton icon="queue" size=20 tip="Queue" on_click=move |_| { close(); app.go("/queue"); }/>
+                </div>
+                <div class="np-art">
+                    <Cover src=cover seed=field("key") radius=12/>
+                </div>
+                <div class="np-song">
+                    <div class="np-text">
+                        <div class="np-title"><Marquee text=field("title")/></div>
+                        {move || {
+                            let (name, id) = (field("artist").get(), field("artistId").get());
+                            if id.is_empty() {
+                                view! { <div class="np-artist"><Marquee text=name/></div> }.into_any()
+                            } else {
+                                view! { <a class="np-artist" href=crate::state::artist_href(&id) on:click=move |_| close()><Marquee text=name/></a> }.into_any()
+                            }
+                        }}
+                    </div>
+                    <Waveform/>
+                    <IconButton
+                        icon=Signal::derive(move || if liked() { "heart-filled".to_owned() } else { "heart".to_owned() })
+                        size=22 class="like"
+                        tip=Signal::derive(move || if liked() { "Remove from Liked songs".to_owned() } else { "Add to Liked songs".to_owned() })
+                        on_click=move |_| if let Some(t) = track.get_untracked() { app.set_liked(&t, !liked()) }/>
+                </div>
+                <div class="np-seek">
+                    <Slider
+                        value=Signal::derive(move || player.position())
+                        max=Signal::derive(move || player.length().max(1.0))
+                        disabled=Signal::derive(move || player.length() <= 0.0)
+                        dragging=seeking
+                        on_change=move |v| player.seek(v)/>
+                    <div class="np-times">
+                        <span>{move || duration(seeking.get().unwrap_or_else(|| player.position()))}</span>
+                        <span>{move || if player.length() > 0.0 { duration(player.length()) } else { "-:--".to_owned() }}</span>
+                    </div>
+                </div>
+                <div class="np-controls">
+                    <IconButton icon="shuffle" size=22 active=Signal::derive(move || player.shuffle.get())
+                        tip=Signal::derive(move || if player.shuffle.get() { "Shuffle on".to_owned() } else { "Shuffle off".to_owned() })
+                        on_click=move |_| player.set_shuffle(!player.shuffle.get_untracked())/>
+                    <IconButton icon="previous" size=28 class="bright" tip="Previous" on_click=move |_| player.previous()/>
+                    <div class="np-play">
+                        <Show when=move || !player.loading.get() fallback=|| view! { <div class="spinner"></div> }>
+                            <button class="play-button" title=move || if player.playing() { "Pause" } else { "Play" } on:click=move |_| player.toggle()>
+                                <Icon name=Signal::derive(move || if player.playing() { "pause".to_owned() } else { "play".to_owned() }) size=30/>
+                            </button>
+                        </Show>
+                    </div>
+                    <IconButton icon="next" size=28 class="bright" tip="Next" disabled=Signal::derive(move || !player.has_next()) on_click=move |_| player.next(false)/>
+                    <IconButton
+                        icon=Signal::derive(move || if player.repeat.get() == 2 { "repeat-one".to_owned() } else { "repeat".to_owned() })
+                        size=22 active=Signal::derive(move || player.repeat.get() > 0)
+                        tip=Signal::derive(move || ["Repeat off", "Repeat all", "Repeat this song"][player.repeat.get() as usize % 3].to_owned())
+                        on_click=move |_| player.cycle_repeat()/>
+                </div>
+                <Show when=move || !player.error.get().is_empty() && !player.loading.get()>
+                    <div class="player-error np-error">{move || player.error.get()}</div>
+                </Show>
+                <div class="np-extras">
+                    <IconButton icon="dice" size=20 active=Signal::derive(move || player.radio.get())
+                        tip=Signal::derive(move || if player.radio.get() { "Random radio is on".to_owned() } else { "Random radio: keep playing songs like these".to_owned() })
+                        on_click=move |_| player.radio.update(|on| *on = !*on)/>
+                    <div class="np-volume">
+                        <IconButton
+                            icon=Signal::derive(move || if player.muted.get() || player.volume.get() == 0.0 { "volume-mute".to_owned() } else { "volume".to_owned() })
+                            size=20
+                            tip=Signal::derive(move || if player.muted.get() { "Unmute".to_owned() } else { "Mute".to_owned() })
+                            on_click=move |_| player.muted.update(|m| *m = !*m)/>
+                        <Slider class="volume-slider" percent=true value=Signal::derive(move || player.volume.get()) max=1.0
+                            on_change=move |v| { player.volume.set(v); player.muted.set(false); }/>
+                    </div>
+                    <Show when=move || !page.get().is_empty()>
+                        <IconButton icon="external" size=20
+                            tip=Signal::derive(move || format!("Open on {}", site_name(&page.get())))
+                            on_click=move |_| open_web(&page.get_untracked())/>
+                    </Show>
+                </div>
+            </div>
+        </Show>
     }
 }
 
