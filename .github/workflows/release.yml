@@ -340,4 +340,10 @@ jobs:
           git push origin HEAD:main
       # Republish the web page with this release's Flatpak repository.
       - name: Update GitHub Pages
-        run: gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
+        run: |
+          # Only when the repository has Pages (private repositories on a free plan don't).
+          if gh api "repos/$GITHUB_REPOSITORY/pages" >/dev/null 2>&1; then
+            gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
+          else
+            echo "GitHub Pages isn't on for this repository; the project page and Flatpak repository weren't published."
+          fi
