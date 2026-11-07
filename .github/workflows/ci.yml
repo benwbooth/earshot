@@ -1,10 +1,9 @@
-# Builds and tests Earshot with the Nix flake on every push and pull request.
+# Builds and tests Earshot with the Nix flake. Only run by hand (Actions > CI >
+# Run workflow): builds happen when a release is cut (release.yml).
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   nix:

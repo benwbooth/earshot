@@ -99,7 +99,8 @@ Downloads are on the [releases page](https://github.com/benwbooth/earshot/releas
   - AppImage: download `Earshot-…-x86_64.AppImage`, make it executable and run it.
   - Nix: `nix run github:benwbooth/earshot`.
 
-New versions are built by GitHub Actions (`.github/workflows/release.yml`) whenever a `v*` tag is pushed.
+New versions are built by GitHub Actions (`.github/workflows/release.yml`) only when a GitHub release is created:
+`gh release create v0.1.0 --generate-notes` builds everything and adds the downloads to that release.
 
 ## Web version
 

@@ -2,10 +2,8 @@
 # plus the Flatpak repository from the latest release under /flatpak/.
 name: Pages
 
+# Started by the Release workflow once a release's files are up (or by hand).
 on:
-  push:
-    branches: [main]
-    paths: ["docs/**", "packaging/flatpak/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

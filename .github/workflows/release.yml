@@ -1,15 +1,16 @@
-# Builds Earshot for every platform when a version tag (v1.2.3) is pushed, and
-# publishes a GitHub release with:
+# Builds Earshot for every platform when a GitHub release is published
+# (gh release create v1.2.3 --generate-notes), and adds to that release:
 #   Windows  installer (.exe) and portable folder (.zip)
 #   macOS    Apple-silicon disk image (.dmg), plus the Homebrew cask in Casks/
 #   Linux    AppImage, Flatpak bundle, and a Flatpak repository on GitHub Pages
 #   Docker   the web version's server, at ghcr.io/<owner>/earshot:<version> and :latest
-# Run it by hand (Actions > Release > Run workflow) to rebuild an existing tag.
+# Nothing else builds. Run it by hand (Actions > Release > Run workflow) to
+# rebuild an existing release; it creates the release if the tag has none.
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -33,7 +34,7 @@ jobs:
     steps:
       - id: v
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="${{ github.event.inputs.tag || github.event.release.tag_name }}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
@@ -290,19 +291,24 @@ jobs:
   release:
     needs: [version, windows, macos, appimage, flatpak]
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: assets
-          merge-multiple: true
+          path: artifacts
       - name: Checksums
-        run: cd assets && sha256sum * > SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: Earshot ${{ needs.version.outputs.version }}
-          generate_release_notes: true
-          files: assets/*
+        run: |
+          rm -rf artifacts/web-bundle
+          mkdir assets
+          mv artifacts/*/* assets/
+          cd assets && sha256sum -- * > SHA256SUMS.txt
+      - name: Add to the release
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" assets/* --clobber
 
   homebrew:
     needs: [version, release]
