@@ -2,7 +2,9 @@
 //! itself, never made up:
 //!
 //! - Bandcamp and Internet Archive songs play from an audio file (passed
-//!   through Earshot's server), which the browser measures as it plays.
+//!   through Earshot's server), which the browser measures as it plays. So
+//!   do YouTube videos kept on youtube.com, whose sound the server streams
+//!   from youtube.com's own page (`/api/relay`).
 //! - YouTube and SoundCloud play in those sites' own players, which a page
 //!   can't hear. Earshot's server reads the same song's audio from the site,
 //!   measures it ahead (`/api/envelope`, 25 frames a second) and the bars play
@@ -355,8 +357,10 @@ pub fn run(player: Player) {
             FromEnvelope::Failed(reason) => Some(reason.clone()),
             _ => None,
         };
-        // The speakers of the server's computer, only when the song itself can't be measured.
-        speakers(playing && failed.is_some(), player.levels);
+        // The speakers of the server's computer, only when the song itself can't
+        // be measured, or only its start could.
+        let cut_short = matches!(&from_envelope, FromEnvelope::Ended(_, Some(_)));
+        speakers(playing && (failed.is_some() || cut_short), player.levels);
         if !playing {
             rest(player.levels);
             note(&player, String::new());
@@ -365,7 +369,15 @@ pub fn run(player: Player) {
         if measured_here {
             if let Some(targets) = METER.with(|meter| meter.borrow_mut().as_mut().map(Meter::measure)) {
                 approach(player.levels, targets);
-                note(&player, "Measured from the song's audio as it plays, in this browser".to_owned());
+                note(
+                    &player,
+                    if player.engine.relaying() {
+                        "Measured in this browser from the song's audio, which plays through Earshot's server because its owner keeps it on youtube.com"
+                    } else {
+                        "Measured from the song's audio as it plays, in this browser"
+                    }
+                    .to_owned(),
+                );
             }
             return;
         }
@@ -385,15 +397,21 @@ pub fn run(player: Player) {
                 rest(player.levels);
                 note(&player, format!("Earshot's server is measuring the song's audio from {site} (done up to {}); the bars move once it reaches {}", clock(so_far), clock(seconds)));
             }
-            FromEnvelope::Ended(measured, cut_short) => {
-                rest(player.levels);
+            FromEnvelope::Ended(measured, Some(why)) => {
+                // The speakers' feed sets the bars by itself, if they hear the song.
+                let silent = player.levels.with_untracked(|l| l.iter().all(|v| *v < 0.01));
                 note(
                     &player,
-                    match cut_short {
-                        Some(why) => format!("{why}, so only its first {} could be measured; the bars rest from there", clock(measured)),
-                        None => format!("The audio Earshot's server read from {site} ends at {}, before this point", clock(measured)),
+                    if silent {
+                        format!("{why}, so only its first {} could be measured. The speakers of the computer running Earshot are silent, so the bars rest from there", clock(measured))
+                    } else {
+                        format!("{why}, so only its first {} could be measured; from there it's measured from the speakers of the computer running Earshot", clock(measured))
                     },
                 );
+            }
+            FromEnvelope::Ended(measured, None) => {
+                rest(player.levels);
+                note(&player, format!("The audio Earshot's server read from {site} ends at {}, before this point", clock(measured)));
             }
             FromEnvelope::Missing => {
                 rest(player.levels);

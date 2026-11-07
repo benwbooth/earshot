@@ -635,6 +635,22 @@ pub fn find_videos(track: &Value, known_video: Option<String>) -> Result<Vec<Str
     let duration = track["duration"].as_u64().unwrap_or(0);
     let mut candidates = search(&format!("{artist} - {title}"), 10)?;
     candidates.sort_by_key(|candidate| -score(candidate, artist, title, duration));
+    // A different song with some of the same words ("Autumn's End (Extended
+    // Version)" for "Autumn Leaves (Extended Version)") must not stand in for
+    // it: keep uploads naming the whole title, before any "(…)" or "[…]".
+    // Nor a song of the same name by someone else: most of the first artist's
+    // name must be in the title or channel ("Lofi Fruits" for "Lofi Fruits Music").
+    let core = words(title.split(['(', '[']).next().unwrap_or(title));
+    let by = words(artist.split([',', '&']).next().unwrap_or(artist));
+    let named = |candidate: &Value| {
+        let raw = candidate["rawTitle"].as_str().unwrap_or("").to_lowercase();
+        let place = format!("{raw} {}", candidate["channel"].as_str().unwrap_or("").to_lowercase());
+        let artist_words = by.iter().filter(|word| place.contains(word.as_str())).count();
+        core.iter().all(|word| raw.contains(word.as_str())) && artist_words * 2 >= by.len()
+    };
+    if candidates.iter().any(named) {
+        candidates.retain(named);
+    }
     let mut videos: Vec<String> = candidates.iter().filter_map(|c| c["youtubeId"].as_str().map(str::to_owned)).take(4).collect();
     // The video that worked last time goes first.
     if let Some(known) = known_video {

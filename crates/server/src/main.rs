@@ -16,10 +16,13 @@ async fn main() -> std::io::Result<()> {
     let core = Arc::new(Earshot::new(Arc::new(Mutex::new(Library::load()))));
     let listener = tokio::net::TcpListener::bind(&address).await?;
     eprintln!("Earshot's web version: http://{} (interface from {})", listener.local_addr()?, web.display());
-    tokio::select! {
+    let result = tokio::select! {
         result = earshot_server::serve(listener, core, web) => result,
         _ = stopped() => Ok(()),
-    }
+    };
+    // The headless Chromium that plays videos kept on youtube.com goes too.
+    tokio::task::spawn_blocking(earshot_server::relay::shut_down).await.ok();
+    result
 }
 
 /// Ctrl+C, or Docker asking it to stop.

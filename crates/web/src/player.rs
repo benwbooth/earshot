@@ -47,6 +47,8 @@ pub struct Player {
     /// it on youtube.com, and why YouTube's player refused it.
     direct_tried: StoredValue<String>,
     blocked_message: StoredValue<String>,
+    /// The last video played on youtube.com's own page by Earshot's server.
+    relay_tried: StoredValue<String>,
     /// The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
     elsewhere_tried: StoredValue<String>,
     looking: StoredValue<HashSet<String>>,
@@ -110,6 +112,7 @@ impl Player {
             stream_retried: StoredValue::new(String::new()),
             direct_tried: StoredValue::new(String::new()),
             blocked_message: StoredValue::new(String::new()),
+            relay_tried: StoredValue::new(String::new()),
             elsewhere_tried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
             started_count: RwSignal::new(0),
@@ -249,6 +252,9 @@ impl Player {
                     self.loading.set(false);
                     self.failures.set_value(0);
                     self.track_started(&track);
+                    if engine.relaying() {
+                        self.notify(format!("\"{}\" plays through Earshot's server, because its owner keeps it on youtube.com", s(&track, "title")));
+                    }
                     let video = engine.video_id.get_untracked();
                     if track["youtubeId"].is_null() && track["service"].is_null() {
                         api::send("rememberVideo", json!({ "key": s(&track, "key"), "video": video }));
@@ -294,6 +300,16 @@ impl Player {
                 engine.load_youtube_audio(&video, self.track_start());
                 return;
             }
+            // YouTube wouldn't hand its audio over either: Earshot's server plays
+            // the video on youtube.com's own page and streams its sound here
+            // (once per video), from where it stopped.
+            if code == 1001 && self.direct_tried.get_value() == video && self.relay_tried.get_value() != video && track["service"].is_null() && !video.contains(':') {
+                self.relay_tried.set_value(video.clone());
+                let at = engine.position.get_untracked().max(self.track_start());
+                let whole = num(&track, "start") == 0.0 && num(&track, "end") == 0.0;
+                engine.load_relay(&video, at, if whole { num(&track, "duration") } else { 0.0 });
+                return;
+            }
             // That didn't work either: say why the video itself wouldn't play.
             let message = if code == 1001 && self.direct_tried.get_value() == video && track["service"].is_null() {
                 self.blocked_message.get_value()
@@ -329,7 +345,7 @@ impl Player {
                             });
                             player.resolve_current();
                         }
-                        None => player.fail(message),
+                        None => player.fail(format!("{message} No other upload of it, and no copy on SoundCloud or Bandcamp, would play here either.")),
                     }
                 });
                 return;
@@ -526,6 +542,7 @@ impl Player {
         self.candidates.set_value(videos);
         self.candidate.set_value(0);
         self.direct_tried.set_value(String::new());
+        self.relay_tried.set_value(String::new());
         self.engine.load(&first, self.track_start());
     }
 

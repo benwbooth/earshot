@@ -40,6 +40,11 @@ pub struct Engine {
     start: StoredValue<f64>,
     loaded_at: StoredValue<f64>,
     mc_method: StoredValue<u32>,
+    /// The video Earshot's server plays on youtube.com's own page and streams
+    /// here (see `load_relay`), and where in it the stream began.
+    relay: StoredValue<Option<String>>,
+    offset: StoredValue<f64>,
+    relay_count: StoredValue<u32>,
 }
 
 fn now() -> f64 {
@@ -112,6 +117,9 @@ impl Engine {
             start: StoredValue::new(0.0),
             loaded_at: StoredValue::new(0.0),
             mc_method: StoredValue::new(0),
+            relay: StoredValue::new(None),
+            offset: StoredValue::new(0.0),
+            relay_count: StoredValue::new(0),
         };
         engine.listen();
         engine
@@ -120,6 +128,11 @@ impl Engine {
     /// Whether an audio file (Bandcamp, the Internet Archive) is what plays.
     pub fn playing_file(&self) -> bool {
         self.mode.get_value() == Mode::Audio
+    }
+
+    /// Whether the song plays through Earshot's server from youtube.com's own page.
+    pub fn relaying(&self) -> bool {
+        self.mode.get_value() == Mode::Audio && self.relay.with_value(Option::is_some)
     }
 
     pub fn playing(&self) -> bool {
@@ -184,8 +197,9 @@ impl Engine {
                 }
                 let state = if a.ended() { 0 } else if a.paused() { 2 } else if a.ready_state() < 3 { 3 } else { 1 };
                 self.state.set(state);
-                self.position.set(a.current_time());
-                if a.duration().is_finite() {
+                // A relayed stream starts where it was asked to; its own length isn't the video's.
+                self.position.set(self.offset.get_value() + a.current_time());
+                if a.duration().is_finite() && self.relay.with_value(Option::is_none) {
                     self.duration.set(a.duration());
                 }
             }
@@ -208,6 +222,8 @@ impl Engine {
         self.state.set(-1);
         self.start.set_value(start);
         self.loaded_at.set_value(now());
+        self.relay.set_value(None);
+        self.offset.set_value(0.0);
     }
 
     /// Quiets every player but the one about to play.
@@ -369,6 +385,47 @@ impl Engine {
             a.set_current_time(start);
         }
         let _ = a.play();
+    }
+
+    /// A video whose owner keeps it on youtube.com, when YouTube won't hand
+    /// its audio over either: Earshot's server plays it on youtube.com's own
+    /// page and streams the sound here, live from `start` seconds. Pausing
+    /// hangs up; playing or seeking asks again from that point. `duration`:
+    /// the video's length, if known (the stream doesn't say).
+    pub fn load_relay(&self, id: &str, start: f64, duration: f64) {
+        self.switch(Mode::Audio);
+        self.reset(id.to_owned(), start);
+        if duration > 0.0 {
+            self.duration.set(duration);
+        }
+        self.relay.set_value(Some(id.to_owned()));
+        self.relay_from(start);
+    }
+
+    fn relay_from(&self, seconds: f64) {
+        let Some(id) = self.relay.get_value() else { return };
+        let seconds = seconds.max(0.0);
+        self.offset.set_value(seconds);
+        self.position.set(seconds);
+        self.relay_count.update_value(|n| *n += 1);
+        let a = audio();
+        a.set_src(&format!("/api/relay?v={}&t={:.1}&n={}", encode(&id), seconds, self.relay_count.get_value()));
+        a.set_volume(self.volume.get_value() / 100.0);
+        let _ = a.play();
+    }
+
+    /// Hangs up the relayed stream, keeping the place.
+    fn relay_hang_up(&self) {
+        let a = audio();
+        if !a.src().is_empty() {
+            let at = self.offset.get_value() + a.current_time();
+            let _ = a.pause();
+            a.remove_attribute("src").ok();
+            a.load();
+            self.offset.set_value(at);
+            self.position.set(at);
+        }
+        self.state.set(2);
     }
 
     // SoundCloud's widget
@@ -535,6 +592,7 @@ impl Engine {
     pub fn play(&self) {
         match self.mode.get_value() {
             Mode::YouTube => self.yt_command("playVideo", json!([])),
+            Mode::Audio if self.relaying() && audio().src().is_empty() => self.relay_from(self.offset.get_value()),
             Mode::Audio => {
                 let _ = audio().play();
             }
@@ -547,6 +605,7 @@ impl Engine {
     pub fn pause(&self) {
         match self.mode.get_value() {
             Mode::YouTube => self.yt_command("pauseVideo", json!([])),
+            Mode::Audio if self.relaying() => self.relay_hang_up(),
             Mode::Audio => {
                 let _ = audio().pause();
             }
@@ -564,6 +623,13 @@ impl Engine {
         self.position.set(seconds);
         match self.mode.get_value() {
             Mode::YouTube => self.yt_command("seekTo", json!([seconds, true])),
+            Mode::Audio if self.relaying() => {
+                if audio().src().is_empty() {
+                    self.offset.set_value(seconds);
+                } else {
+                    self.relay_from(seconds);
+                }
+            }
             Mode::Audio => audio().set_current_time(seconds),
             Mode::SoundCloud => self.sc("seekTo", json!(seconds * 1000.0)),
             Mode::Mixcloud => self.mc("seek", json!([seconds])),

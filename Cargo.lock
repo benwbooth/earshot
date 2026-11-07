@@ -918,6 +918,8 @@ dependencies = [
  "earshot-core",
  "earshot-speakers",
  "futures-util",
+ "libc",
+ "pkg-config",
  "serde_json",
  "tokio",
  "tokio-stream",

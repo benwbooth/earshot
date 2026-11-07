@@ -207,7 +207,7 @@ QtObject {
                     if (!player.current || player.current.key !== track.key || player.index !== at)
                         return
                     if (!song) {
-                        player.fail(failure)
+                        player.fail(failure + " No other upload of it, and no copy on SoundCloud or Bandcamp, would play here either.")
                         return
                     }
                     const q = player.queue.slice()

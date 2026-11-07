@@ -119,11 +119,18 @@ its own; a small server answers it with the same Rust code the app uses (`crates
   ```
   (the PipeWire socket is optional; it lets the waveform hear the speakers, below).
 
-Songs play through each site's own player, as in the app; videos whose owners block embedded players move on to
-another upload instead of playing on youtube.com's page. The waveform is always measured, never made up:
+Songs play through each site's own player, as in the app. A video whose owner blocks embedded players still plays,
+on any device: Earshot's server plays it on youtube.com's own page in a hidden, silent Chromium of its own and
+streams the sound to the page as MP3 (`/api/relay`; the page says when a song plays this way). Ads never come
+through: the server sends nothing while one shows and clicks Skip as soon as YouTube offers it. Starting, and
+seeking to a part YouTube hasn't loaded yet, take a few seconds. On a server whose address YouTube distrusts
+without a sign-in, its page stops about 45 seconds after each start or seek, and the song moves on as when it
+won't play. Without Chromium on the server (the Nix package and the Docker image bring their own; elsewhere set
+`EARSHOT_CHROMIUM` or put `chromium` on PATH) such videos move on to another upload instead. The waveform is
+always measured, never made up:
 
 - Bandcamp and Internet Archive songs are measured in the browser (their audio passes through Earshot's server,
-  which those sites require for a page to measure it).
+  which those sites require for a page to measure it), and so are videos streamed from youtube.com's page.
 - YouTube and SoundCloud play in those sites' own players, which a page can't hear, so the server fetches the
   song's audio itself, measures it, and the page plays those levels back in time with the song, on any device.
   YouTube sometimes sends only the first minute or so without a sign-in; after that the bars rest.

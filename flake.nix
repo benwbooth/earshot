@@ -66,13 +66,16 @@
           inherit src;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "earshot-server" ];
-          # PipeWire, to measure this computer's speakers for the waveform.
-          nativeBuildInputs = [ pkgs.pkg-config pkgs.rustPlatform.bindgenHook ];
-          buildInputs = [ pkgs.pipewire pkgs.alsa-lib ];
+          # PipeWire, to measure this computer's speakers for the waveform;
+          # LAME, to stream videos kept on youtube.com as MP3 (see relay.rs).
+          nativeBuildInputs = [ pkgs.pkg-config pkgs.rustPlatform.bindgenHook pkgs.makeWrapper ];
+          buildInputs = [ pkgs.pipewire pkgs.alsa-lib pkgs.lame ];
           doCheck = false;
+          # Its own headless Chromium plays those videos on youtube.com's page.
           postInstall = ''
             mkdir -p $out/share/earshot
             ln -s ${web} $out/share/earshot/web
+            wrapProgram $out/bin/earshot-server --set-default EARSHOT_CHROMIUM ${pkgs.chromium}/bin/chromium
           '';
           meta = {
             description = "Earshot's web version: the music player in a browser, on desktops and phones";
@@ -96,6 +99,8 @@
           contents = [ pkgs.cacert ];
           extraCommands = "mkdir -p data tmp && chmod 1777 tmp";
           config = {
+            # tini reaps the helper processes the relay's Chromium leaves behind.
+            Entrypoint = [ "${pkgs.tini}/bin/tini" "--" ];
             Cmd = [ "${server}/bin/earshot-server" ];
             Env = [
               "EARSHOT_LISTEN=0.0.0.0:8790"
@@ -103,6 +108,9 @@
               "PIPEWIRE_RUNTIME_DIR=/run/pipewire"
               "XDG_RUNTIME_DIR=/run/pipewire"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              # For the headless Chromium that plays videos kept on youtube.com.
+              "HOME=/tmp"
+              "FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }}"
             ];
             ExposedPorts."8790/tcp" = { };
             Volumes."/data" = { };
@@ -116,7 +124,7 @@
           cargoLock.lockFile = ./Cargo.lock;
 
           nativeBuildInputs = [ qmake pkgs.pkg-config pkgs.qt6.wrapQtAppsHook pkgs.rustPlatform.bindgenHook ];
-          buildInputs = qtModules ++ [ pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib ];
+          buildInputs = qtModules ++ [ pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.lame ];
 
           QMAKE = "${qmake}/bin/earshot-qmake6";
           QT_VERSION_MAJOR = "6";
@@ -160,7 +168,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.clang pkgs.mold qmake qtEnv ];
+          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.lame pkgs.clang pkgs.mold qmake qtEnv ];
           hardeningDisable = [ "fortify" ];
           shellHook = ''
             export QMAKE=${qmake}/bin/earshot-qmake6

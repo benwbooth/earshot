@@ -119,7 +119,7 @@ pub fn elsewhere(track: &Value) -> Result<Value, String> {
 }
 
 /// [`elsewhere`]'s finds on each site, SoundCloud first, for when the first
-/// one can't be used (the waveform can't read SoundCloud's encrypted streams).
+/// one can't be used.
 pub fn elsewhere_all(track: &Value) -> Vec<Value> {
     found_elsewhere(track, false)
 }
@@ -132,7 +132,16 @@ fn found_elsewhere(track: &Value, first_only: bool) -> Vec<Value> {
             break;
         }
         let Ok(found) = search(query.trim()) else { continue };
-        let Some(other) = found["tracks"].as_array().into_iter().flatten().find(|other| same_song(track, other)) else { continue };
+        // SoundCloud's own player can't play an encrypted song (labels' releases
+        // usually are) in most browsers, nor can the waveform read it: skip those.
+        let playable = |other: &Value| match other["soundcloudId"].as_u64() {
+            Some(id) => soundcloud::audio(id).is_ok(),
+            None => true,
+        };
+        let Some(other) = found["tracks"].as_array().into_iter().flatten().filter(|other| same_song(track, other)).take(3).find(|other| playable(other))
+        else {
+            continue;
+        };
         let mut song = other.clone();
         for key in ["key", "title", "artist", "artistId", "album", "albumId", "cover", "coverBig", "explicit", "trackNumber", "disc"] {
             if !track[key].is_null() {

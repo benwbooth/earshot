@@ -12,6 +12,12 @@
 //!   song's own audio (see `earshot_core::envelope`), for any device
 //! - `GET /api/youtube-audio?v=…` → a YouTube video's audio, for videos whose
 //!   owners don't let YouTube's player play them on other sites
+//! - `GET /api/relay?v=…&t=…` → the same, played on youtube.com's own page in
+//!   the server's headless Chromium and streamed live as MP3 from `t` seconds
+//!   (see [`relay`]), for when YouTube won't hand the audio over directly
+
+mod mp3;
+pub mod relay;
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -339,6 +345,39 @@ async fn youtube_audio(Query(query): Query<HashMap<String, String>>, headers: He
     }
 }
 
+/// A video played on youtube.com's page by the server's own browser, its
+/// sound streamed live as MP3 from `t` seconds in. The answer waits until
+/// the sound starts (ads and loading take a while), so a video that won't
+/// play is an error the page can act on. Pausing is hanging up; resuming or
+/// seeking asks again with a new `t`.
+async fn relay_audio(Query(query): Query<HashMap<String, String>>) -> Response {
+    let video = query.get("v").cloned().unwrap_or_default();
+    if video.is_empty() || video.len() > 20 || !video.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return (StatusCode::BAD_REQUEST, "Which video?").into_response();
+    }
+    if let Err(why) = relay::available() {
+        return (StatusCode::SERVICE_UNAVAILABLE, why).into_response();
+    }
+    let t = query.get("t").and_then(|t| t.parse::<f64>().ok()).filter(|t| t.is_finite()).unwrap_or(0.0).clamp(0.0, 86_400.0);
+    let (body_tx, body_rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(relay::BACKLOG);
+    let (head_tx, head_rx) = tokio::sync::oneshot::channel();
+    let opened = tokio::task::spawn_blocking(move || relay::listen(&video, t, body_tx, head_tx)).await;
+    match opened {
+        Ok(Ok(())) => {}
+        Ok(Err(message)) => return (StatusCode::BAD_GATEWAY, message).into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    match tokio::time::timeout(Duration::from_secs(200), head_rx).await {
+        Ok(Ok(Ok(()))) => Response::builder()
+            .header(header::CONTENT_TYPE, "audio/mpeg")
+            .header(header::CACHE_CONTROL, "no-store")
+            .body(Body::from_stream(ReceiverStream::new(body_rx)))
+            .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response()),
+        Ok(Ok(Err(message))) => (StatusCode::BAD_GATEWAY, message).into_response(),
+        _ => (StatusCode::GATEWAY_TIMEOUT, "youtube.com's page didn't start this video.").into_response(),
+    }
+}
+
 // The interface's files come from the Nix store, where every file is dated
 // 1970, so browsers asking "changed since?" would always hear no and keep an
 // old version after an update. Answer in full every time instead.
@@ -372,6 +411,7 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
         .route("/api/audio", get(audio))
         .route("/api/envelope", get(envelope))
         .route("/api/youtube-audio", get(youtube_audio))
+        .route("/api/relay", get(relay_audio))
         .route("/api/{method}", post(call))
         .fallback_service(files)
         // Audio passes through as it is, so seeking (byte ranges) keeps working.
