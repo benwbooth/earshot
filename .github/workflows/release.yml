@@ -182,7 +182,8 @@ jobs:
       - uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
-          modules: ${{ env.QT_MODULES }}
+          # qtserialport: the positioning plugins the AppImage bundles link to it.
+          modules: ${{ env.QT_MODULES }} qtserialport
           cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
