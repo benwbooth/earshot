@@ -352,6 +352,8 @@ Rectangle {
             MenuItem { text: "Always"; checkable: true; checked: Api.nowPlayingCard === "always"; onTriggered: Api.nowPlayingCard = "always" }
             MenuItem { text: "Only when Earshot isn't in front"; checkable: true; checked: Api.nowPlayingCard === "background"; onTriggered: Api.nowPlayingCard = "background" }
             MenuItem { text: "Never"; checkable: true; checked: Api.nowPlayingCard === "never"; onTriggered: Api.nowPlayingCard = "never" }
+            // Off: "Added to playlist" and the like show inside the window instead.
+            MenuItem { text: "Notices as desktop notifications"; checkable: true; checked: Api.desktopNotices; onTriggered: Api.desktopNotices = !Api.desktopNotices }
             MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
             // Leaves songs marked explicit out of song lists, the queue and radio.
             MenuItem { text: "Hide explicit songs"; checkable: true; checked: Api.hideExplicit; onTriggered: Api.hideExplicit = !Api.hideExplicit }

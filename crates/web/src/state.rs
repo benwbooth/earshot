@@ -197,8 +197,10 @@ pub struct App {
     pub liked: RwSignal<HashSet<String>>,
     /// Albums as a list instead of a grid of covers.
     pub album_list: RwSignal<bool>,
-    /// "always", "background" or "never".
+    /// "always", "background" or "never" (the default).
     pub now_playing_card: RwSignal<String>,
+    /// Notices as the system's notifications instead of inside the page (off by default).
+    pub desktop_notices: RwSignal<bool>,
     /// YouTube searches list music (songs, music videos, albums) before other videos.
     pub prefer_music: RwSignal<bool>,
     pub recent_searches: RwSignal<Vec<String>>,
@@ -227,7 +229,8 @@ impl App {
             library: RwSignal::new(json!({ "playlists": [], "albums": [] })),
             liked: RwSignal::new(HashSet::new()),
             album_list: persisted("albumList", false),
-            now_playing_card: persisted("nowPlayingCard", "background".to_owned()),
+            now_playing_card: persisted("songCard", "never".to_owned()),
+            desktop_notices: persisted("desktopNotices", false),
             prefer_music: persisted("preferMusic", true),
             recent_searches: persisted("recentSearches", Vec::new()),
             toast: RwSignal::new(None),
@@ -327,7 +330,7 @@ impl App {
     /// it (asked on the first click), otherwise a notice inside the page.
     pub fn notify(&self, message: impl Into<String>) {
         let message = message.into();
-        if web_sys::Notification::permission() == web_sys::NotificationPermission::Granted {
+        if self.desktop_notices.get_untracked() && web_sys::Notification::permission() == web_sys::NotificationPermission::Granted {
             let options = web_sys::NotificationOptions::new();
             options.set_body(&message);
             options.set_icon("/earshot-256.png");

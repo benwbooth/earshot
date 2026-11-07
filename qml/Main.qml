@@ -141,10 +141,13 @@ ApplicationWindow {
         }
     }
 
-    // Short notices ("Added to playlist", errors) as the desktop's own
-    // notifications, through the tray; Earshot's own card where there's no tray.
+    // Short notices ("Added to playlist", errors): inside the window, or as the
+    // desktop's own notifications when that's turned on in the settings menu
+    // (through the tray; Earshot's own card where there's no tray).
     function notice(message) {
-        if (tray.available && tray.supportsMessages)
+        if (!Api.desktopNotices)
+            toast.show(message)
+        else if (tray.available && tray.supportsMessages)
             tray.showMessage("Earshot", message, Platform.SystemTrayIcon.NoIcon, 4000)
         else
             nowPlaying.notify(message)
@@ -359,6 +362,39 @@ ApplicationWindow {
     }
 
     ResizeEdges { window: window }
+
+    // A notice inside the window, just above the player bar, for a few seconds.
+    Rectangle {
+        id: toast
+        property string message
+        function show(text) {
+            message = text
+            opacity = 1
+            toastTimer.restart()
+        }
+        anchors.horizontalCenter: shell.horizontalCenter
+        anchors.bottom: shell.bottom
+        anchors.bottomMargin: 110
+        width: Math.min(toastText.implicitWidth + 32, shell.width - 32)
+        height: toastText.implicitHeight + 20
+        radius: 10
+        color: Theme.surfaceRaised
+        border.color: Theme.border
+        opacity: 0
+        visible: opacity > 0
+        z: 10
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Text {
+            id: toastText
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, toast.parent.width - 64)
+            text: toast.message
+            color: Theme.text
+            font.pixelSize: Theme.fontBody
+            wrapMode: Text.Wrap
+        }
+        Timer { id: toastTimer; interval: 4000; onTriggered: toast.opacity = 0 }
+    }
 
     TextPrompt {
         id: newPlaylist

@@ -27,8 +27,11 @@ QtObject {
     // Albums shown as a list instead of a grid of covers (remembered).
     property bool albumList: false
     // The now-playing card when a song starts: "always", "background" (only
-    // while Earshot isn't the window in front) or "never".
-    property string nowPlayingCard: "background"
+    // while Earshot isn't the window in front) or "never" (the default).
+    property string nowPlayingCard: "never"
+    // Notices ("Added to playlist", errors) as the desktop's notifications
+    // instead of inside the window. Off by default.
+    property bool desktopNotices: false
     // Songs marked explicit are left out of song lists and never played.
     property bool hideExplicit: false
     // YouTube searches list music (songs, music videos, albums) before other videos.
@@ -36,7 +39,8 @@ QtObject {
     property Settings view: Settings {
         category: "view"
         property alias albumList: api.albumList
-        property alias nowPlayingCard: api.nowPlayingCard
+        property alias songCard: api.nowPlayingCard
+        property alias desktopNotices: api.desktopNotices
         property alias hideExplicit: api.hideExplicit
         property alias preferMusic: api.preferMusic
     }

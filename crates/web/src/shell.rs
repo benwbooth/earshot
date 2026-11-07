@@ -146,6 +146,15 @@ pub fn TopBar() -> impl IntoView {
                             <Icon name="check" size=14 class=if app.player.hide_explicit.get_untracked() { "check on" } else { "check" }/>
                             "Hide explicit songs"
                         </button>
+                        // Off: "Added to playlist" and the like show inside the page instead.
+                        <button class="menu-item" on:click=move |_| {
+                            app.desktop_notices.update(|on| *on = !*on);
+                            if app.desktop_notices.get_untracked() { ask_notification_permission(); }
+                            settings_open.set(false);
+                        }>
+                            <Icon name="check" size=14 class=if app.desktop_notices.get_untracked() { "check on" } else { "check" }/>
+                            "Notices as desktop notifications"
+                        </button>
                         // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).
                         <button class="menu-item" on:click=move |_| {
                             app.prefer_music.update(|on| *on = !*on);
@@ -789,13 +798,8 @@ pub fn integrate() {
     let player = app.player;
     crate::levels::run(player);
     crate::report::watch(player);
-    // Notices and the now-playing card are system notifications; browsers
-    // only let a page ask for them on a click.
-    let ask = Closure::<dyn Fn()>::new(ask_notification_permission);
-    let once = web_sys::AddEventListenerOptions::new();
-    once.set_once(true);
-    let _ = window().add_event_listener_with_callback_and_add_event_listener_options("pointerdown", ask.as_ref().unchecked_ref(), &once);
-    ask.forget();
+    // Notices and the now-playing card can be system notifications; the page
+    // asks for permission only when one is turned on in the settings menu.
     Effect::new(move |previous: Option<u32>| {
         let count = player.started_count.get();
         if previous.is_some_and(|p| p != count) {
