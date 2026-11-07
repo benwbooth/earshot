@@ -18,6 +18,8 @@ pub fn TopBar() -> impl IntoView {
     let app = app();
     let input = NodeRef::<leptos::html::Input>::new();
     let focused = RwSignal::new(false);
+    // Recent searches close after a search (Enter) until the box is typed in or focused again.
+    let dismissed = RwSignal::new(false);
     let settings_open = RwSignal::new(false);
     let remember = StoredValue::new_local(None::<gloo_timers::callback::Timeout>);
     let matching = move || {
@@ -59,13 +61,14 @@ pub fn TopBar() -> impl IntoView {
                     type="search"
                     placeholder="What do you want to hear?"
                     prop:value=move || app.query.get()
-                    on:focus=move |_| focused.set(true)
+                    on:focus=move |_| { focused.set(true); dismissed.set(false); }
                     on:blur=move |_| {
                         // Let a click on a recent search land first.
                         gloo_timers::callback::Timeout::new(150, move || focused.set(false)).forget();
                     }
                     on:input=move |event| {
                         let text = event_target_value(&event);
+                        dismissed.set(false);
                         search(text.clone());
                         // A search typed and left alone for a moment counts as one worth keeping.
                         remember.set_value(Some(gloo_timers::callback::Timeout::new(2000, move || app.add_search(&text))));
@@ -75,6 +78,7 @@ pub fn TopBar() -> impl IntoView {
                             let text = app.query.get_untracked();
                             search(text.clone());
                             app.add_search(&text);
+                            dismissed.set(true);
                         }
                         "Escape" => {
                             app.query.set(String::new());
@@ -86,7 +90,7 @@ pub fn TopBar() -> impl IntoView {
                 <Show when=move || !app.query.get().is_empty()>
                     <IconButton icon="close" size=14 class="search-clear" on_click=move |_| search(String::new())/>
                 </Show>
-                <Show when=move || focused.get() && !matching().is_empty()>
+                <Show when=move || focused.get() && !dismissed.get() && !matching().is_empty()>
                     <div class="history-popup">
                         <div class="history-head">
                             <span>"RECENT SEARCHES"</span>
@@ -99,8 +103,11 @@ pub fn TopBar() -> impl IntoView {
                                 <div class="history-item" on:mousedown=move |e: MouseEvent| { e.prevent_default(); pick(picked.clone()); }>
                                     <Icon name="history" size=15/>
                                     <span>{item}</span>
-                                    <IconButton icon="close" size=13 tip="Remove from history"
-                                        on_click=move |_| app.recent_searches.update(|items| items.retain(|i| *i != removed))/>
+                                    // Removes it without searching for it (the row searches on mousedown).
+                                    <span class="history-remove" on:mousedown=move |e: MouseEvent| { e.prevent_default(); e.stop_propagation(); }>
+                                        <IconButton icon="close" size=13 tip="Remove from history"
+                                            on_click=move |_| app.recent_searches.update(|items| items.retain(|i| *i != removed))/>
+                                    </span>
                                 </div>
                             }
                         }).collect_view()}

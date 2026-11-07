@@ -158,6 +158,7 @@ h1, h2, h3, p { margin: 0; }
 .history-item:hover { background: var(--surface-hover); }
 .history-item > .icon { color: var(--text-muted); }
 .history-item span:not(.icon) { flex: 1; }
+.history-item .history-remove { flex: none; display: flex; }
 .spacer { flex: 1; }
 .settings-anchor { position: relative; margin-right: 8px; }
 

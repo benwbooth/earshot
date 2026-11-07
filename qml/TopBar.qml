@@ -149,13 +149,16 @@ Rectangle {
             font.pixelSize: Theme.fontBody + 1
             selectByMouse: true
             onTextEdited: {
+                historyPopup.dismissed = false
                 Nav.search(text)
                 remember.restart()
             }
             onAccepted: {
                 Nav.search(text)
                 bar.addHistory(text)
+                historyPopup.dismissed = true
             }
+            onActiveFocusChanged: if (activeFocus) historyPopup.dismissed = false
             Keys.onEscapePressed: { text = ""; focus = false }
             Keys.onDownPressed: if (historyList.count > 0) historyList.forceActiveFocus()
 
@@ -167,14 +170,22 @@ Rectangle {
             }
 
             // Recent searches, each with an ×, under the box while it has focus.
+            // A click anywhere else, Escape or a search (Enter) closes them.
             Popup {
                 id: historyPopup
+                // Closed by Enter until the search changes or the box is clicked again.
+                property bool dismissed: false
+                readonly property bool wanted: (search.activeFocus || historyList.activeFocus) && !dismissed
+                                               && bar.matchingHistory.length > 0
+                onWantedChanged: wanted ? open() : close()
                 y: search.height + 6
                 width: search.width
                 padding: 6
                 focus: false
-                closePolicy: Popup.NoAutoClose
-                visible: (search.activeFocus || historyList.activeFocus) && bar.matchingHistory.length > 0
+                // A press outside the list and the box closes it, and takes the
+                // focus out of the box (Qt Quick leaves it there otherwise).
+                closePolicy: Popup.CloseOnPressOutsideParent
+                onClosed: if (wanted) bar.forceActiveFocus()
                 background: Rectangle {
                     color: Theme.surfaceRaised
                     radius: 12
