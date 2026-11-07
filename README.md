@@ -148,6 +148,10 @@ nix build && ./result/bin/earshot
 Development:
 
 ```sh
+./dev.sh          # rebuilds and restarts the app on every save (watchexec)
+./dev.sh web      # the same for the web version, at http://127.0.0.1:8791/
+./dev.sh all      # both
+# or by hand:
 nix develop
 cargo run
 cargo test --workspace --exclude earshot-web

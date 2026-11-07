@@ -168,7 +168,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.lame pkgs.clang pkgs.mold qmake qtEnv ];
+          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 pkgs.pkg-config pkgs.libglvnd pkgs.pipewire pkgs.alsa-lib pkgs.lame pkgs.clang pkgs.mold pkgs.watchexec qmake qtEnv ];
           hardeningDisable = [ "fortify" ];
           shellHook = ''
             export QMAKE=${qmake}/bin/earshot-qmake6
