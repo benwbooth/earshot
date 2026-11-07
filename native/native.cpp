@@ -40,14 +40,28 @@ static QString instanceAddress()
     return QStringLiteral("earshot-") + qEnvironmentVariable("USERNAME");
 #else
     QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
-    // Flatpak gives each launch its own /tmp; this folder is shared between them.
-    const QString flatpak = qEnvironmentVariable("FLATPAK_ID");
-    if (!flatpak.isEmpty() && !dir.isEmpty())
-        dir += QStringLiteral("/app/") + flatpak;
     if (dir.isEmpty())
-        dir = QDir::tempPath();
+        return QDir::tempPath() + QStringLiteral("/earshot.socket");
+    // The Flatpak's own runtime folder, which every Earshot uses: Flatpak
+    // shares it with the rest of the desktop (at the same path), so a Flatpak
+    // Earshot and an AppImage, Nix or development one find each other.
+    dir += QStringLiteral("/app/io.github.benwbooth.Earshot");
+    QDir().mkpath(dir);
     return dir + QStringLiteral("/earshot.socket");
 #endif
+}
+
+// Whether this Earshot uses the usual library, and so is the only one: a run
+// with EARSHOT_DATA_DIR pointing at another folder (tests, a second library)
+// may run alongside.
+static bool usualLibrary()
+{
+    const QString chosen = qEnvironmentVariable("EARSHOT_DATA_DIR");
+    if (chosen.isEmpty())
+        return true;
+    const QString usual = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/earshot");
+    return QDir(chosen).canonicalPath() == QDir(usual).canonicalPath()
+        || QDir::cleanPath(QDir(chosen).absolutePath()) == QDir::cleanPath(usual);
 }
 
 int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, const QString& icon, const QString& qml)
@@ -70,9 +84,8 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     QGuiApplication::setWindowIcon(QIcon(icon));
 
     // Only one Earshot at a time: a second launch asks the running one to show
-    // its window, then quits. (Runs with their own EARSHOT_DATA_DIR, like
-    // tests, are separate libraries and may run alongside.)
-    const bool single = qEnvironmentVariableIsEmpty("EARSHOT_DATA_DIR");
+    // its window, then quits.
+    const bool single = usualLibrary();
     const QString address = instanceAddress();
     if (single) {
         QLocalSocket running;

@@ -46,8 +46,9 @@ on Linux; point `QMAKE` at Qt 6's `qmake` and run `cargo build --release`. On Wa
 
 Environment variables:
 
-- `EARSHOT_DATA_DIR`: where the library is kept (default `~/.local/share/earshot`). Setting it also lets this copy
-  run next to another Earshot.
+- `EARSHOT_DATA_DIR`: where the library is kept (default `~/.local/share/earshot`). Pointing it at another folder
+  also lets this copy run next to another Earshot; otherwise only one runs at a time, whether it's the Flatpak, an
+  AppImage, a Nix build or a development build.
 - `EARSHOT_WINDOW_BUTTONS`: `kde`, `gnome`, `windows` or `mac`, to force a window-button style.
 - `EARSHOT_LISTEN`: the web version's address (default `127.0.0.1:8790`).
 - `EARSHOT_WEB_DIR`: the web interface's files, for the server.
