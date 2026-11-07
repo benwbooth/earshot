@@ -135,15 +135,9 @@
       <pre><code>brew tap benwbooth/earshot https://github.com/benwbooth/earshot
 brew install --cask earshot</code></pre>
       <p class="note">If macOS says Earshot can't be opened, run <code>xattr -dr com.apple.quarantine /Applications/Earshot.app</code> once.</p></div>
-    <div class="card"><h3>Linux</h3><p>An AppImage, or a Flatpak. Earshot's Flatpak uses the KDE runtime from Flathub:</p>
-      <pre><code>flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user Earshot-*-x86_64.flatpak</code></pre>
-      <p class="note">For updates with <code>flatpak update</code>, use Earshot's Flatpak repository instead: download <code>earshot-flatpak-repo.tar.gz</code>, then</p>
-      <pre><code>mkdir -p ~/.local/share/earshot-flatpak
-tar -xzf earshot-flatpak-repo.tar.gz -C ~/.local/share/earshot-flatpak
-flatpak remote-add --user --no-gpg-verify --if-not-exists earshot "file://$HOME/.local/share/earshot-flatpak/flatpak-repo"
-flatpak install --user earshot io.github.benwbooth.Earshot</code></pre>
-      <p class="note">For a new version, unpack its <code>earshot-flatpak-repo.tar.gz</code> the same way and run <code>flatpak update --user</code>. On Nix: <code>nix run github:benwbooth/earshot</code></p>
+    <div class="card"><h3>Linux</h3><p>An AppImage, or a Flatpak:</p>
+      <pre><code>flatpak install --user Earshot-*-x86_64.flatpak</code></pre>
+      <p class="note">Flatpak fetches the KDE runtime Earshot needs from Flathub. On Nix: <code>nix run github:benwbooth/earshot</code></p>
       <p><a class="btn primary" href="https://github.com/benwbooth/earshot/releases/latest">Get it for Linux</a></p></div>
     <div class="card"><h3>Web version with Docker</h3><p>Run it on a home server and open it from any device on your network:</p>
       <pre><code>docker run -d -p 8790:8790 -v ~/earshot:/data ghcr.io/benwbooth/earshot:latest</code></pre></div>

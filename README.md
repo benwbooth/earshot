@@ -88,33 +88,14 @@ If macOS says Earshot can't be opened (it isn't notarized by Apple), run this on
 
 ### Linux
 
-- **Flatpak**: Earshot uses the KDE runtime from Flathub, so add Flathub first if you haven't:
-
-  ```sh
-  flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-  ```
-
-  Then either install the single file, or add Earshot's Flatpak repository so `flatpak update` keeps it current.
-
-  *The single file*: download **`Earshot-…-x86_64.flatpak`** and run
+- **Flatpak**: download **`Earshot-…-x86_64.flatpak`** and run
 
   ```sh
   flatpak install --user Earshot-*-x86_64.flatpak
   ```
 
-  *The repository*: download **`earshot-flatpak-repo.tar.gz`**, then
-
-  ```sh
-  mkdir -p ~/.local/share/earshot-flatpak
-  tar -xzf earshot-flatpak-repo.tar.gz -C ~/.local/share/earshot-flatpak
-  flatpak remote-add --user --no-gpg-verify --if-not-exists earshot "file://$HOME/.local/share/earshot-flatpak/flatpak-repo"
-  flatpak install --user earshot io.github.benwbooth.Earshot
-  ```
-
-  For a new version, download its `earshot-flatpak-repo.tar.gz` and unpack it the same way (replacing the old one),
-  then run `flatpak update --user`.
-
-  Start Earshot from your app menu, or with `flatpak run io.github.benwbooth.Earshot`.
+  Flatpak fetches the KDE runtime Earshot needs from Flathub (say yes if it asks to add Flathub). For a new version,
+  install its file the same way.
 - **AppImage**: download **`Earshot-…-x86_64.AppImage`**, make it executable, and run it.
 - **Nix**: `nix run github:benwbooth/earshot`.
 
