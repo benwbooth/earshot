@@ -3,6 +3,7 @@
 #   Windows  installer (.exe) and portable folder (.zip)
 #   macOS    Apple-silicon disk image (.dmg), plus the Homebrew cask in Casks/
 #   Linux    AppImage, Flatpak bundle, and a Flatpak repository on GitHub Pages
+#   Docker   the web version's server, at ghcr.io/<owner>/earshot:<version> and :latest
 # Run it by hand (Actions > Release > Run workflow) to rebuild an existing tag.
 name: Release
 
@@ -258,6 +259,33 @@ jobs:
           path: |
             Earshot-*-x86_64.flatpak
             earshot-flatpak-repo.tar.gz
+
+  # The web version's server as a container image (the flake's packages.docker),
+  # pushed to GitHub's container registry. It's private while the repository is.
+  docker:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: cachix/install-nix-action@v31
+      - name: Build
+        run: nix build --print-build-logs .#docker
+      - name: Push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker load < result
+          for tag in "$VERSION" latest; do
+            docker tag earshot:latest "$image:$tag"
+            docker push "$image:$tag"
+          done
 
   release:
     needs: [version, windows, macos, appimage, flatpak]

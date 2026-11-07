@@ -112,8 +112,9 @@ its own; a small server answers it with the same Rust code the app uses (`crates
   history, and changes show up in both straight away.
 - **On its own**: `nix run github:benwbooth/earshot#server`, then open http://127.0.0.1:8790/. Set
   `EARSHOT_LISTEN=0.0.0.0:8790` to reach it from phones on your network.
-- **Docker**: `nix build github:benwbooth/earshot#docker && docker load < result` gives the image `earshot:latest`.
-  It listens on port 8790 and keeps its library in `/data`:
+- **Docker**: each release publishes `ghcr.io/benwbooth/earshot:<version>` and `:latest` (`docker pull
+  ghcr.io/benwbooth/earshot`). Or build it yourself: `nix build github:benwbooth/earshot#docker && docker load < result`
+  gives the image `earshot:latest`. It listens on port 8790 and keeps its library in `/data`:
   ```sh
   docker run -d -p 8788:8790 -v /srv/earshot:/data -v /run/user/1000/pipewire-0:/run/pipewire/pipewire-0 earshot:latest
   ```
