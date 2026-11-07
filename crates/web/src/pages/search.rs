@@ -189,7 +189,7 @@ impl Search {
         self.yt_albums_loading.set(true);
         let q = q.to_owned();
         spawn_local(async move {
-            let result = api::call("searchYoutubeAlbums", json!({ "query": q, "next": "" })).await;
+            let result = api::call("searchYoutubeAlbums", json!({ "query": q, "next": "", "preferMusic": app().prefer_music.get_untracked() })).await;
             if !self.current(&q) {
                 return;
             }
@@ -222,7 +222,7 @@ impl Search {
         self.yt_more_loading.set(true);
         let q = self.query.get_untracked();
         spawn_local(async move {
-            let result = api::call("searchYoutubeAlbums", json!({ "query": q, "next": next })).await;
+            let result = api::call("searchYoutubeAlbums", json!({ "query": q, "next": next, "preferMusic": app().prefer_music.get_untracked() })).await;
             if !self.current(&q) {
                 return;
             }

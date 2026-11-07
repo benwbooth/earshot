@@ -200,7 +200,7 @@ Flickable {
             return
         ytAlbumsLoading = true
         const q = query
-        Api.call(Backend.searchYoutubeAlbums(q, ""), function (found) {
+        Api.call(Backend.searchYoutubeAlbums(q, "", Api.preferMusic), function (found) {
             if (q !== page.query) return
             page.ytAlbums = found.albums
             page.youtube = found.tracks
@@ -224,7 +224,7 @@ Flickable {
             return
         ytMoreLoading = true
         const q = query
-        Api.call(Backend.searchYoutubeAlbums(q, ytNext), function (found) {
+        Api.call(Backend.searchYoutubeAlbums(q, ytNext, Api.preferMusic), function (found) {
             if (q !== page.query) return
             const seen = {}
             for (const a of page.ytAlbums) seen[a.id] = true

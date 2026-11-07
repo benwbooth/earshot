@@ -31,11 +31,14 @@ QtObject {
     property string nowPlayingCard: "background"
     // Songs marked explicit are left out of song lists and never played.
     property bool hideExplicit: false
+    // YouTube searches list music (songs, music videos, albums) before other videos.
+    property bool preferMusic: true
     property Settings view: Settings {
         category: "view"
         property alias albumList: api.albumList
         property alias nowPlayingCard: api.nowPlayingCard
         property alias hideExplicit: api.hideExplicit
+        property alias preferMusic: api.preferMusic
     }
 
     // Where a song lives on the web: its YouTube video (at its chapter), or its

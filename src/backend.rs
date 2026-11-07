@@ -32,7 +32,7 @@ pub mod qobject {
         #[qinvokable]
         fn search(self: Pin<&mut Backend>, query: &QString) -> i32;
         #[qinvokable]
-        fn search_youtube_albums(self: Pin<&mut Backend>, query: &QString, next: &QString) -> i32;
+        fn search_youtube_albums(self: Pin<&mut Backend>, query: &QString, next: &QString, prefer_music: bool) -> i32;
         #[qinvokable]
         fn search_bandcamp(self: Pin<&mut Backend>, query: &QString) -> i32;
         #[qinvokable]
@@ -207,8 +207,9 @@ impl qobject::Backend {
     }
 
     /// One page of YouTube results; `next` is "" for the first page, then the token the previous page returned.
-    pub fn search_youtube_albums(self: Pin<&mut Self>, query: &QString, next: &QString) -> i32 {
-        self.ask("searchYoutubeAlbums", json!({ "query": text(query), "next": text(next) }))
+    /// With `prefer_music`, songs, music videos and albums come before other videos.
+    pub fn search_youtube_albums(self: Pin<&mut Self>, query: &QString, next: &QString, prefer_music: bool) -> i32 {
+        self.ask("searchYoutubeAlbums", json!({ "query": text(query), "next": text(next), "preferMusic": prefer_music }))
     }
 
     pub fn search_bandcamp(self: Pin<&mut Self>, query: &QString) -> i32 {

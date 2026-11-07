@@ -139,6 +139,14 @@ pub fn TopBar() -> impl IntoView {
                             <Icon name="check" size=14 class=if app.player.hide_explicit.get_untracked() { "check on" } else { "check" }/>
                             "Hide explicit songs"
                         </button>
+                        // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).
+                        <button class="menu-item" on:click=move |_| {
+                            app.prefer_music.update(|on| *on = !*on);
+                            settings_open.set(false);
+                        }>
+                            <Icon name="check" size=14 class=if app.prefer_music.get_untracked() { "check on" } else { "check" }/>
+                            "Prefer music in YouTube results"
+                        </button>
                     </div>
                 </Show>
             </div>

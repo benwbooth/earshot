@@ -95,7 +95,7 @@ pub fn album(id: &str) -> Result<Value, String> {
             return catalog::album_detail(&deezer.to_string());
         }
     }
-    let found = youtube::search_albums(&format!("{artist} {title}"), "")?;
+    let found = youtube::search_albums(&format!("{artist} {title}"), "", true)?;
     let first = found["albums"][0]["id"].as_str().ok_or_else(|| format!("Couldn't find \"{title}\" to play."))?.to_owned();
     youtube::album(&first)
 }

@@ -344,6 +344,8 @@ Rectangle {
             MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
             // Leaves songs marked explicit out of song lists, the queue and radio.
             MenuItem { text: "Hide explicit songs"; checkable: true; checked: Api.hideExplicit; onTriggered: Api.hideExplicit = !Api.hideExplicit }
+            // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).
+            MenuItem { text: "Prefer music in YouTube results"; checkable: true; checked: Api.preferMusic; onTriggered: Api.preferMusic = !Api.preferMusic }
             MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
             // The same Earshot in a browser on this computer, sharing this window's playlists.
             MenuItem {

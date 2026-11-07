@@ -199,6 +199,8 @@ pub struct App {
     pub album_list: RwSignal<bool>,
     /// "always", "background" or "never".
     pub now_playing_card: RwSignal<String>,
+    /// YouTube searches list music (songs, music videos, albums) before other videos.
+    pub prefer_music: RwSignal<bool>,
     pub recent_searches: RwSignal<Vec<String>>,
     pub toast: RwSignal<Option<(u32, String)>>,
     pub menu: RwSignal<Option<MenuRequest>>,
@@ -226,6 +228,7 @@ impl App {
             liked: RwSignal::new(HashSet::new()),
             album_list: persisted("albumList", false),
             now_playing_card: persisted("nowPlayingCard", "background".to_owned()),
+            prefer_music: persisted("preferMusic", true),
             recent_searches: persisted("recentSearches", Vec::new()),
             toast: RwSignal::new(None),
             menu: RwSignal::new(None),

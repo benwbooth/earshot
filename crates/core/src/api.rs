@@ -15,7 +15,7 @@ pub fn browse(service: &str, tag: &str) -> Result<Value, String> {
         "mixcloud" => mixcloud::browse(tag),
         "archive" => archive::browse(tag),
         // YouTube's own search for the genre: playlists and full-length videos as albums, then songs.
-        "youtube" => youtube::search_albums(&format!("{tag} music"), ""),
+        "youtube" => youtube::search_albums(&format!("{tag} music"), "", true),
         other => Err(format!("Can't browse {other}")),
     }
 }
@@ -233,7 +233,7 @@ impl Earshot {
             "genre" => catalog::genre_chart(&text("id")),
             "era" => catalog::era_chart(&text("id")),
             "search" => catalog::search(&text("query")),
-            "searchYoutubeAlbums" => youtube::search_albums(&text("query"), &text("next")),
+            "searchYoutubeAlbums" => youtube::search_albums(&text("query"), &text("next"), args["preferMusic"].as_bool().unwrap_or(true)),
             "searchBandcamp" => bandcamp::search(&text("query")),
             "searchSoundcloud" => soundcloud::search(&text("query")),
             "searchMixcloud" => mixcloud::search(&text("query")),
