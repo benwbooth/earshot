@@ -203,6 +203,7 @@ fn from_video_renderer(video: &Value) -> Option<Value> {
         live: video.get("lengthText").is_none() || badge_styles("badges").iter().any(|label| label == "LIVE"),
     };
     track[MUSIC] = json!(signals.score_track(&track));
+    track[STRONG] = json!(signals.strong(&track));
     Some(track)
 }
 
@@ -262,6 +263,7 @@ fn from_lockup(lockup: &Value) -> Option<Lockup> {
                 ..Signals::default()
             };
             track[MUSIC] = json!(signals.score_track(&track));
+            track[STRONG] = json!(signals.strong(&track));
             Some(Lockup::Video(track))
         }
         "LOCKUP_CONTENT_TYPE_PLAYLIST" => {
@@ -282,6 +284,7 @@ fn from_lockup(lockup: &Value) -> Option<Lockup> {
                 "trackCount": count,
             });
             playlist[MUSIC] = json!(playlist_score(&title));
+            playlist[STRONG] = json!(playlist_score(&title) >= MUSIC_TIER);
             Some(Lockup::Playlist(playlist))
         }
         _ => None,
@@ -289,13 +292,9 @@ fn from_lockup(lockup: &Value) -> Option<Lockup> {
 }
 
 /// One page of what youtube.com shows for a search, in its order (videos and
-/// playlists), plus the token for the next page ("" after the last one). An
-/// empty `continuation` asks for the first page.
-fn search_page(query: &str, continuation: &str) -> Result<(Vec<Lockup>, String), String> {
-    search_filtered(query, continuation, None).map(|(items, next, _)| (items, next))
-}
-
-/// The same with one of YouTube's search filters (`params`, as youtube.com sends them).
+/// playlists), plus the token for the next page ("" after the last one), and,
+/// for a first page, what YouTube Music's search found. With one of YouTube's
+/// search filters (`params`, as youtube.com sends them) if given.
 fn search_filtered(query: &str, continuation: &str, params: Option<&str>) -> Result<(Vec<Lockup>, String, MusicFound), String> {
     // YouTube Music's search for the same words, alongside (first page of a
     // plain search only): any video it lists is music.
@@ -330,6 +329,7 @@ fn search_filtered(query: &str, continuation: &str, params: Option<&str>) -> Res
             && video["youtubeId"].as_str().is_some_and(|id| music.ids.contains(id))
         {
             video[MUSIC] = json!(video[MUSIC].as_i64().unwrap_or(0) + ON_YOUTUBE_MUSIC);
+            video[STRONG] = json!(true);
         }
     }
     penalise_unwanted(&mut items, query);
@@ -340,42 +340,37 @@ fn search_filtered(query: &str, continuation: &str, params: Option<&str>) -> Res
 /// music in YouTube's results), and its songs, albums and playlists themselves.
 #[derive(Default)]
 struct MusicFound {
+    /// YouTube Music answered (so a video it doesn't list is likely not music).
+    answered: bool,
     ids: std::collections::HashSet<String>,
     songs: Vec<Value>,
     albums: Vec<Value>,
 }
 
-/// When YouTube's own results have fewer songs than this ("castlevania":
-/// trailers, show clips, reviews), YouTube Music's are added before them.
-const FEW_SONGS: usize = 4;
-
-/// Puts YouTube Music's songs and albums before YouTube's results when those
-/// have little music in them, leaving out ones YouTube already listed.
+/// Puts YouTube Music's songs, official videos, albums and playlists first,
+/// in its own order, and leaves out YouTube's copies of them; YouTube's other
+/// results follow (ordered by [`music_first`]).
 fn add_music(items: &mut Vec<Lockup>, music: MusicFound) {
-    let is_music = |item: &Lockup| matches!(item, Lockup::Video(video) if tier(video[MUSIC].as_i64().unwrap_or(0)) == 0);
-    if items.iter().filter(|item| is_music(item)).count() >= FEW_SONGS {
-        return;
-    }
-    let known: std::collections::HashSet<String> = items
-        .iter()
-        .map(|item| match item {
-            Lockup::Video(value) => value["youtubeId"].as_str().unwrap_or("").to_owned(),
-            Lockup::Playlist(value) => value["id"].as_str().unwrap_or("").to_owned(),
-        })
-        .collect();
-    let mut added: Vec<Lockup> = music
-        .songs
-        .into_iter()
-        .filter(|song| !known.contains(song["youtubeId"].as_str().unwrap_or("")))
-        .map(|mut song| {
+    let mut seen = std::collections::HashSet::new();
+    let mut added: Vec<Lockup> = Vec::new();
+    for mut song in music.songs {
+        if seen.insert(song["youtubeId"].as_str().unwrap_or("").to_owned()) {
             song[MUSIC] = json!(ON_YOUTUBE_MUSIC);
-            Lockup::Video(song)
-        })
-        .collect();
-    added.extend(music.albums.into_iter().filter(|album| !known.contains(album["id"].as_str().unwrap_or(""))).map(|mut album| {
-        album[MUSIC] = json!(ON_YOUTUBE_MUSIC);
-        Lockup::Playlist(album)
-    }));
+            song[STRONG] = json!(true);
+            added.push(Lockup::Video(song));
+        }
+    }
+    for mut album in music.albums {
+        if seen.insert(album["id"].as_str().unwrap_or("").to_owned()) {
+            album[MUSIC] = json!(ON_YOUTUBE_MUSIC);
+            album[STRONG] = json!(true);
+            added.push(Lockup::Playlist(album));
+        }
+    }
+    items.retain(|item| match item {
+        Lockup::Video(value) => !seen.contains(value["youtubeId"].as_str().unwrap_or("")),
+        Lockup::Playlist(value) => !seen.contains(value["id"].as_str().unwrap_or("")),
+    });
     items.splice(0..0, added);
 }
 
@@ -392,7 +387,7 @@ fn music_search_ids(query: &str) -> std::sync::mpsc::Receiver<MusicFound> {
             let songs = scope.spawn(|| music_search(&query, Some(SONGS_FILTER)));
             (music_search(&query, None), songs.join().ok().flatten())
         });
-        let mut found = MusicFound::default();
+        let mut found = MusicFound { answered: all.is_some() || songs.is_some(), ..MusicFound::default() };
         for answer in all.iter().chain(songs.iter()) {
             let mut watches = Vec::new();
             collect(answer, &["watchEndpoint"], &mut watches);
@@ -407,22 +402,36 @@ fn music_search_ids(query: &str) -> std::sync::mpsc::Receiver<MusicFound> {
             let mut rows = Vec::new();
             collect(answer, &["musicResponsiveListItemRenderer"], &mut rows);
             let mut seen = std::collections::HashSet::new();
+            let mut videos = Vec::new();
             for (_, row) in rows {
-                if let Some(MusicItem::Album(album)) = music_item(&json!({ "musicResponsiveListItemRenderer": row }))
-                    && seen.insert(album["id"].to_string())
-                {
-                    found.albums.push(album);
+                match music_item(&json!({ "musicResponsiveListItemRenderer": row })) {
+                    Some(MusicItem::Album(album)) if seen.insert(album["id"].to_string()) => found.albums.push(album),
+                    // Official music videos (its songs come from the song search, below).
+                    Some(MusicItem::Song(video)) if official_video(row) => videos.push(video),
+                    _ => {}
                 }
             }
+            found.songs = videos;
         }
         if let Some(answer) = &songs {
             let mut rows = Vec::new();
             collect(answer, &["musicResponsiveListItemRenderer"], &mut rows);
-            found.songs = rows.into_iter().filter_map(|(_, row)| music_song_row(row)).collect();
+            let videos = std::mem::take(&mut found.songs);
+            found.songs = rows.into_iter().filter_map(|(_, row)| music_song_row(row)).chain(videos).collect();
         }
         let _ = send.send(found);
     });
     receive
+}
+
+/// Whether a YouTube Music row plays an artist's official music video.
+fn official_video(row: &Value) -> bool {
+    let mut watches = Vec::new();
+    collect(row, &["watchEndpoint"], &mut watches);
+    watches.iter().any(|(_, watch)| {
+        watch.pointer("/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType").and_then(Value::as_str)
+            == Some("MUSIC_VIDEO_TYPE_OMV")
+    })
 }
 
 /// YouTube Music's "Songs" search filter.
@@ -485,43 +494,53 @@ fn penalise_unwanted(items: &mut [Lockup], query: &str) {
     }
 }
 
-/// Music first, then the rest, then what's clearly not music; YouTube's own
-/// order within each. Takes the scores out of the results.
-fn music_first(items: &mut [Lockup], prefer_music: bool) {
-    let rank = |item: &Lockup| {
-        let value = match item {
-            Lockup::Video(value) | Lockup::Playlist(value) => value,
-        };
-        tier(value[MUSIC].as_i64().unwrap_or(0))
-    };
+/// Music first, then what only looks like music, then the rest, then what's
+/// clearly not music; YouTube's own order within each. `music_known`: YouTube
+/// Music answered, so a video it didn't list (with no other sure sign) is
+/// taken as not music.
+fn music_first(items: &mut [Lockup], prefer_music: bool, music_known: bool) {
     if prefer_music {
-        items.sort_by_key(rank);
-    }
-    for item in items.iter_mut() {
-        match item {
-            Lockup::Video(value) | Lockup::Playlist(value) => {
-                if let Some(fields) = value.as_object_mut() {
-                    fields.remove(MUSIC);
-                }
-            }
-        }
+        items.sort_by_key(|item| match item {
+            Lockup::Video(value) | Lockup::Playlist(value) => tier(value, music_known),
+        });
     }
 }
 
-/// 0 for music, 1 for anything, 2 for what's clearly something else.
-fn tier(score: i64) -> u8 {
-    if score >= MUSIC_TIER {
+/// 0: surely music (a strong sign, see [`Signals::strong`]); 1: looks like
+/// music (only weaker signs: words, "Artist - Title", a song's length); 2:
+/// can't tell; 3: clearly something else.
+fn tier(value: &Value, music_known: bool) -> u8 {
+    let score = value[MUSIC].as_i64().unwrap_or(0);
+    if value[STRONG] == true && score >= 0 {
         0
-    } else if score <= -MUSIC_TIER {
+    } else if score >= MUSIC_TIER {
+        1
+    } else if score > -MUSIC_TIER && !music_known {
         2
     } else {
-        1
+        3
     }
+}
+
+/// Whether a result is music enough to show a long video as an album.
+fn looks_like_music(value: &Value) -> bool {
+    tier(value, false) <= 1
+}
+
+/// Takes the ordering's notes out of a result before it reaches the app.
+fn without_scores(mut value: Value) -> Value {
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove(MUSIC);
+        fields.remove(STRONG);
+    }
+    value
 }
 
 /// Where a search result's music score is kept until results are ordered.
 const MUSIC: &str = "_music";
-/// A score from here up counts as music (one strong sign, or two weaker ones).
+/// Where it's noted that a result has a strong sign of being music.
+const STRONG: &str = "_strong";
+/// A score from here up looks like music; this far below zero, it clearly isn't.
 const MUSIC_TIER: i64 = 25;
 /// YouTube Music lists the video.
 const ON_YOUTUBE_MUSIC: i64 = 50;
@@ -565,6 +584,13 @@ struct Signals {
 }
 
 impl Signals {
+    /// A sure sign the video is music: a label's upload, an artist's channel,
+    /// a "- Topic" or VEVO channel, or YouTube's own music note.
+    fn strong(&self, track: &Value) -> bool {
+        let channel = track["channel"].as_str().unwrap_or("").to_lowercase();
+        self.art_track || self.artist_channel || self.music_badge || channel.ends_with(" - topic") || channel.contains("vevo")
+    }
+
     /// How sure the listing makes it that a video is music: 25 and up is
     /// music, below zero probably isn't.
     fn score_track(&self, track: &Value) -> i64 {
@@ -648,14 +674,17 @@ pub fn mix(video: &str) -> Result<Vec<Value>, String> {
         .collect())
 }
 
-/// YouTube videos for a search, music first (see [`music_first`]).
+/// Videos for a search: YouTube Music's songs and official videos first, then
+/// YouTube's own results, music first (see [`add_music`] and [`music_first`]).
 pub fn search(query: &str, count: usize) -> Result<Vec<Value>, String> {
-    let mut items = search_page(query, "")?.0;
-    music_first(&mut items, true);
+    let (mut items, _, music) = search_filtered(query, "", None)?;
+    let music_known = music.answered;
+    add_music(&mut items, music);
+    music_first(&mut items, true, music_known);
     Ok(items
         .into_iter()
         .filter_map(|item| match item {
-            Lockup::Video(video) => Some(video),
+            Lockup::Video(video) => Some(without_scores(video)),
             Lockup::Playlist(_) => None,
         })
         .take(count)
@@ -683,15 +712,20 @@ pub fn search_albums(query: &str, continuation: &str, prefer_music: bool) -> Res
     let mut albums = Vec::new();
     let mut tracks = Vec::new();
     let (mut items, next, music) = search_filtered(query, continuation, None)?;
+    let music_known = music.answered;
     if prefer_music {
         add_music(&mut items, music);
     }
-    music_first(&mut items, prefer_music);
+    music_first(&mut items, prefer_music, music_known);
     for item in items {
         match item {
-            Lockup::Playlist(playlist) => albums.push(playlist),
-            Lockup::Video(video) if is_album_video(&video) => albums.push(video_album(&video)),
-            Lockup::Video(video) => tracks.push(video),
+            Lockup::Playlist(playlist) => albums.push(without_scores(playlist)),
+            // Long videos open as albums, if they're music ("Drone Buying
+            // Guide 2026" stays a video).
+            Lockup::Video(video) if is_album_video(&video) && (!prefer_music || looks_like_music(&video)) => {
+                albums.push(video_album(&without_scores(video)))
+            }
+            Lockup::Video(video) => tracks.push(without_scores(video)),
         }
     }
     Ok(json!({ "albums": albums, "tracks": tracks, "next": next }))
@@ -1326,6 +1360,7 @@ mod tests {
     fn video(title: &str, channel: &str, duration: u64, signals: Signals) -> Lockup {
         let mut track = video_track(&title.replace(' ', ""), title, channel, duration);
         track[MUSIC] = json!(signals.score_track(&track));
+        track[STRONG] = json!(signals.strong(&track));
         Lockup::Video(track)
     }
 
@@ -1352,8 +1387,9 @@ mod tests {
             video("🍁 Enchanting Autumn Ambience 🍁 4K Nature Scenes", "Relax with TV Backgrounds", 43200, Signals::default()),
             video("Autumn Leaves", "Cannonball Adderley - Topic", 660, Signals::default()),
         ];
+        // YouTube Music didn't answer: YouTube's own results, ranked.
         penalise_unwanted(&mut items, "autumn leaves");
-        music_first(&mut items, true);
+        music_first(&mut items, true, false);
         assert_eq!(
             titles(&items),
             [
@@ -1367,7 +1403,9 @@ mod tests {
             ]
         );
         // The scores don't reach the app.
-        assert!(items.iter().all(|item| matches!(item, Lockup::Video(value) if value.get(MUSIC).is_none())));
+        assert!(items.into_iter().all(|item| match item {
+            Lockup::Video(value) | Lockup::Playlist(value) => without_scores(value).get(MUSIC).is_none(),
+        }));
     }
 
     #[test]
@@ -1390,7 +1428,7 @@ mod tests {
             video("Autumn Leaves", "Cannonball Adderley - Topic", 660, Signals::default()),
         ];
         penalise_unwanted(&mut items, "autumn leaves");
-        music_first(&mut items, false);
+        music_first(&mut items, false, true);
         assert_eq!(titles(&items), ["Vocal coach reacts to Autumn Leaves", "Autumn Leaves"]);
     }
 
@@ -1417,36 +1455,52 @@ mod tests {
     }
 
     #[test]
-    fn music_is_added_when_youtube_has_little() {
-        // "castlevania": trailers and show clips, no music.
+    fn youtube_music_comes_first_whatever_youtube_found() {
+        // "drone": YouTube lists drone-flying videos, one music track, and an
+        // official video YouTube Music also has.
+        let official = || Signals { artist_channel: true, ..Signals::default() };
         let mut items = vec![
-            video("Castlevania: Belmont's Curse | Accolades Trailer | KONAMI", "Konami", 89, Signals::default()),
-            video("Dracula vs Godbrand | Castlevania", "The Serpent Lord", 147, Signals::default()),
+            video("Ultimate Drone Buying Guide for Total Beginners 2026", "QuickAssTutorials", 1306, Signals::default()),
+            video("Cello Drone A", "Musician's Practice Partner - Topic", 363, Signals::default()),
+            video("DJI NEO 2 - The Best Beginner Drone EVER!", "Mark McGee Photos", 580, Signals::default()),
+            video("Drone (Official Video)", "Some Band", 240, official()),
         ];
-        let known = items.iter().map(|item| match item { Lockup::Video(v) | Lockup::Playlist(v) => v["youtubeId"].as_str().unwrap().to_owned() }).next().unwrap();
+        let shared = match &items[3] { Lockup::Video(v) | Lockup::Playlist(v) => v["youtubeId"].as_str().unwrap().to_owned() };
         let music = MusicFound {
-            songs: vec![song("vk", "Vampire Killer"), song("bt", "Bloody Tears"), song(&known, "Same as YouTube's")],
-            albums: vec![json!({ "id": "yt:pl:OST", "title": "Castlevania Original Soundtrack" })],
+            answered: true,
+            songs: vec![song("a", "Drone in E (440Hz)"), song("b", "Ambient Drone"), song(&shared, "Drone")],
+            albums: vec![json!({ "id": "yt:pl:OLAK", "title": "Drones" })],
             ..MusicFound::default()
         };
         add_music(&mut items, music);
-        penalise_unwanted(&mut items, "castlevania");
-        music_first(&mut items, true);
-        let titles = titles(&items);
-        assert_eq!(&titles[..3], ["Vampire Killer", "Bloody Tears", "Castlevania Original Soundtrack"]);
-        // Nothing of YouTube's is lost, and nothing is listed twice.
-        assert_eq!(items.len(), 5);
-        assert!(titles.iter().any(|t| t.contains("Accolades Trailer")));
+        penalise_unwanted(&mut items, "drone");
+        music_first(&mut items, true, true);
+        assert_eq!(
+            titles(&items),
+            [
+                // YouTube Music's, in its order (its copy of the shared video).
+                "Drone in E (440Hz)",
+                "Ambient Drone",
+                "Drone",
+                "Drones",
+                // YouTube's music.
+                "Cello Drone A",
+                // Then the rest, in YouTube's order.
+                "Ultimate Drone Buying Guide for Total Beginners 2026",
+                "DJI NEO 2 - The Best Beginner Drone EVER!",
+            ]
+        );
     }
 
     #[test]
-    fn music_is_not_added_when_youtube_has_enough() {
-        let official = || Signals { artist_channel: true, ..Signals::default() };
-        let mut items: Vec<Lockup> = ["One More Time", "Around the World", "Digital Love", "Voyager"]
-            .iter()
-            .map(|title| video(&format!("Daft Punk - {title} (Official Video)"), "Daft Punk", 300, official()))
-            .collect();
-        add_music(&mut items, MusicFound { songs: vec![song("x", "Something else")], ..MusicFound::default() });
-        assert_eq!(items.len(), 4);
+    fn long_videos_are_albums_only_when_they_are_music() {
+        let guide = video_track("g", "Ultimate Drone Buying Guide for Total Beginners 2026", "QuickAssTutorials", 1306);
+        let mut guide = guide;
+        guide[MUSIC] = json!(Signals::default().score_track(&guide));
+        assert!(!looks_like_music(&guide));
+        let mut ost = video_track("o", "Dragon Warrior (NES) Soundtrack - 8BitStereo", "Niko's 8BitStereo", 2400);
+        ost["chapters"] = json!(20);
+        ost[MUSIC] = json!(Signals::default().score_track(&ost));
+        assert!(looks_like_music(&ost));
     }
 }
