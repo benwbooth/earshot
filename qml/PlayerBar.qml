@@ -14,9 +14,28 @@ Rectangle {
 
     Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.border }
 
+    // The song's cover fills the bar's corner, edge to edge; click it to see it large.
+    Cover {
+        id: barCover
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.topMargin: 1
+        anchors.bottom: parent.bottom
+        width: visible ? height : 0
+        radius: 0
+        visible: bar.track !== null
+        source: bar.track ? (bar.track.coverBig || bar.track.cover || "") : ""
+        seed: bar.track ? bar.track.key : ""
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: Nav.showArt(bar.track ? (bar.track.coverBig || bar.track.cover || "") : "")
+        }
+    }
+
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 16
+        anchors.leftMargin: barCover.width + 16
         anchors.rightMargin: 20
         spacing: 16
 
@@ -26,19 +45,6 @@ Rectangle {
             Layout.maximumWidth: 480
             Layout.fillHeight: true
             spacing: 14
-            Cover {
-                Layout.preferredWidth: 60
-                Layout.preferredHeight: 60
-                radius: 8
-                visible: bar.track !== null
-                source: bar.track ? (bar.track.cover || "") : ""
-                seed: bar.track ? bar.track.key : ""
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: Player.openSource()
-                }
-            }
             ColumnLayout {
                 id: songColumn
                 Layout.fillWidth: true
