@@ -66,6 +66,17 @@ pub fn web_dir() -> PathBuf {
     PathBuf::from("web")
 }
 
+/// A line from a web page about what its player is doing (songs starting,
+/// playing, failing; what the waveform measures), written to the server's
+/// log, so a problem seen in someone's own browser can be traced.
+async fn report(headers: HeaderMap, body: String) -> StatusCode {
+    let browser = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let browser = browser.rsplit(' ').take(2).collect::<Vec<_>>().join(" ");
+    let line: String = body.chars().filter(|c| !c.is_control()).take(400).collect();
+    eprintln!("earshot web [{browser}]: {line}");
+    StatusCode::NO_CONTENT
+}
+
 async fn call(State(app): State<App>, Path(method): Path<String>, body: Option<Json<Value>>) -> (StatusCode, Json<Value>) {
     let args = body.map(|Json(args)| args).unwrap_or(Value::Null);
     let core = app.core.clone();
@@ -431,6 +442,7 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
         .layer(axum::middleware::map_response(answer_fresh));
     Router::new()
         .route("/api/version", get(move || std::future::ready(version.clone())))
+        .route("/api/report", post(report))
         .route("/api/events", get(events))
         .route("/api/levels", get(levels))
         .route("/api/audio", get(audio))

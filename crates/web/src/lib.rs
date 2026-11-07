@@ -13,6 +13,7 @@ mod engine;
 mod levels;
 mod pages;
 mod player;
+mod report;
 mod shell;
 mod state;
 

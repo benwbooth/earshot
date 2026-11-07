@@ -642,6 +642,7 @@ pub fn integrate() {
     let app = app();
     let player = app.player;
     crate::levels::run(player);
+    crate::report::watch(player);
     // Notices and the now-playing card are system notifications; browsers
     // only let a page ask for them on a click.
     let ask = Closure::<dyn Fn()>::new(ask_notification_permission);
