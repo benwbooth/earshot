@@ -53,8 +53,14 @@ jobs:
             mkdir -m 700 "$GNUPGHOME"
             printf '%s' "$GPG_KEY" | gpg --batch --import
             fingerprint=$(gpg --batch --show-keys --with-colons packaging/flatpak/earshot-flatpak.gpg | awk -F: '$1 == "fpr" { print $10; exit }')
-            flatpak build-sign --gpg-homedir="$GNUPGHOME" --gpg-sign="$fingerprint" site/flatpak "$APP_ID" master
-            flatpak build-update-repo --gpg-homedir="$GNUPGHOME" --gpg-sign="$fingerprint" site/flatpak
+            # Every commit (the app and its translations), then the summary. The
+            # release's static deltas were made before signing and carry no
+            # signatures, so they're made again.
+            rm -rf site/flatpak/deltas
+            flatpak build-sign --gpg-homedir="$GNUPGHOME" --gpg-sign="$fingerprint" site/flatpak
+            flatpak build-update-repo --gpg-homedir="$GNUPGHOME" --gpg-sign="$fingerprint" \
+              --title=Earshot --default-branch=master --generate-static-deltas site/flatpak
+            test -s site/flatpak/summary.sig
             key="GPGKey=$(base64 -w0 packaging/flatpak/earshot-flatpak.gpg)"
           fi
           printf '%s\n' "[Flatpak Repo]" "Title=Earshot" "Url=$SITE/flatpak/" \
