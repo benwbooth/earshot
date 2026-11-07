@@ -17,7 +17,7 @@ mod report;
 mod shell;
 mod state;
 
-use shell::{PlayerBar, PromptDialog, Sidebar, TabBar, Toast, TopBar, TrackMenu};
+use shell::{ArtViewer, PlayerBar, PromptDialog, Sidebar, TabBar, Toast, TopBar, TrackMenu};
 use state::App;
 
 #[component]
@@ -55,6 +55,7 @@ fn Shell() -> impl IntoView {
             <TrackMenu/>
             <PromptDialog/>
             <Toast/>
+            <ArtViewer/>
         </div>
     }
 }

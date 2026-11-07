@@ -162,7 +162,10 @@ pub fn AlbumPage() -> impl IntoView {
             </div>
 
             <div class="album-head">
-                <Cover src=cover seed=seed radius=10 placeholder="album" class="album-art"/>
+                // Click the cover to see it large.
+                <button class="album-art-button" on:click=move |_| app.art.set(Some(cover.get_untracked())) title="See the cover large">
+                    <Cover src=cover seed=seed radius=10 placeholder="album" class="album-art"/>
+                </button>
                 <div class="album-info">
                     <div class="album-kind">{move || album.with(|a| a.as_ref().map(kind_label).unwrap_or_default())}</div>
                     <h1 class="album-title" class:long=move || title.with(|t| t.chars().count() > 22)>

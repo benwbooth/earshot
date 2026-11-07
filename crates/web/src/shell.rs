@@ -347,7 +347,6 @@ pub fn PlayerBar() -> impl IntoView {
     let on_queue = move || location.pathname.get() == "/queue";
     // On phones the song at the bottom opens the Now playing page, with every control.
     let sheet = RwSignal::new(false);
-    let open = move || if is_phone() { sheet.set(true) } else { player.open_source() };
     Effect::new(move |_| {
         if !has() {
             sheet.set(false);
@@ -358,9 +357,11 @@ pub fn PlayerBar() -> impl IntoView {
             <NowPlaying open=sheet/>
             <div class="song">
                 <Show when=has>
-                    <button class="bar-cover" on:click=move |_| open() title="Go to what's playing">
-                        <Cover src=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "cover")).unwrap_or_default()))
-                            seed=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "key")).unwrap_or_default())) radius=8/>
+                    // The cover fills the bar's corner; click it to see it large
+                    // (on phones it opens the Now playing page).
+                    <button class="bar-cover" on:click=move |_| if is_phone() { sheet.set(true) } else { app.art.set(track.with_untracked(|t| t.as_ref().map(cover_of))) } title="See the cover large">
+                        <Cover src=Signal::derive(move || track.with(|t| t.as_ref().map(cover_of).unwrap_or_default()))
+                            seed=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "key")).unwrap_or_default())) radius=0/>
                     </button>
                 </Show>
                 <div class="song-text" on:click=move |event: MouseEvent| if has() && is_phone() {
@@ -502,9 +503,9 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
                     </button>
                     <IconButton icon="queue" size=20 tip="Queue" on_click=move |_| { close(); app.go("/queue"); }/>
                 </div>
-                <div class="np-art">
+                <button class="np-art" on:click=move |_| app.art.set(Some(cover.get_untracked())) title="See the cover large">
                     <Cover src=cover seed=field("key") radius=12/>
-                </div>
+                </button>
                 <div class="np-song">
                     <div class="np-text">
                         <div class="np-title"><Marquee text=field("title")/></div>
@@ -917,5 +918,43 @@ fn media_session(track: &Value) {
     let Ok(init) = js_sys::JSON::parse(&init.to_string()) else { return };
     if let Ok(metadata) = js_sys::Reflect::construct(&constructor, &js_sys::Array::of1(&init)) {
         let _ = js_sys::Reflect::set(&session, &"metadata".into(), &metadata);
+    }
+}
+
+/// A song's biggest cover.
+fn cover_of(track: &Value) -> String {
+    let big = s(track, "coverBig");
+    if big.is_empty() { s(track, "cover") } else { big }
+}
+
+/// Artwork shown large over the page (a cover was clicked): the biggest
+/// version the service has, closed by a click anywhere, Escape or ×.
+#[component]
+pub fn ArtViewer() -> impl IntoView {
+    let app = app();
+    let tried = RwSignal::new(0usize);
+    let sizes = Memo::new(move |_| app.art.get().map(|url| crate::state::big_art(&url)).unwrap_or_default());
+    Effect::new(move |_| {
+        sizes.track();
+        tried.set(0);
+    });
+    let close = move || app.art.set(None);
+    let _ = window_event_listener(ev::keydown, move |event: KeyboardEvent| {
+        if event.key() == "Escape" && app.art.get_untracked().is_some() {
+            close();
+        }
+    });
+    view! {
+        <Show when=move || app.art.get().is_some()>
+            <div class="art-viewer" on:click=move |_| close()>
+                <img
+                    src=move || sizes.with(|s| s.get(tried.get()).cloned().unwrap_or_default())
+                    alt="Cover"
+                    // A size the service doesn't have: try the next one down.
+                    on:error=move |_| if tried.get_untracked() + 1 < sizes.with_untracked(Vec::len) { tried.update(|t| *t += 1) }
+                />
+                <IconButton icon="close" size=22 class="art-close" tip="Close (Esc)" on_click=move |_| close()/>
+            </div>
+        </Show>
     }
 }

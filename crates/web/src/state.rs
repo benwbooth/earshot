@@ -205,6 +205,8 @@ pub struct App {
     pub prefer_music: RwSignal<bool>,
     pub recent_searches: RwSignal<Vec<String>>,
     pub toast: RwSignal<Option<(u32, String)>>,
+    /// Artwork shown large over the page (a cover was clicked).
+    pub art: RwSignal<Option<String>>,
     pub menu: RwSignal<Option<MenuRequest>>,
     pub prompt: RwSignal<Option<Prompt>>,
     pub sidebar_width: RwSignal<f64>,
@@ -234,6 +236,7 @@ impl App {
             prefer_music: persisted("preferMusic", true),
             recent_searches: persisted("recentSearches", Vec::new()),
             toast: RwSignal::new(None),
+            art: RwSignal::new(None),
             menu: RwSignal::new(None),
             prompt: RwSignal::new(None),
             sidebar_width: persisted("sidebarWidth", 248.0),
@@ -450,4 +453,52 @@ pub fn open_web(url: &str) {
     if !url.is_empty() {
         let _ = window().open_with_url_and_target(url, "_blank");
     }
+}
+
+/// The biggest versions of a cover the service has, biggest first (the art
+/// viewer tries each in turn): YouTube's maxres thumbnail, Bandcamp's
+/// 1200-pixel art, YouTube Music's and Deezer's 1200/1000-pixel covers…
+pub fn big_art(url: &str) -> Vec<String> {
+    let mut sizes = Vec::new();
+    let swap_size = |url: &str, marker: &str, new: &str| -> Option<String> {
+        // Replaces the "WxH" (or "tWxH") after `marker` with `new`.
+        let at = url.find(marker)? + marker.len();
+        let end = at + url[at..].find(|c: char| !(c.is_ascii_digit() || c == 'x' || c == 't'))?;
+        (end > at).then(|| format!("{}{}{}", &url[..at], new, &url[end..]))
+    };
+    if let Some(at) = url.find("ytimg.com/vi") {
+        let start = at + url[at..].find("/vi").unwrap_or(0);
+        let rest = &url[start..];
+        let parts: Vec<&str> = rest.splitn(4, '/').collect();
+        if parts.len() >= 3 {
+            let base = format!("{}/vi/{}/", &url[..start], parts[2]);
+            for name in ["maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg"] {
+                sizes.push(format!("{base}{name}"));
+            }
+        }
+    } else if url.contains("bcbits.com/img/") && url.ends_with(".jpg") {
+        if let Some(underscore) = url.rfind('_') {
+            sizes.push(format!("{}_10.jpg", &url[..underscore]));
+        }
+    } else if url.contains("dzcdn.net/images/") {
+        // ".../250x250-000000-80-0-0.jpg"
+        let at = url.rfind('/').map(|i| i + 1).unwrap_or(0);
+        if let Some(dash) = url[at..].find('-') {
+            sizes.push(format!("{}1000x1000{}", &url[..at], &url[at + dash..]));
+        }
+    } else if url.contains("sndcdn.com") {
+        for small in ["-large.", "-t300x300.", "-t200x200.", "-small.", "-crop."] {
+            if url.contains(small) {
+                sizes.push(url.replacen(small, "-t500x500.", 1));
+            }
+        }
+    } else if url.contains("googleusercontent.com") || url.contains("ggpht.com") {
+        if let Some(at) = url.rfind("=w") {
+            sizes.push(format!("{}=w1200-h1200{}", &url[..at], url[at..].find("-l").map(|i| &url[at + i..]).unwrap_or("")));
+        }
+    } else if let Some(bigger) = swap_size(url, "thumbnailer.mixcloud.com/unsafe/", "1000x1000") {
+        sizes.push(bigger);
+    }
+    sizes.push(url.to_owned());
+    sizes
 }
