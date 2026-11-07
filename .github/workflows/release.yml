@@ -162,7 +162,8 @@ jobs:
 
   appimage:
     needs: [version, web]
-    runs-on: ubuntu-22.04
+    # 24.04: the PipeWire bindings need PipeWire 1.0's headers (22.04 has 0.3.48).
+    runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -177,7 +178,7 @@ jobs:
             libgl1-mesa-dev libegl1 libxkbcommon-dev libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libnss3 libxcomposite1 libxdamage1 libxrandr2 \
-            libxtst6 libxkbfile1 libfuse2 file
+            libxtst6 libxkbfile1 libfuse2t64 file
       - uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
