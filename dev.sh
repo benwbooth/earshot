@@ -41,9 +41,20 @@ stop() {
 
 # Earlier dev.sh runs from this folder (not this one, nor the nix develop that
 # started it).
+# A run is bash running dev.sh, or the nix develop that runs it; a shell or
+# editor that merely mentions dev.sh doesn't count.
+is_run() {
+  local args=()
+  mapfile -d '' args < "/proc/$1/cmdline" 2>/dev/null || return 1
+  case "${args[0]##*/}" in
+    bash|sh) case "${args[1]:-}" in dev.sh|*/dev.sh) return 0 ;; esac ;;
+    nix) [[ " ${args[*]} " == *" --command $root/dev.sh "* ]] && return 0 ;;
+  esac
+  return 1
+}
 old=()
-for p in $(pgrep -u "$USER" -f '(^|[/ ])dev\.sh( |$)'); do
-  if [ "$p" != $$ ] && [ "$p" != "$PPID" ] && [ -e "/proc/$p" ] \
+for p in $(pgrep -u "$USER" -f 'dev\.sh'); do
+  if [ "$p" != $$ ] && [ "$p" != "$PPID" ] && is_run "$p" \
      && [ "$(readlink "/proc/$p/cwd" 2>/dev/null)" = "$root" ]; then
     old+=("$p")
   fi
