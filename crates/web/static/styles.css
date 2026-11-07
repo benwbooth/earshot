@@ -272,8 +272,14 @@ h1, h2, h3, p { margin: 0; }
 
 /* Waveform: six bars measured from the music (levels.rs sets their heights),
    growing up and down from the middle like the Qt app's, dots when quiet */
-.waveform { display: inline-flex; align-items: center; gap: 2px; height: 14px; flex: none; }
-.waveform i { width: 3px; height: 15%; min-height: 3px; border-radius: 99px; background: var(--accent); transition: height 60ms ease-out; }
+.waveform { display: inline-flex; align-items: center; gap: 2px; height: 14px; width: 28px; flex: none; overflow: hidden;
+  transition: width 200ms ease-out, opacity 200ms, margin 200ms ease-out; }
+.waveform.small { width: 25px; }
+/* Paused or stopped: the bars fade out and give their space back. */
+.waveform.still { width: 0; opacity: 0; }
+.song-title-row .waveform.still { margin-right: -8px; }
+.np-song .waveform.still { margin-right: -12px; }
+.waveform i { flex: none; width: 3px; height: 15%; min-height: 3px; border-radius: 99px; background: var(--accent); transition: height 60ms ease-out; }
 .waveform.small i { width: 2.5px; }
 
 /* Long text glides sideways instead of wrapping (only when it doesn't fit) */

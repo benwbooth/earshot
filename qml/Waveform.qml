@@ -3,17 +3,23 @@ import Earshot
 
 // Six bars, like the now-playing indicator in a phone's notch, driven by the
 // music actually coming out of the speakers (bass on the left, treble on the
-// right). They settle into dots when nothing plays.
+// right). When nothing plays they fade out and give their space back.
 Item {
     id: wave
     property bool active: Player.playing
+    property bool shown: active
     property color color: Theme.accent
     property real barWidth: 3
     property real gap: 2
     readonly property int bars: 6
 
-    implicitWidth: bars * barWidth + (bars - 1) * gap
+    implicitWidth: shown ? bars * barWidth + (bars - 1) * gap : 0
     implicitHeight: 16
+    visible: implicitWidth > 0.5
+    opacity: shown ? 1 : 0
+    clip: true
+    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    Behavior on opacity { NumberAnimation { duration: 200 } }
 
     Row {
         anchors.centerIn: parent

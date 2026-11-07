@@ -132,7 +132,7 @@ Window {
                 spacing: 3
                 RowLayout {
                     spacing: 8
-                    Waveform { visible: popup.message === ""; Layout.preferredHeight: 12; barWidth: 2.5; gap: 1.5 }
+                    Waveform { shown: popup.message === "" && Player.playing; Layout.preferredHeight: 12; barWidth: 2.5; gap: 1.5 }
                     Text {
                         text: popup.message !== "" ? "EARSHOT" : "NOW PLAYING"
                         color: Theme.accent

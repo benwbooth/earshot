@@ -47,7 +47,7 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: 8
                     Waveform {
-                        visible: bar.track !== null
+                        shown: bar.track !== null && Player.playing
                         Layout.preferredHeight: 14
                     }
                     // Click the song to open the album, playlist or page it's playing from.

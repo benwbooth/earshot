@@ -320,7 +320,7 @@ pub fn StatusView(
 }
 
 /// Six bars that move with the music actually playing (see levels.rs), and
-/// stay still when it can't be measured.
+/// stay still when it can't be measured. They fade out while nothing plays.
 #[component]
 pub fn Waveform(#[prop(default = false)] small: bool) -> impl IntoView {
     let player = app().player;
@@ -328,7 +328,7 @@ pub fn Waveform(#[prop(default = false)] small: bool) -> impl IntoView {
         .map(|band| view! { <i style=move || format!("height:{:.0}%", 15.0 + 85.0 * player.levels.with(|l| l[band]))></i> })
         .collect_view();
     view! {
-        <span class="waveform" class:small=small title=move || player.levels_note.get()>
+        <span class="waveform" class:small=small class:still=move || !player.playing() title=move || player.levels_note.get()>
             {bars}
         </span>
     }
