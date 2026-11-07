@@ -393,9 +393,33 @@ async fn answer_fresh(mut response: Response) -> Response {
     response
 }
 
+/// Which interface this server gives out: a fingerprint of its program and
+/// script files. A page left open since before an update sees it change and
+/// knows to reload (a web page otherwise keeps running the old version).
+fn interface_version(web_dir: &std::path::Path) -> String {
+    use std::hash::{Hash, Hasher};
+    fn walk(dir: &std::path::Path, hasher: &mut std::collections::hash_map::DefaultHasher) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let mut paths: Vec<PathBuf> = entries.filter_map(|entry| entry.ok().map(|e| e.path())).collect();
+        paths.sort();
+        for path in paths {
+            if path.is_dir() {
+                walk(&path, hasher);
+            } else if path.extension().is_some_and(|ext| ext == "wasm" || ext == "js" || ext == "css" || ext == "html") {
+                path.file_name().hash(hasher);
+                std::fs::read(&path).unwrap_or_default().hash(hasher);
+            }
+        }
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    walk(web_dir, &mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 /// The whole site: the API, then the interface's files, with every other
 /// path answered by index.html so links into pages work.
 pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
+    let version = interface_version(&web_dir);
     let (changes, _) = broadcast::channel(16);
     let sender = changes.clone();
     core.on_change(move || {
@@ -406,6 +430,7 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
         .layer(axum::middleware::map_request(ask_fresh))
         .layer(axum::middleware::map_response(answer_fresh));
     Router::new()
+        .route("/api/version", get(move || std::future::ready(version.clone())))
         .route("/api/events", get(events))
         .route("/api/levels", get(levels))
         .route("/api/audio", get(audio))

@@ -255,6 +255,7 @@ impl App {
             }
         });
         app.listen_for_changes();
+        app.check_for_update();
         app
     }
 
@@ -265,7 +266,48 @@ impl App {
         let on_change = Closure::<dyn Fn(web_sys::Event)>::new(move |_| revision.update(|r| *r += 1));
         let _ = source.add_event_listener_with_callback("library", on_change.as_ref().unchecked_ref());
         on_change.forget();
+        // Connecting again (the server restarted, perhaps updated), or coming
+        // back to the page: see whether Earshot was updated meanwhile.
+        let on_open = Closure::<dyn Fn(web_sys::Event)>::new(move |_| self.check_for_update());
+        let _ = source.add_event_listener_with_callback("open", on_open.as_ref().unchecked_ref());
+        let _ = window().document().map(|d| d.add_event_listener_with_callback("visibilitychange", on_open.as_ref().unchecked_ref()));
+        on_open.forget();
         std::mem::forget(source);
+    }
+
+    /// A page left open keeps running the version it loaded. When the server
+    /// gives out a newer one, reload at once if nothing is playing; otherwise
+    /// say so, once.
+    fn check_for_update(self) {
+        thread_local! {
+            static LOADED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+            static TOLD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        spawn_local(async move {
+            let Ok(response) = gloo_net::http::Request::get("/api/version").send().await else { return };
+            if !response.ok() {
+                return;
+            }
+            let Ok(version) = response.text().await else { return };
+            let changed = LOADED.with(|loaded| {
+                let mut loaded = loaded.borrow_mut();
+                match loaded.as_deref() {
+                    None => {
+                        *loaded = Some(version.clone());
+                        false
+                    }
+                    Some(known) => known != version,
+                }
+            });
+            if !changed {
+                return;
+            }
+            if self.player.engine.state.get_untracked() != 1 {
+                let _ = window().location().reload();
+            } else if !TOLD.with(|told| told.replace(true)) {
+                self.notify("Earshot has been updated: reload this page when it suits you to get the new version.");
+            }
+        });
     }
 
     pub fn set_navigate(&self, navigate: Callback<String>) {
