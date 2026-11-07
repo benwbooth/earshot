@@ -436,7 +436,7 @@ ApplicationWindow {
                 Qt.callLater(() => Player.playTracks([{ key: "yt:" + id, youtubeId: id, title: "Test video " + id, artist: "YouTube", duration: 0, cover:"https://i.ytimg.com/vi/" + id + "/hqdefault.jpg" }], 0, "Test"))
             } else if (arg.startsWith("--play-track=")) {
                 const track = JSON.parse(arg.substring(13))
-                Qt.callLater(() => Player.playTracks([track], 0, "Test"))
+                Qt.callLater(() => Player.playTracks([track], 0, track.album || "Test"))
             } else if (arg.startsWith("--web-version")) {
                 Api.call(Backend.openWebUi(), result => console.info("Web version at", result.url), message => console.warn(message))
             } else if (arg.startsWith("--settings-menu")) {
