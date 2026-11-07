@@ -53,6 +53,15 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.2" date="2026-11-07">
+      <description>
+        <ul>
+          <li>Every search puts YouTube Music's songs, official videos, albums and playlists first; YouTube's other videos follow.</li>
+          <li>Notifications are off by default; notices show inside the window, with settings to turn them back on.</li>
+          <li>Only one Earshot runs at a time across the Flatpak, AppImage and other builds.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-11-07">
       <description>
         <ul>

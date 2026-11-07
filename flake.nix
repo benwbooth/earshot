@@ -45,7 +45,7 @@
         # page, styles, the Qt app's icons and the Inter font.
         web = pkgs.rustPlatform.buildRustPackage {
           pname = "earshot-web";
-          version = "0.1.1";
+          version = "0.1.2";
           inherit src;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ pkgs.wasm-bindgen-cli pkgs.lld pkgs.woff2 ];
@@ -62,7 +62,7 @@
         # The web version's server, which also serves the interface.
         server = pkgs.rustPlatform.buildRustPackage {
           pname = "earshot-server";
-          version = "0.1.1";
+          version = "0.1.2";
           inherit src;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "earshot-server" ];
@@ -119,7 +119,7 @@
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "earshot";
-          version = "0.1.1";
+          version = "0.1.2";
           inherit src;
           cargoLock.lockFile = ./Cargo.lock;
 
