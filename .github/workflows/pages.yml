@@ -17,6 +17,9 @@ concurrency:
 
 jobs:
   deploy:
+    # GitHub Pages isn't available for private repositories on a free plan;
+    # the project page is published on benwbooth.github.io/earshot/ meanwhile.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
