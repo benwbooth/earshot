@@ -45,6 +45,29 @@ QtObject {
         property alias preferMusic: api.preferMusic
     }
 
+    // The biggest versions of a cover the service has, biggest first (the art
+    // viewer tries each in turn): YouTube's maxres thumbnail, Bandcamp's
+    // 1200-pixel art, YouTube Music's and Deezer's 1200/1000-pixel covers…
+    function bigArt(url) {
+        const sizes = []
+        const youtube = /^(https?:\/\/i\d?\.ytimg\.com\/vi(?:_webp)?\/[^/]+\/)[^/?]+/.exec(url)
+        if (youtube)
+            for (const name of ["maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg"])
+                sizes.push(youtube[1].replace("/vi_webp/", "/vi/") + name)
+        else if (/bcbits\.com\/img\/.+_\d+\.jpg$/.test(url))
+            sizes.push(url.replace(/_\d+\.jpg$/, "_10.jpg"))
+        else if (/sndcdn\.com/.test(url))
+            sizes.push(url.replace(/-(large|t\d+x\d+|crop|small|badge|tiny|mini)\./, "-t500x500."))
+        else if (/dzcdn\.net\/images\//.test(url))
+            sizes.push(url.replace(/\/\d+x\d+-/, "/1000x1000-"))
+        else if (/googleusercontent\.com|ggpht\.com/.test(url))
+            sizes.push(url.replace(/=w\d+-h\d+/, "=w1200-h1200").replace(/=s\d+/, "=s1200"))
+        else if (/thumbnailer\.mixcloud\.com\/unsafe\/\d+x\d+\//.test(url))
+            sizes.push(url.replace(/\/unsafe\/\d+x\d+\//, "/unsafe/1000x1000/"))
+        sizes.push(url)
+        return sizes
+    }
+
     // Where a song lives on the web: its YouTube video (at its chapter), or its
     // page on Bandcamp, SoundCloud, Mixcloud or the Internet Archive.
     function songPage(track) {

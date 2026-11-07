@@ -363,6 +363,12 @@ ApplicationWindow {
 
     ResizeEdges { window: window }
 
+    ArtViewer { id: artViewer }
+    Connections {
+        target: Nav
+        function onShowArt(url) { artViewer.show(url) }
+    }
+
     // A notice inside the window, just above the player bar, for a few seconds.
     Rectangle {
         id: toast

@@ -104,6 +104,12 @@ Flickable {
                 source: page.album ? (page.album.coverBig || page.album.cover) : ""
                 seed: page.args.id || ""
                 placeholderIcon: "album"
+                // Click to see the cover large.
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Nav.showArt(page.album ? (page.album.coverBig || page.album.cover) : "")
+                }
             }
 
             ColumnLayout {

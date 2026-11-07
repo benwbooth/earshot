@@ -10,6 +10,8 @@ QtObject {
     signal askImportPlaylist()
     signal search(string query)
     signal toggleMini()
+    // Artwork shown large over the window.
+    signal showArt(string url)
 
     property string current: "home"
     property var currentArgs: ({})

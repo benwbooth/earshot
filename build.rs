@@ -21,6 +21,7 @@ fn main() {
         QmlFile::from("qml/WindowButtons.qml"),
         QmlFile::from("qml/NowPlayingPopup.qml"),
         QmlFile::from("qml/PlayerBar.qml"),
+        QmlFile::from("qml/ArtViewer.qml"),
         QmlFile::from("qml/Icon.qml"),
         QmlFile::from("qml/IconButton.qml"),
         QmlFile::from("qml/Cover.qml"),
