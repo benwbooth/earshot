@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Earshot · a music player that finds the music for you</title>
-<meta name="description" content="Earshot is a free desktop music player: charts for every genre and decade, Reddit radio, real albums and artist pages, and mixes made from what you play. Windows, macOS, Linux and a web version for phones.">
+<title>Earshot · all of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and more</title>
+<meta name="description" content="Earshot is a free music player for all of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive, in one library. Windows, macOS, Linux and a web version for phones.">
 <meta property="og:title" content="Earshot">
-<meta property="og:description" content="A free music player that finds the music for you.">
-<meta property="og:image" content="https://benwbooth.github.io/earshot/screenshots/home.webp">
+<meta property="og:description" content="All of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive, in one free player.">
+<meta property="og:image" content="https://benwbooth.github.io/earshot/screenshots/search.webp">
 <link rel="icon" href="./earshot.svg">
 <style>
   :root { --bg: #0b0c11; --surface: #14161e; --surface2: #1b1e29; --text: #f2f3f7; --muted: #9aa1b5;
@@ -62,42 +62,53 @@
 <header class="hero">
   <div class="wrap">
     <div class="brand"><img src="./earshot.svg" alt=""><h1>Earshot</h1></div>
-    <p class="tagline">A music player that finds the music for you.</p>
-    <p class="lead">Charts for every genre and decade, radio stations made of the songs people share on Reddit, real albums and artist pages, and mixes built from what you play. Free, with no account to sign up for.</p>
+    <p class="tagline">All of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive, in one player.</p>
+    <p class="lead">Search them all at once, play full albums and soundtracks, keep your playlists in one place, and let Earshot find more music like what you play. For Windows, macOS and Linux, with a web version for your phone. Free, with no account to sign up for.</p>
     <div class="buttons">
       <a class="btn primary" href="#download">Download</a>
       <a class="btn" href="#web">Web &amp; phone version</a>
       <a class="btn" href="https://github.com/benwbooth/earshot">GitHub</a>
     </div>
-    <img class="shot" src="./screenshots/home.webp" width="1320" height="860" alt="Earshot's home screen with Discover Weekly and Daily Mixes">
+    <img class="shot" src="./screenshots/search.webp" width="1320" height="860" alt="Searching YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive at once">
   </div>
 </header>
 
 <main class="wrap">
   <h2>Everything you want to hear</h2>
-  <p class="sub">One player for the big catalogues and the corners of the internet where music actually gets discovered.</p>
+  <p class="sub">YouTube has almost every song, album and soundtrack ever made. Earshot makes it a proper music library, and puts Bandcamp, SoundCloud, Mixcloud and the Internet Archive right next to it.</p>
   <div class="features">
-    <div class="card"><h3>Made for you</h3><p>Discover Weekly, three Daily Mixes, Release Radar and Albums for you, built from what you play. Your listening history never leaves your computer.</p></div>
-    <div class="card"><h3>Reddit radio</h3><p>About 50 music communities, from r/listentothis to r/synthwave, played in the order their members rank them.</p></div>
-    <div class="card"><h3>Charts by genre and era</h3><p>Trending songs and albums, charts for 20+ genres and the hits of every decade from the 50s to today.</p></div>
-    <div class="card"><h3>Search everywhere</h3><p>Songs, albums and artists, plus YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive in one search.</p></div>
-    <div class="card"><h3>Browse like a record shop</h3><p>Bandcamp by genre or any tag, YouTube's full albums and soundtracks, Mixcloud's DJ mixes, live concerts and 78s.</p></div>
-    <div class="card"><h3>Real albums and artists</h3><p>Full track lists, artwork, release dates and complete discographies. Save the albums you love.</p></div>
+    <div class="card"><h3>All of YouTube's music</h3><p>Songs, music videos, playlists and full albums, with music ahead of everything else in search results.</p></div>
+    <div class="card"><h3>Albums from long videos</h3><p>Full-length album and soundtrack videos open as albums, split into their songs.</p></div>
+    <div class="card"><h3>Every service in one place</h3><p>One search covers YouTube, Bandcamp, SoundCloud, Mixcloud and the Internet Archive, and their songs share your playlists and queue.</p></div>
+    <div class="card"><h3>Browse like a record shop</h3><p>YouTube's albums and soundtracks by mood, Bandcamp by any tag, SoundCloud's trending tracks, Mixcloud's DJ mixes, live concerts and 78s.</p></div>
+    <div class="card"><h3>Made for you</h3><p>Discover Weekly, Daily Mixes, Release Radar and Albums for you, from what you play anywhere. Your history stays on your computer.</p></div>
     <div class="card"><h3>Never run out</h3><p>Turn on random radio and Earshot keeps playing songs like the last ones when your queue ends.</p></div>
-    <div class="card"><h3>Playlists your way</h3><p>Make and reorder playlists, heart songs, and import playlists from YouTube, SoundCloud or Mixcloud with a link.</p></div>
+    <div class="card"><h3>Real albums and artists</h3><p>Full track lists, artwork, release dates and complete discographies. Save the albums you love.</p></div>
+    <div class="card"><h3>More ways to discover</h3><p>Trending songs, charts for 20+ genres and every decade, and radio stations made of songs shared on Reddit.</p></div>
     <div class="card"><h3>Stays out of the way</h3><p>A mini player, a now-playing card when a song starts, a tray icon and media keys.</p></div>
+  </div>
+
+  <h2>Where the music comes from</h2>
+  <p class="sub">Everything plays from the services themselves, in their own players. Nothing is downloaded.</p>
+  <div class="features">
+    <div class="card"><h3>YouTube</h3><p>Most of the music: songs, official videos, playlists, full albums, soundtracks and live sets, found with YouTube's search and YouTube Music's.</p></div>
+    <div class="card"><h3>Bandcamp</h3><p>Independent artists and labels, by genre or tag, with Bandcamp's own picks of the day.</p></div>
+    <div class="card"><h3>SoundCloud</h3><p>Tracks, remixes and playlists from artists, DJs and producers.</p></div>
+    <div class="card"><h3>Mixcloud</h3><p>DJ mixes and radio shows.</p></div>
+    <div class="card"><h3>The Internet Archive</h3><p>Live concerts from the Live Music Archive, 78 rpm records and netlabel releases.</p></div>
+    <div class="card"><h3>Deezer and Reddit</h3><p>Album and artist details and artwork from Deezer's catalogue, and the songs people share on Reddit for Reddit radio.</p></div>
   </div>
 
   <h2>Take a look</h2>
   <div class="gallery">
+    <figure><img class="shot" loading="lazy" src="./screenshots/youtube.webp" width="1320" height="860" alt="YouTube"><figcaption>YouTube's albums, soundtracks and songs</figcaption></figure>
     <figure><img class="shot" loading="lazy" src="./screenshots/album.webp" width="1320" height="860" alt="An album page"><figcaption>Albums with full track lists</figcaption></figure>
+    <figure><img class="shot" loading="lazy" src="./screenshots/home.webp" width="1320" height="860" alt="Made for you: Discover Weekly and Daily Mixes"><figcaption>Made for you: mixes from what you play</figcaption></figure>
     <figure><img class="shot" loading="lazy" src="./screenshots/artist.webp" width="1320" height="860" alt="An artist page"><figcaption>Artists and their complete discography</figcaption></figure>
-    <figure><img class="shot" loading="lazy" src="./screenshots/search.webp" width="1320" height="860" alt="Search results"><figcaption>One search across every service</figcaption></figure>
-    <figure><img class="shot" loading="lazy" src="./screenshots/radio.webp" width="1320" height="860" alt="Reddit radio stations"><figcaption>Reddit radio</figcaption></figure>
-    <figure><img class="shot" loading="lazy" src="./screenshots/trending.webp" width="1320" height="860" alt="Trending songs"><figcaption>What's trending right now</figcaption></figure>
     <figure><img class="shot" loading="lazy" src="./screenshots/bandcamp.webp" width="1320" height="860" alt="Bandcamp's indie-rock tag"><figcaption>Bandcamp by any tag</figcaption></figure>
     <figure><img class="shot" loading="lazy" src="./screenshots/soundcloud.webp" width="1320" height="860" alt="SoundCloud"><figcaption>SoundCloud's trending tracks</figcaption></figure>
-    <figure><img class="shot" loading="lazy" src="./screenshots/youtube.webp" width="1320" height="860" alt="YouTube"><figcaption>YouTube's albums, soundtracks and songs</figcaption></figure>
+    <figure><img class="shot" loading="lazy" src="./screenshots/trending.webp" width="1320" height="860" alt="Trending songs"><figcaption>What's trending right now</figcaption></figure>
+    <figure><img class="shot" loading="lazy" src="./screenshots/radio.webp" width="1320" height="860" alt="Reddit radio stations"><figcaption>Reddit radio</figcaption></figure>
     <figure><img class="shot" loading="lazy" src="./screenshots/albums-grid.webp" width="1320" height="860" alt="Your albums as covers"><figcaption>Your albums as covers…</figcaption></figure>
     <figure><img class="shot" loading="lazy" src="./screenshots/albums-list.webp" width="1320" height="860" alt="Your albums as a list"><figcaption>…or as a list</figcaption></figure>
   </div>
