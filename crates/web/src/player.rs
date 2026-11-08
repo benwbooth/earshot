@@ -49,8 +49,6 @@ pub struct Player {
     blocked_message: StoredValue<String>,
     /// The last video played on youtube.com's own page by Earshot's server.
     relay_tried: StoredValue<String>,
-    /// The iPhone notice about YouTube songs starting slowly was shown.
-    relay_explained: StoredValue<bool>,
     /// The video whose relayed stream was picked up again after breaking off.
     relay_resumed: StoredValue<String>,
     /// The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
@@ -117,7 +115,6 @@ impl Player {
             direct_tried: StoredValue::new(String::new()),
             blocked_message: StoredValue::new(String::new()),
             relay_tried: StoredValue::new(String::new()),
-            relay_explained: StoredValue::new(false),
             relay_resumed: StoredValue::new(String::new()),
             elsewhere_tried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
@@ -258,9 +255,6 @@ impl Player {
                     self.loading.set(false);
                     self.failures.set_value(0);
                     self.track_started(&track);
-                    if engine.relaying() {
-                        self.notify(format!("\"{}\" plays through Earshot's server, because its owner keeps it on youtube.com", s(&track, "title")));
-                    }
                     let video = engine.video_id.get_untracked();
                     if track["youtubeId"].is_null() && track["service"].is_null() {
                         api::send("rememberVideo", json!({ "key": s(&track, "key"), "video": video }));
@@ -315,11 +309,6 @@ impl Player {
                 let at = engine.position.get_untracked().max(self.track_start());
                 let whole = num(&track, "start") == 0.0 && num(&track, "end") == 0.0;
                 engine.load_relay(&video, at, if whole { num(&track, "duration") } else { 0.0 });
-                // On iPhones every YouTube song comes this way: say why it takes a while (once).
-                if crate::engine::is_ios() && !self.relay_explained.get_value() {
-                    self.relay_explained.set_value(true);
-                    self.notify("YouTube songs start through Earshot's server on iPhone, which takes about 10 seconds.");
-                }
                 return;
             }
             // The relayed stream broke off mid-song (Safari drops it now and then):
@@ -343,8 +332,10 @@ impl Player {
                 self.load_video(&video);
                 return;
             }
+            // Only a short message if nothing would play it (the reason goes to the log).
+            crate::report::send(format!("couldn't play {}: {message}", s(&track, "title")));
             let _ = code;
-            let message = format!("Couldn't play \"{}\": {message}", s(&track, "title"));
+            let message = format!("Couldn't play \"{}\".", s(&track, "title"));
             // No upload will play here: look for the same song on SoundCloud or Bandcamp.
             if track["service"].is_null() && num(&track, "start") == 0.0 && self.elsewhere_tried.get_value() != key {
                 self.elsewhere_tried.set_value(key.clone());
@@ -364,7 +355,7 @@ impl Player {
                             });
                             player.resolve_current();
                         }
-                        None => player.fail(format!("{message} No other upload of it, and no copy on SoundCloud or Bandcamp, would play here either.")),
+                        None => player.fail(message),
                     }
                 });
                 return;

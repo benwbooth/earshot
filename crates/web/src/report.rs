@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use crate::player::Player;
 use crate::state::window;
 
-fn send(line: String) {
+pub fn send(line: String) {
     spawn_local(async move {
         if let Ok(request) = gloo_net::http::Request::post("/api/report").body(line) {
             let _ = request.send().await;
