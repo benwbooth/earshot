@@ -4,8 +4,8 @@
 #   brew tap benwbooth/earshot https://github.com/benwbooth/earshot
 #   brew install --cask earshot
 cask "earshot" do
-  version "0.1.2"
-  sha256 "358c2a3911f8944912084f7135a6474e53dc93e5cb91509e8dd6410a7d4bc742"
+  version "0.1.3"
+  sha256 "8dbd4b8a9980ba939e05df30276a7ed310c273c55c04d3ed3f9522f8dd896efc"
 
   url "https://github.com/benwbooth/earshot/releases/download/v#{version}/Earshot-#{version}-macos-arm64.dmg"
   name "Earshot"
