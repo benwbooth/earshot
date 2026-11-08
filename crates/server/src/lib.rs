@@ -292,14 +292,18 @@ async fn soundcloud_audio(Query(query): Query<HashMap<String, String>>, headers:
         return (StatusCode::BAD_REQUEST, "Which track?").into_response();
     };
     let range = headers.get(header::RANGE).and_then(|value| value.to_str().ok()).map(str::to_owned);
-    let file = match tokio::task::spawn_blocking(move || soundcloud_file(track)).await {
-        Ok(Ok(file)) => file,
-        Ok(Err(message)) => return (StatusCode::BAD_GATEWAY, message).into_response(),
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
+    match tokio::task::spawn_blocking(move || soundcloud_file(track)).await {
+        Ok(Ok(file)) => serve_kept(&file, range.as_deref()),
+        Ok(Err(message)) => (StatusCode::BAD_GATEWAY, message).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// A whole file kept in memory, answered with byte ranges.
+fn serve_kept(file: &(String, Bytes), range: Option<&str>) -> Response {
     let (mime, bytes) = (&file.0, &file.1);
     let length = bytes.len() as u64;
-    let (start, end) = byte_range(range.as_deref(), length);
+    let (start, end) = byte_range(range, length);
     if start > end || start >= length {
         return Response::builder()
             .status(416)
@@ -320,54 +324,98 @@ async fn soundcloud_audio(Query(query): Query<HashMap<String, String>>, headers:
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
 }
 
-/// A SoundCloud track's whole audio file and its type, kept for the last few
-/// tracks (a browser asks for the same file in several ranges).
-fn soundcloud_file(track: u64) -> Result<std::sync::Arc<(String, Bytes)>, String> {
-    static KEPT: OnceLock<std::sync::Mutex<VecDeque<(u64, std::sync::Arc<(String, Bytes)>)>>> = OnceLock::new();
-    static LOOKING: OnceLock<std::sync::Mutex<HashMap<u64, std::sync::Arc<std::sync::Mutex<()>>>>> = OnceLock::new();
+type Kept = std::sync::Arc<(String, Bytes)>;
+
+/// A song's whole audio file and its type, made by `make` once and kept for
+/// the last few songs (a browser asks for the same file in several ranges).
+/// One making per song at a time: a warm-up under way is waited for.
+fn kept_file(key: &str, make: impl FnOnce() -> Result<(String, Vec<u8>), String>) -> Result<Kept, String> {
+    static KEPT: OnceLock<std::sync::Mutex<VecDeque<(String, Kept)>>> = OnceLock::new();
+    static MAKING: OnceLock<std::sync::Mutex<HashMap<String, std::sync::Arc<std::sync::Mutex<()>>>>> = OnceLock::new();
     let kept = KEPT.get_or_init(Default::default);
-    let turn = LOOKING.get_or_init(Default::default).lock().unwrap().entry(track).or_default().clone();
+    let turn = MAKING.get_or_init(Default::default).lock().unwrap().entry(key.to_owned()).or_default().clone();
     let _turn = turn.lock().unwrap();
-    if let Some((_, file)) = kept.lock().unwrap().iter().find(|(id, _)| *id == track) {
+    if let Some((_, file)) = kept.lock().unwrap().iter().find(|(k, _)| k == key) {
         return Ok(file.clone());
     }
-    let (parts, kind) = earshot_core::soundcloud::audio(track)?;
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(Duration::from_secs(15)))
-        .timeout_per_read(Some(Duration::from_secs(30)))
-        .build()
-        .into();
-    let mut joined = Vec::new();
-    for part in &parts {
-        let mut response = agent.get(part).call().map_err(|error| format!("SoundCloud: {error}"))?;
-        let piece = response.body_mut().with_config().limit(200 * 1024 * 1024).read_to_vec().map_err(|error| format!("SoundCloud: {error}"))?;
-        joined.extend_from_slice(&piece);
-    }
-    // AAC comes as HLS's fragmented MP4, which browsers don't reliably play
-    // as one file: make it a plain MP3 (decoded, then encoded with LAME).
-    let joined = if kind == "mp3" {
-        joined
-    } else {
-        let mut encoder: Option<mp3::Encoder> = None;
-        let mut out = Vec::new();
-        envelope::decode_stereo(joined, "mp4", |rate, samples| {
-            if encoder.is_none() {
-                encoder = Some(mp3::Encoder::new(rate, 192)?);
-            }
-            encoder.as_mut().map(|e| e.encode(samples, &mut out)).unwrap_or(Ok(()))
-        })?;
-        if let Some(encoder) = encoder.as_mut() {
-            encoder.flush(&mut out);
-        }
-        out
-    };
-    let file = std::sync::Arc::new(("audio/mpeg".to_owned(), Bytes::from(joined)));
+    let (mime, bytes) = make()?;
+    let file: Kept = std::sync::Arc::new((mime, Bytes::from(bytes)));
     let mut kept = kept.lock().unwrap();
-    kept.push_back((track, file.clone()));
-    while kept.len() > 4 {
+    kept.push_back((key.to_owned(), file.clone()));
+    while kept.len() > 6 {
         kept.pop_front();
     }
     Ok(file)
+}
+
+/// AAC (an MP4, fragmented as streaming sites send it, which Safari misreads
+/// the length of) as a plain MP3: decoded, then encoded with LAME.
+fn to_mp3(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let mut encoder: Option<mp3::Encoder> = None;
+    let mut out = Vec::new();
+    envelope::decode_stereo(bytes, "mp4", |rate, samples| {
+        if encoder.is_none() {
+            encoder = Some(mp3::Encoder::new(rate, 192)?);
+        }
+        encoder.as_mut().map(|e| e.encode(samples, &mut out)).unwrap_or(Ok(()))
+    })?;
+    if let Some(encoder) = encoder.as_mut() {
+        encoder.flush(&mut out);
+    }
+    Ok(out)
+}
+
+/// A SoundCloud track's whole audio, as an MP3.
+fn soundcloud_file(track: u64) -> Result<Kept, String> {
+    kept_file(&format!("soundcloud:{track}"), || {
+        let (parts, kind) = earshot_core::soundcloud::audio(track)?;
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_per_read(Some(Duration::from_secs(30)))
+            .build()
+            .into();
+        let mut joined = Vec::new();
+        for part in &parts {
+            let mut response = agent.get(part).call().map_err(|error| format!("SoundCloud: {error}"))?;
+            let piece = response.body_mut().with_config().limit(200 * 1024 * 1024).read_to_vec().map_err(|error| format!("SoundCloud: {error}"))?;
+            joined.extend_from_slice(&piece);
+        }
+        Ok(("audio/mpeg".to_owned(), if kind == "mp3" { joined } else { to_mp3(joined)? }))
+    })
+}
+
+/// Songs up to this size (about 40 minutes) are made into MP3s whole; longer
+/// videos (whole albums, split into chapters) stream as they are.
+const WHOLE_FILE_LIMIT: u64 = 40 * 1024 * 1024;
+
+/// A YouTube video's whole audio as an MP3, so Safari knows its length (it
+/// misreads YouTube's own fragmented MP4 as twice as long) and seeks in it.
+fn youtube_file(video: &str) -> Result<Kept, String> {
+    kept_file(&format!("youtube:{video}"), || {
+        use earshot_core::youtube::AUDIO_PIECE;
+        let (url, length) = youtube_address(video, false)?;
+        if length > WHOLE_FILE_LIMIT {
+            return Err("too long to keep whole".into());
+        }
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_per_read(Some(Duration::from_secs(30)))
+            .build()
+            .into();
+        let mut whole = Vec::with_capacity(length as usize);
+        let mut at = 0;
+        while at < length {
+            let to = (at + AUDIO_PIECE - 1).min(length - 1);
+            let mut response = agent.get(&format!("{url}&range={at}-{to}")).call().map_err(|error| format!("YouTube: {error}"))?;
+            let piece = response.body_mut().with_config().limit(AUDIO_PIECE + 1024).read_to_vec().map_err(|error| format!("YouTube: {error}"))?;
+            if piece.is_empty() {
+                break;
+            }
+            at += piece.len() as u64;
+            whole.extend_from_slice(&piece);
+        }
+        Ok(("audio/mpeg".to_owned(), to_mp3(whole)?))
+    })
 }
 
 /// Looks up a YouTube video's audio address ahead of time (the next song in
@@ -378,7 +426,7 @@ async fn youtube_warm(Query(query): Query<HashMap<String, String>>) -> StatusCod
         return StatusCode::BAD_REQUEST;
     }
     tokio::task::spawn_blocking(move || {
-        let _ = youtube_address(&video, false);
+        let _ = youtube_file(&video);
     });
     StatusCode::ACCEPTED
 }
@@ -408,6 +456,14 @@ async fn youtube_audio(Query(query): Query<HashMap<String, String>>, headers: He
         return (StatusCode::BAD_REQUEST, "Which video?").into_response();
     }
     let range = headers.get(header::RANGE).and_then(|value| value.to_str().ok()).map(str::to_owned);
+    // Whole, as an MP3, when it's a song's length; otherwise streamed as YouTube sends it.
+    let whole = {
+        let video = video.clone();
+        tokio::task::spawn_blocking(move || youtube_file(&video)).await
+    };
+    if let Ok(Ok(file)) = whole {
+        return serve_kept(&file, range.as_deref());
+    }
     let (head_tx, head_rx) = tokio::sync::oneshot::channel();
     let (body_tx, body_rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(8);
     tokio::task::spawn_blocking(move || {
