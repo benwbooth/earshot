@@ -75,7 +75,7 @@
           postInstall = ''
             mkdir -p $out/share/earshot
             ln -s ${web} $out/share/earshot/web
-            wrapProgram $out/bin/earshot-server --set-default EARSHOT_CHROMIUM ${pkgs.chromium}/bin/chromium
+            wrapProgram $out/bin/earshot-server --set-default EARSHOT_CHROMIUM ${pkgs.chromium}/bin/chromium --set-default EARSHOT_YTDLP ${pkgs.yt-dlp}/bin/yt-dlp
           '';
           meta = {
             description = "Earshot's web version: the music player in a browser, on desktops and phones";

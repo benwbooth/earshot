@@ -222,9 +222,60 @@ fn youtube_address(video: &str, fresh: bool) -> Result<(String, u64), String> {
     if !fresh && let Some((when, answer)) = found.lock().unwrap().get(video).cloned() && when.elapsed() < Duration::from_secs(7200) {
         return answer;
     }
-    let answer = earshot_core::youtube::whole_audio(video);
+    // YouTube often hands only the start over without a sign-in; yt-dlp
+    // (when it's there) knows how to get the whole of it.
+    let answer = earshot_core::youtube::whole_audio(video).or_else(|first| ytdlp_address(video).map_err(|why| {
+        eprintln!("earshot: yt-dlp couldn't get {video}'s audio either: {why}");
+        first
+    }));
     found.lock().unwrap().insert(video.to_owned(), (std::time::Instant::now(), answer.clone()));
     answer
+}
+
+/// A video's AAC audio address and size, found by yt-dlp (`EARSHOT_YTDLP`, or
+/// yt-dlp on PATH). YouTube's addresses now work only from a moment after
+/// they're handed out (`available_at`), so this waits until then.
+fn ytdlp_address(video: &str) -> Result<(String, u64), String> {
+    let program = std::env::var_os("EARSHOT_YTDLP").filter(|p| !p.is_empty()).unwrap_or_else(|| "yt-dlp".into());
+    let started = std::time::Instant::now();
+    let mut child = std::process::Command::new(&program)
+        .args(["-q", "--no-warnings", "--no-playlist", "-f", "140/bestaudio[ext=m4a]", "-j"])
+        .arg(format!("https://www.youtube.com/watch?v={video}"))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("{}: {error}", std::path::Path::new(&program).display()))?;
+    let mut stdout = child.stdout.take().ok_or("no output")?;
+    let reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = std::io::Read::read_to_string(&mut stdout, &mut text);
+        text
+    });
+    loop {
+        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
+            break;
+        }
+        if started.elapsed() > Duration::from_secs(40) {
+            let _ = child.kill();
+            return Err("yt-dlp took too long".into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let text = reader.join().unwrap_or_default();
+    let info: serde_json::Value = serde_json::from_str(text.trim()).map_err(|_| "yt-dlp didn't find the audio".to_owned())?;
+    let url = info["url"].as_str().ok_or("yt-dlp gave no address")?.to_owned();
+    let length = info["filesize"]
+        .as_u64()
+        .or_else(|| url.split("clen=").nth(1).and_then(|rest| rest.split('&').next()).and_then(|n| n.parse().ok()))
+        .ok_or("yt-dlp gave no size")?;
+    if let Some(at) = info["available_at"].as_f64() {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        let wait = (at - now + 0.3).clamp(0.0, 15.0);
+        std::thread::sleep(Duration::from_secs_f64(wait));
+    }
+    eprintln!("earshot: yt-dlp found {video}'s audio in {:.1}s", started.elapsed().as_secs_f64());
+    Ok((url, length))
 }
 
 /// "bytes=10-" or "bytes=10-99" as the first and last byte wanted.
