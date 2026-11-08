@@ -218,6 +218,11 @@ async fn audio(Query(query): Query<HashMap<String, String>>, headers: HeaderMap)
 /// worse than one found elsewhere.
 fn youtube_address(video: &str, fresh: bool) -> Result<(String, u64), String> {
     static FOUND: OnceLock<std::sync::Mutex<HashMap<String, (std::time::Instant, Result<(String, u64), String>)>>> = OnceLock::new();
+    // One look per video at a time: a song being warmed up (see `youtube_warm`)
+    // and then asked for waits for that look rather than starting another.
+    static LOOKING: OnceLock<std::sync::Mutex<HashMap<String, std::sync::Arc<std::sync::Mutex<()>>>>> = OnceLock::new();
+    let turn = LOOKING.get_or_init(Default::default).lock().unwrap().entry(video.to_owned()).or_default().clone();
+    let _turn = turn.lock().unwrap();
     let found = FOUND.get_or_init(Default::default);
     if !fresh && let Some((when, answer)) = found.lock().unwrap().get(video).cloned() && when.elapsed() < Duration::from_secs(7200) {
         return answer;
@@ -276,6 +281,19 @@ fn ytdlp_address(video: &str) -> Result<(String, u64), String> {
     }
     eprintln!("earshot: yt-dlp found {video}'s audio in {:.1}s", started.elapsed().as_secs_f64());
     Ok((url, length))
+}
+
+/// Looks up a YouTube video's audio address ahead of time (the next song in
+/// the queue), so playing it later starts at once. Answers straight away.
+async fn youtube_warm(Query(query): Query<HashMap<String, String>>) -> StatusCode {
+    let video = query.get("v").cloned().unwrap_or_default();
+    if video.is_empty() || video.len() > 20 || !video.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return StatusCode::BAD_REQUEST;
+    }
+    tokio::task::spawn_blocking(move || {
+        let _ = youtube_address(&video, false);
+    });
+    StatusCode::ACCEPTED
 }
 
 /// "bytes=10-" or "bytes=10-99" as the first and last byte wanted.
@@ -500,6 +518,7 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
         .route("/api/audio", get(audio))
         .route("/api/envelope", get(envelope))
         .route("/api/youtube-audio", get(youtube_audio))
+        .route("/api/youtube-warm", get(youtube_warm))
         .route("/api/relay", get(relay_audio))
         .route("/api/{method}", post(call))
         .fallback_service(files)

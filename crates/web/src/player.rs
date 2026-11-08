@@ -683,7 +683,11 @@ impl Player {
     /// Finds a track's video ahead of time (songs you point at, the next songs).
     pub fn look_ahead(&self, track: &Value) {
         let service = s(track, "service");
-        if track["youtubeId"].is_string() || ["soundcloud", "mixcloud", "archive"].contains(&service.as_str()) {
+        if let Some(video) = track["youtubeId"].as_str() {
+            warm(video);
+            return;
+        }
+        if ["soundcloud", "mixcloud", "archive"].contains(&service.as_str()) {
             return;
         }
         let key = s(track, "key");
@@ -715,6 +719,9 @@ impl Player {
         spawn_local(async move {
             if let Ok(result) = api::call("resolve", json!({ "track": track })).await {
                 let videos: Vec<String> = list(&result, "videos").iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
+                if let Some(first) = videos.first() {
+                    warm(first);
+                }
                 player.found.update(|f| {
                     f.insert(key.clone(), videos);
                 });
@@ -902,4 +909,15 @@ impl Player {
 fn window_path() -> String {
     let location = crate::state::window().location();
     format!("{}{}", location.pathname().unwrap_or_default(), location.search().unwrap_or_default())
+}
+
+/// On iPhones and iPads, where YouTube songs play through Earshot's server:
+/// has the server look the video's audio up now, so it starts at once later.
+fn warm(video: &str) {
+    if crate::engine::is_ios() && !video.is_empty() && !video.contains(':') {
+        let url = format!("/api/youtube-warm?v={}", crate::state::encode(video));
+        spawn_local(async move {
+            let _ = gloo_net::http::Request::get(&url).send().await;
+        });
+    }
 }
