@@ -468,19 +468,6 @@ impl Engine {
         }
     }
 
-    /// Hangs up the relayed stream, keeping the place.
-    fn relay_hang_up(&self) {
-        let a = audio();
-        if !a.src().is_empty() {
-            let at = self.offset.get_value() + a.current_time();
-            let _ = a.pause();
-            a.remove_attribute("src").ok();
-            a.load();
-            self.offset.set_value(at);
-            self.position.set(at);
-        }
-        self.state.set(2);
-    }
 
     // SoundCloud's widget
 
@@ -659,7 +646,9 @@ impl Engine {
     pub fn pause(&self) {
         match self.mode.get_value() {
             Mode::YouTube => self.yt_command("pauseVideo", json!([])),
-            Mode::Audio if self.relaying() => self.relay_hang_up(),
+            // A relayed stream stays connected while paused (the server pauses
+            // youtube.com's page when nobody's taking the sound), so playing
+            // again carries straight on instead of reconnecting.
             Mode::Audio => {
                 let _ = audio().pause();
             }
