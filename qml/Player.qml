@@ -195,7 +195,9 @@ QtObject {
                 player.engine.load(player.candidates[player.candidate], player.trackStart)
                 return
             }
-            const failure = "Couldn't play \"" + player.current.title + "\": " + message
+            // Only a short message if nothing would play it; the reason goes to the log.
+            console.warn("Couldn't play " + player.current.title + ": " + message)
+            const failure = "Couldn't play \"" + player.current.title + "\"."
             // No upload will play: look for the same song on SoundCloud or Bandcamp.
             const track = player.current
             if (!track.service && !(track.start > 0) && player.elsewhereTried !== track.key) {
@@ -207,7 +209,7 @@ QtObject {
                     if (!player.current || player.current.key !== track.key || player.index !== at)
                         return
                     if (!song) {
-                        player.fail(failure + " No other upload of it, and no copy on SoundCloud or Bandcamp, would play here either.")
+                        player.fail(failure)
                         return
                     }
                     const q = player.queue.slice()
