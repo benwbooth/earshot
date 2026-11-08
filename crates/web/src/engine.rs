@@ -238,13 +238,16 @@ impl Engine {
                 // A relayed stream starts where it was asked to; its own length isn't the video's.
                 self.position.set(self.offset.get_value() + a.current_time());
                 if self.relay.with_value(Option::is_none) {
-                    // YouTube's audio files often don't say how long they are
-                    // (Safari reports forever): then how far it can seek is.
-                    let length = if a.duration().is_finite() {
-                        a.duration()
-                    } else {
-                        let seekable = a.seekable();
-                        if seekable.length() > 0 { seekable.end(seekable.length() - 1).unwrap_or(0.0) } else { 0.0 }
+                    // YouTube's audio files don't always say how long they are,
+                    // and Safari then reports forever, or twice the length:
+                    // how far it can seek is the truth, when it says.
+                    let seekable = a.seekable();
+                    let reach = if seekable.length() > 0 { seekable.end(seekable.length() - 1).unwrap_or(0.0) } else { 0.0 };
+                    let length = match (a.duration().is_finite() && a.duration() > 0.0, reach > 0.0) {
+                        (true, true) => a.duration().min(reach),
+                        (true, false) => a.duration(),
+                        (false, true) => reach,
+                        (false, false) => 0.0,
                     };
                     if length > 0.0 && (self.duration.get_untracked() - length).abs() > 0.5 {
                         self.duration.set(length);
