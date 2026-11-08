@@ -122,7 +122,9 @@ screen. It then opens from its own icon, full screen, like an app:
 - **Android**: in Chrome, open the **⋮** menu and tap **Add to Home screen** (or **Install app**).
 
 Your phone needs to reach the server, so use the Docker setup above (or any server on your network). The web version
-the desktop app opens is only reachable from that computer.
+the desktop app opens is only reachable from that computer. Away from home, your phone can't reach a server on your
+home network directly: connect through a VPN, or something like [Tailscale](https://tailscale.com), and use the
+server's address on it.
 
 ## Handy keys
 
