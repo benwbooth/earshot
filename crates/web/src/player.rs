@@ -597,6 +597,8 @@ impl Player {
         let request = self.next_request();
         match s(&track, "service").as_str() {
             // SoundCloud songs play in SoundCloud's own player, Mixcloud shows in Mixcloud's.
+            // iPhones can't start SoundCloud's own player without a tap.
+            "soundcloud" if crate::engine::is_ios() => engine.load_soundcloud_audio(&s(&track, "soundcloudId"), start),
             "soundcloud" => engine.load_soundcloud(&s(&track, "soundcloudId"), start),
             "mixcloud" => engine.load_mixcloud(&s(&track, "mixcloudKey"), start),
             // The Internet Archive's files stream straight from archive.org.
@@ -687,7 +689,11 @@ impl Player {
             warm(video);
             return;
         }
-        if ["soundcloud", "mixcloud", "archive"].contains(&service.as_str()) {
+        if service == "soundcloud" {
+            warm_soundcloud(&s(track, "soundcloudId"));
+            return;
+        }
+        if ["mixcloud", "archive"].contains(&service.as_str()) {
             return;
         }
         let key = s(track, "key");
@@ -918,6 +924,17 @@ fn warm(video: &str) {
         let url = format!("/api/youtube-warm?v={}", crate::state::encode(video));
         spawn_local(async move {
             let _ = gloo_net::http::Request::get(&url).send().await;
+        });
+    }
+}
+
+/// On iPhones and iPads, where SoundCloud songs play through Earshot's server:
+/// has the server fetch and prepare the song now (it keeps the last few).
+fn warm_soundcloud(track_id: &str) {
+    if crate::engine::is_ios() && !track_id.is_empty() {
+        let url = format!("/api/soundcloud-audio?id={}", crate::state::encode(track_id));
+        spawn_local(async move {
+            let _ = gloo_net::http::Request::get(&url).header("Range", "bytes=0-0").send().await;
         });
     }
 }

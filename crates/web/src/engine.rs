@@ -419,6 +419,20 @@ impl Engine {
         let _ = a.play();
     }
 
+    /// A SoundCloud track's audio played from Earshot's server, on iPhones and
+    /// iPads, where SoundCloud's own player can't start by itself.
+    pub fn load_soundcloud_audio(&self, track_id: &str, start: f64) {
+        self.switch(Mode::Audio);
+        self.reset(format!("soundcloud:{track_id}"), start);
+        let a = audio();
+        a.set_src(&format!("/api/soundcloud-audio?id={}", encode(track_id)));
+        a.set_volume(self.volume.get_value() / 100.0);
+        if start > 0.0 {
+            a.set_current_time(start);
+        }
+        let _ = a.play();
+    }
+
     /// A YouTube video's audio played from Earshot's server, for videos whose
     /// owners don't let YouTube's player play them on other sites. It's still
     /// the video (its id is kept), so it's remembered and played as usual.
