@@ -378,11 +378,7 @@ pub fn run(player: Player) {
                 approach(player.levels, targets);
                 note(
                     &player,
-                    if player.engine.relaying() {
-                        "Measured in this browser from the song's audio, which plays through Earshot's server because its owner keeps it on youtube.com"
-                    } else {
-                        "Measured from the song's audio as it plays, in this browser"
-                    }
+                    "Measured from the song's audio as it plays, in this browser"
                     .to_owned(),
                 );
             }
