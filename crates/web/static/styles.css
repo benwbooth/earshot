@@ -340,10 +340,11 @@ a.row-album:hover { color: var(--text); text-decoration: underline; }
   background: var(--sidebar-bg); border-top: 1px solid var(--border);
 }
 .song { display: flex; align-items: center; gap: 14px; min-width: 0; }
-/* The song's cover fills the bar's corner, edge to edge. */
-.playerbar { padding-left: 0; }
-.song { align-self: stretch; margin: -14px 0; }
-.bar-cover { align-self: stretch; aspect-ratio: 1; flex: none; cursor: zoom-in; }
+/* The song's cover fills the bar's corner, edge to edge. Sized in pixels:
+   Safari doesn't keep a stretched element square (aspect-ratio). */
+.playerbar { padding-left: 0; --bar-cover: 91px; }
+.song { margin: -14px 0; }
+.bar-cover { width: var(--bar-cover); height: var(--bar-cover); flex: none; cursor: zoom-in; }
 .bar-cover .cover { width: 100%; height: 100%; }
 .song-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .song-title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -436,6 +437,7 @@ a.song-artist:hover { color: var(--text); }
   .page { padding-top: 24px; }
   .playerbar { grid-template-columns: 1fr auto; min-height: 64px; padding: 8px 8px 10px 0; gap: 8px; }
   .playerbar .volume { display: none; }
+  .playerbar { --bar-cover: 63px; }
   .song { margin: -8px 0 -10px; }
   .song { gap: 10px; }
   .song-context { display: none; }
