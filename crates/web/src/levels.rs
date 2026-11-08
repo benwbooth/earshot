@@ -329,14 +329,21 @@ fn note(player: &Player, text: String) {
 /// Keeps `player.levels` (and `player.levels_note`) up to date.
 pub fn run(player: Player) {
     // The audio file's meter needs a click first; the play button counts.
+    // iOS only lets a tap's touchend or click start (or wake) it, never a
+    // timer, so it's woken there too: otherwise it measures silence.
     let start = Closure::<dyn Fn()>::new(|| {
         METER.with(|meter| {
             if meter.borrow().is_none() {
                 *meter.borrow_mut() = Meter::new();
             }
+            if let Some(meter) = meter.borrow().as_ref()
+                && meter.context.state() != web_sys::AudioContextState::Running
+            {
+                let _ = meter.context.resume();
+            }
         });
     });
-    for event in ["pointerdown", "keydown"] {
+    for event in ["pointerdown", "keydown", "touchend", "click"] {
         let _ = window().add_event_listener_with_callback(event, start.as_ref().unchecked_ref());
     }
     start.forget();
