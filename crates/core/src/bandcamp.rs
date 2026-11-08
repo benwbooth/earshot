@@ -82,14 +82,47 @@ fn tag_label(slug: &str) -> String {
     slug.replace('-', " ")
 }
 
-/// Bandcamp's genres and their sub-genres, as listed on bandcamp.com/discover.
+/// Bandcamp's genres and their sub-genres. They come from bandcamp.com/tags:
+/// bandcamp.com/discover now answers programs with a browser check
+/// ("Client Challenge") instead of the page, so it's only a fallback.
 pub fn tags() -> Result<Value, String> {
     static TAGS: std::sync::Mutex<Option<Value>> = std::sync::Mutex::new(None);
     if let Some(known) = TAGS.lock().unwrap().as_ref() {
         return Ok(known.clone());
     }
-    let page = get_text("https://bandcamp.com/discover")?;
-    let state = attribute_json(&page, "data-blob")?;
+    let tags = get_text("https://bandcamp.com/tags")
+        .and_then(|page| tags_from_tags_page(&page))
+        .or_else(|first| get_text("https://bandcamp.com/discover").and_then(|page| tags_from_discover_page(&page)).map_err(|_| first))?;
+    *TAGS.lock().unwrap() = Some(tags.clone());
+    Ok(tags)
+}
+
+/// The genres and sub-genres in bandcamp.com/tags (its sign-up form's lists).
+fn tags_from_tags_page(page: &str) -> Result<Value, String> {
+    let blob = attribute_json(page, "data-blob")?;
+    let lists = blob.get("signup_params").ok_or("Couldn't read Bandcamp's list of genres.")?;
+    let genres: Vec<Value> = lists["genres"]
+        .as_array()
+        .ok_or("Couldn't read Bandcamp's list of genres.")?
+        .iter()
+        .map(|g| json!({ "slug": g["value"], "label": g["name"] }))
+        .collect();
+    let mut subgenres = Vec::new();
+    for genre in &genres {
+        let slug = genre["slug"].as_str().unwrap_or("");
+        for sub in lists["subgenres"][slug].as_array().into_iter().flatten() {
+            subgenres.push(json!({ "slug": sub["value"], "label": sub["name"], "parent": slug }));
+        }
+    }
+    if genres.is_empty() {
+        return Err("Couldn't read Bandcamp's list of genres.".to_owned());
+    }
+    Ok(json!({ "genres": genres, "subgenres": subgenres }))
+}
+
+/// The genres and sub-genres in bandcamp.com/discover's page state.
+fn tags_from_discover_page(page: &str) -> Result<Value, String> {
+    let state = attribute_json(page, "data-blob")?;
     let state = state.pointer("/appData/initialState").ok_or("Couldn't read Bandcamp's list of genres.")?;
     let list = |key: &str| state[key].as_array().cloned().unwrap_or_default();
     let genres: Vec<Value> = list("genres").iter().map(|g| json!({ "slug": g["slug"], "label": g["label"] })).collect();
@@ -97,9 +130,7 @@ pub fn tags() -> Result<Value, String> {
         .iter()
         .map(|g| json!({ "slug": g["slug"], "label": g["label"], "parent": g["parentSlug"] }))
         .collect();
-    let tags = json!({ "genres": genres, "subgenres": subgenres });
-    *TAGS.lock().unwrap() = Some(tags.clone());
-    Ok(tags)
+    Ok(json!({ "genres": genres, "subgenres": subgenres }))
 }
 
 /// Tags that match a search: the search itself as a tag, then known genres containing it.
@@ -475,7 +506,14 @@ pub fn featured() -> Result<Value, String> {
 /// JSON kept in an HTML attribute, like data-tralbum="{&quot;…".
 fn attribute_json(page: &str, attribute: &str) -> Result<Value, String> {
     let marker = format!("{attribute}=\"");
-    let start = page.find(&marker).ok_or("This Bandcamp page has no music on it.")? + marker.len();
+    let Some(start) = page.find(&marker).map(|at| at + marker.len()) else {
+        // Bandcamp sometimes answers with a browser check instead of the page.
+        return Err(if page.contains("Client Challenge") {
+            "Bandcamp asked for a browser check instead of showing this page. Try again in a little while.".to_owned()
+        } else {
+            "This Bandcamp page has no music on it.".to_owned()
+        });
+    };
     let end = page[start..].find('"').ok_or("Couldn't read this Bandcamp page.")? + start;
     serde_json::from_str(&unescape_html(&page[start..end])).map_err(|error| format!("Couldn't read this Bandcamp page: {error}"))
 }
@@ -784,5 +822,34 @@ mod tests {
         let again = std::time::Instant::now();
         assert_eq!(featured().unwrap(), front);
         assert!(again.elapsed() < std::time::Duration::from_millis(50));
+    }
+
+    /// A trimmed bandcamp.com/tags page: its sign-up form lists the genres.
+    const TAGS_PAGE: &str = r#"<div id="pagedata" data-blob="{&quot;signup_params&quot;:{&quot;genres&quot;:[{&quot;id&quot;:10,&quot;name&quot;:&quot;electronic&quot;,&quot;value&quot;:&quot;electronic&quot;},{&quot;id&quot;:2,&quot;name&quot;:&quot;ambient&quot;,&quot;value&quot;:&quot;ambient&quot;},{&quot;id&quot;:14,&quot;name&quot;:&quot;hip-hop/rap&quot;,&quot;value&quot;:&quot;hip-hop-rap&quot;}],&quot;subgenres&quot;:{&quot;electronic&quot;:[{&quot;name&quot;:&quot;chiptune&quot;,&quot;value&quot;:&quot;chiptune&quot;}],&quot;ambient&quot;:[{&quot;name&quot;:&quot;dark ambient&quot;,&quot;value&quot;:&quot;dark-ambient&quot;}]}}}"></div>"#;
+
+    #[test]
+    fn reads_genres_from_the_tags_page() {
+        let tags = tags_from_tags_page(TAGS_PAGE).unwrap();
+        assert_eq!(tags["genres"][2], json!({ "slug": "hip-hop-rap", "label": "hip-hop/rap" }));
+        assert_eq!(tags["subgenres"][0], json!({ "slug": "chiptune", "label": "chiptune", "parent": "electronic" }));
+        assert_eq!(tags["subgenres"][1]["parent"], "ambient");
+    }
+
+    #[test]
+    fn says_when_bandcamp_shows_a_browser_check() {
+        let challenge = "<html><head><title>Client Challenge</title></head><body>JavaScript is disabled</body></html>";
+        let error = tags_from_tags_page(challenge).unwrap_err();
+        assert!(error.contains("browser check"), "{error}");
+    }
+
+    /// Talks to bandcamp.com: `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_genres_and_a_tag() {
+        let tags = tags().unwrap();
+        assert!(tags["genres"].as_array().unwrap().len() >= 20, "{tags}");
+        assert!(tags["subgenres"].as_array().unwrap().len() >= 100);
+        let ambient = tag("ambient", "", "").unwrap();
+        assert!(!ambient["albums"].as_array().unwrap().is_empty());
     }
 }
