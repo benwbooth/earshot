@@ -49,6 +49,8 @@ pub struct Player {
     blocked_message: StoredValue<String>,
     /// The last video played on youtube.com's own page by Earshot's server.
     relay_tried: StoredValue<String>,
+    /// The iPhone notice about YouTube songs starting slowly was shown.
+    relay_explained: StoredValue<bool>,
     /// The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
     elsewhere_tried: StoredValue<String>,
     looking: StoredValue<HashSet<String>>,
@@ -113,6 +115,7 @@ impl Player {
             direct_tried: StoredValue::new(String::new()),
             blocked_message: StoredValue::new(String::new()),
             relay_tried: StoredValue::new(String::new()),
+            relay_explained: StoredValue::new(false),
             elsewhere_tried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
             started_count: RwSignal::new(0),
@@ -309,6 +312,11 @@ impl Player {
                 let at = engine.position.get_untracked().max(self.track_start());
                 let whole = num(&track, "start") == 0.0 && num(&track, "end") == 0.0;
                 engine.load_relay(&video, at, if whole { num(&track, "duration") } else { 0.0 });
+                // On iPhones every YouTube song comes this way: say why it takes a while (once).
+                if crate::engine::is_ios() && !self.relay_explained.get_value() {
+                    self.relay_explained.set_value(true);
+                    self.notify("YouTube songs start through Earshot's server on iPhone, which takes about 10 seconds.");
+                }
                 return;
             }
             // That didn't work either: say why the video itself wouldn't play.
