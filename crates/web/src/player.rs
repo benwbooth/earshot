@@ -291,6 +291,25 @@ impl Player {
                 self.resolve_current();
                 return;
             }
+            // A SoundCloud song that won't play (encrypted, or SoundCloud's
+            // player refused it): find the same song on YouTube instead, as
+            // for a catalogue song (and from there, on Bandcamp).
+            if s(&track, "service") == "soundcloud" {
+                let index = self.index.get_untracked();
+                let mut song = track.clone();
+                if let Some(fields) = song.as_object_mut() {
+                    fields.remove("service");
+                    fields.remove("soundcloudId");
+                    fields.remove("youtubeId");
+                }
+                self.queue.update(|queue| {
+                    if let Some(slot) = queue.get_mut(index as usize) {
+                        *slot = song;
+                    }
+                });
+                self.resolve_current();
+                return;
+            }
             // A video whose owner keeps it on youtube.com: play its audio
             // through Earshot's server instead (once per video).
             let video = engine.video_id.get_untracked();
