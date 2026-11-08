@@ -483,6 +483,9 @@ const POLL: &str = r#"(function (gen, target, play, want) {
 /// Someone listening: the MP3 stream going to them.
 pub struct Listener {
     t: f64,
+    /// The page's number for this stream (`n`): the same number again is the
+    /// browser asking for the same stream anew (Safari does, more than once).
+    request: u64,
     body: Body,
     /// Told once the first sound is on its way, or why there won't be any.
     head: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
@@ -508,8 +511,8 @@ fn relays() -> &'static Mutex<Relays> {
 
 /// Starts relaying `video` from `t` seconds into `body`; `head` hears when
 /// the sound starts or why it won't. Blocks while a tab opens.
-pub fn listen(video: &str, t: f64, body: Body, head: tokio::sync::oneshot::Sender<Result<(), String>>) -> Result<(), String> {
-    let listener = Listener { t, body, head: Some(head) };
+pub fn listen(video: &str, t: f64, request: u64, body: Body, head: tokio::sync::oneshot::Sender<Result<(), String>>) -> Result<(), String> {
+    let listener = Listener { t, request, body, head: Some(head) };
     let mut relays = relays().lock().unwrap();
     relays.tabs.retain(|tab| tab.sender.send(Msg::Event(Value::Null)).is_ok());
     // The video's tab already open (resuming, seeking): carry on there.
@@ -685,7 +688,22 @@ impl Tab {
         tab_closed(self.id);
     }
 
-    fn attach(&mut self, listener: Listener) {
+    fn attach(&mut self, mut listener: Listener) {
+        // The same stream asked for again (Safari opens it more than once): it
+        // carries on, live, on the new connection rather than starting over.
+        if let Some(playing) = self.playing.as_mut()
+            && listener.request != 0
+            && playing.listener.request == listener.request
+        {
+            eprintln!("earshot: relaying {}: listener {} carries on on a new connection", self.video, playing.listener_no);
+            if playing.started {
+                if let Some(head) = listener.head.take() {
+                    let _ = head.send(Ok(()));
+                }
+            }
+            playing.listener = listener;
+            return;
+        }
         self.stop(Err("Another listener took over".into()));
         let encoder = match encoder() {
             Ok(encoder) => encoder,

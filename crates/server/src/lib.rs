@@ -372,7 +372,8 @@ async fn relay_audio(Query(query): Query<HashMap<String, String>>) -> Response {
     let t = query.get("t").and_then(|t| t.parse::<f64>().ok()).filter(|t| t.is_finite()).unwrap_or(0.0).clamp(0.0, 86_400.0);
     let (body_tx, body_rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(relay::BACKLOG);
     let (head_tx, head_rx) = tokio::sync::oneshot::channel();
-    let opened = tokio::task::spawn_blocking(move || relay::listen(&video, t, body_tx, head_tx)).await;
+    let request = query.get("n").and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
+    let opened = tokio::task::spawn_blocking(move || relay::listen(&video, t, request, body_tx, head_tx)).await;
     match opened {
         Ok(Ok(())) => {}
         Ok(Err(message)) => return (StatusCode::BAD_GATEWAY, message).into_response(),
