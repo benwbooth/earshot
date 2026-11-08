@@ -84,6 +84,19 @@ fn audio() -> HtmlAudioElement {
     AUDIO.with(|a| a.clone())
 }
 
+/// iPhones and iPads (iPadOS calls itself a Mac, but has a touch screen).
+/// Their browsers only let a page start sound from a tap, so YouTube's
+/// embedded player, started after the song is looked up, never plays there.
+pub fn is_ios() -> bool {
+    let navigator = window().navigator();
+    let agent = navigator.user_agent().unwrap_or_default();
+    agent.contains("iPhone") || agent.contains("iPad") || agent.contains("iPod") || (agent.contains("Macintosh") && navigator.max_touch_points() > 1)
+}
+
+/// A moment of silence, to play once in the first tap: after that, iOS lets
+/// the page start the audio element itself (later songs start after a lookup).
+const SILENCE: &str = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+
 fn origin() -> String {
     window().location().origin().unwrap_or_default()
 }
@@ -95,6 +108,7 @@ pub fn describe(code: i32) -> String {
         100 => "This video was removed or made private.".into(),
         101 | 150 | 153 => "This video's owner doesn't allow it to play outside youtube.com.".into(),
         1001 => "The song's audio stopped loading.".into(),
+        1004 => "YouTube's player didn't start.".into(),
         1002 => "SoundCloud's player couldn't play this song.".into(),
         1003 => "Mixcloud's player couldn't play this show.".into(),
         other => format!("YouTube's player stopped (error {other})."),
@@ -167,6 +181,25 @@ impl Engine {
 
         let element = audio();
         element.set_preload("auto");
+        // iOS: unlock the audio element in the first tap (see SILENCE).
+        if is_ios() {
+            let unlock = Closure::<dyn Fn()>::new(move || {
+                let a = audio();
+                if a.src().is_empty() {
+                    a.set_src(SILENCE);
+                    let _ = a.play();
+                    let _ = a.pause();
+                    let _ = a.remove_attribute("src");
+                    a.load();
+                }
+            });
+            let once = web_sys::AddEventListenerOptions::new();
+            once.set_once(true);
+            for event in ["touchend", "pointerup", "click"] {
+                let _ = window().add_event_listener_with_callback_and_add_event_listener_options(event, unlock.as_ref().unchecked_ref(), &once);
+            }
+            unlock.forget();
+        }
         let on_ended = Closure::<dyn Fn()>::new(move || {
             if self.mode.get_value() == Mode::Audio {
                 self.state.set(0);
@@ -197,10 +230,24 @@ impl Engine {
                 }
                 let state = if a.ended() { 0 } else if a.paused() { 2 } else if a.ready_state() < 3 { 3 } else { 1 };
                 self.state.set(state);
+                // Still loading after 30 seconds: give up on this way of playing it.
+                if state == 3 && a.current_time() == 0.0 && now() - self.loaded_at.get_value() > 30_000.0 {
+                    self.loaded_at.set_value(now());
+                    self.fail(1001);
+                }
                 // A relayed stream starts where it was asked to; its own length isn't the video's.
                 self.position.set(self.offset.get_value() + a.current_time());
                 if a.duration().is_finite() && self.relay.with_value(Option::is_none) {
                     self.duration.set(a.duration());
+                }
+            }
+            Mode::YouTube => {
+                // YouTube's player that never starts (unstarted or cued) counts
+                // as an error after 15 seconds, so the song plays another way.
+                let state = self.state.get_untracked();
+                if (state == -1 || state == 5) && !self.video_id.get_untracked().is_empty() && now() - self.loaded_at.get_value() > 15_000.0 {
+                    self.loaded_at.set_value(now());
+                    self.fail(1004);
                 }
             }
             Mode::SoundCloud | Mode::Mixcloud => {

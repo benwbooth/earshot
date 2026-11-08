@@ -294,7 +294,8 @@ impl Player {
             // A video whose owner keeps it on youtube.com: play its audio
             // through Earshot's server instead (once per video).
             let video = engine.video_id.get_untracked();
-            if matches!(code, 101 | 150 | 153) && track["service"].is_null() && !video.contains(':') && self.direct_tried.get_value() != video {
+            // (Or YouTube's player never started: 1004.)
+            if matches!(code, 101 | 150 | 153 | 1004) && track["service"].is_null() && !video.contains(':') && self.direct_tried.get_value() != video {
                 self.direct_tried.set_value(video.clone());
                 self.blocked_message.set_value(message.clone());
                 engine.load_youtube_audio(&video, self.track_start());
@@ -312,7 +313,7 @@ impl Player {
             }
             // That didn't work either: say why the video itself wouldn't play.
             let message = if code == 1001 && self.direct_tried.get_value() == video && track["service"].is_null() {
-                self.blocked_message.get_value()
+                Some(self.blocked_message.get_value()).filter(|m| !m.is_empty()).unwrap_or(message)
             } else {
                 message
             };
@@ -321,7 +322,7 @@ impl Player {
             if track["service"].is_null() && next < self.candidates.with_value(Vec::len) {
                 self.candidate.set_value(next);
                 let video = self.candidates.with_value(|c| c[next].clone());
-                engine.load(&video, self.track_start());
+                self.load_video(&video);
                 return;
             }
             let _ = code;
@@ -543,7 +544,19 @@ impl Player {
         self.candidate.set_value(0);
         self.direct_tried.set_value(String::new());
         self.relay_tried.set_value(String::new());
-        self.engine.load(&first, self.track_start());
+        self.load_video(&first);
+    }
+
+    /// Plays a YouTube video: in YouTube's own player, or on iPhones and
+    /// iPads, where that player can't start by itself, as audio through
+    /// Earshot's server (falling back to the relay, like a blocked video).
+    fn load_video(&self, video: &str) {
+        if crate::engine::is_ios() && !video.contains(':') {
+            self.direct_tried.set_value(video.to_owned());
+            self.engine.load_youtube_audio(video, self.track_start());
+        } else {
+            self.engine.load(video, self.track_start());
+        }
     }
 
     fn next_request(&self) -> u64 {
