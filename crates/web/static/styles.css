@@ -482,7 +482,8 @@ a.song-artist:hover { color: var(--text); }
 .np-title { font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .np-title .marquee { flex: 1; }
 .np-artist { color: var(--text-muted); font-size: var(--font-body); }
-.np-title .waveform { height: 18px; }
+.np-title .waveform { height: 26px; width: 34px; }
+.np-title .waveform i { width: 4px; }
 .np-song .like .icon[style*="heart-filled"] { background: var(--accent); }
 .np-seek { display: flex; flex-direction: column; gap: 6px; }
 .np-seek .slider-wrap { width: 100%; }
