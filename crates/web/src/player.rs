@@ -619,6 +619,13 @@ impl Player {
             // iPhones can't start SoundCloud's own player without a tap.
             "soundcloud" if crate::engine::is_ios() => engine.load_soundcloud_audio(&s(&track, "soundcloudId"), start),
             "soundcloud" => engine.load_soundcloud(&s(&track, "soundcloudId"), start),
+            // iPhones can't start Mixcloud's own player without a tap: Earshot's
+            // server plays the show in Mixcloud's player and streams it here.
+            "mixcloud" if crate::engine::is_ios() => {
+                let show = format!("mc:{}", s(&track, "mixcloudKey"));
+                self.relay_tried.set_value(show.clone());
+                engine.load_relay(&show, start, num(&track, "duration"));
+            }
             "mixcloud" => engine.load_mixcloud(&s(&track, "mixcloudKey"), start),
             // The Internet Archive's files stream straight from archive.org.
             "archive" => engine.load_audio(&s(&track, "streamUrl"), start),
