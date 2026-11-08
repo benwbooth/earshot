@@ -237,8 +237,18 @@ impl Engine {
                 }
                 // A relayed stream starts where it was asked to; its own length isn't the video's.
                 self.position.set(self.offset.get_value() + a.current_time());
-                if a.duration().is_finite() && self.relay.with_value(Option::is_none) {
-                    self.duration.set(a.duration());
+                if self.relay.with_value(Option::is_none) {
+                    // YouTube's audio files often don't say how long they are
+                    // (Safari reports forever): then how far it can seek is.
+                    let length = if a.duration().is_finite() {
+                        a.duration()
+                    } else {
+                        let seekable = a.seekable();
+                        if seekable.length() > 0 { seekable.end(seekable.length() - 1).unwrap_or(0.0) } else { 0.0 }
+                    };
+                    if length > 0.0 && (self.duration.get_untracked() - length).abs() > 0.5 {
+                        self.duration.set(length);
+                    }
                 }
             }
             Mode::YouTube => {
@@ -687,7 +697,16 @@ impl Engine {
                     self.relay_from(seconds);
                 }
             }
-            Mode::Audio => audio().set_current_time(seconds),
+            // Past the end of the audio (the song's listed length can be longer
+            // than the upload): the song is over, rather than playing silence.
+            Mode::Audio => {
+                let length = self.duration.get_untracked();
+                if length > 0.0 && seconds >= length - 0.5 {
+                    self.finish();
+                } else {
+                    audio().set_current_time(seconds);
+                }
+            }
             Mode::SoundCloud => self.sc("seekTo", json!(seconds * 1000.0)),
             Mode::Mixcloud => self.mc("seek", json!([seconds])),
             Mode::None => {}
