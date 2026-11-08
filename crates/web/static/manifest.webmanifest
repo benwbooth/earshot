@@ -1,7 +1,7 @@
 {
   "name": "Earshot",
   "short_name": "Earshot",
-  "description": "Charts by genre and era, Reddit radio, albums, playlists and mixes made for you.",
+  "description": "All of YouTube's music, plus Bandcamp, SoundCloud, Mixcloud and the Internet Archive, in one library.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d0f14",
