@@ -508,7 +508,7 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
                 </button>
                 <div class="np-song">
                     <div class="np-text">
-                        <div class="np-title"><Marquee text=field("title")/></div>
+                        <div class="np-title"><Waveform/><Marquee text=field("title")/></div>
                         {move || {
                             let (name, id) = (field("artist").get(), field("artistId").get());
                             if id.is_empty() {
@@ -518,7 +518,6 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
                             }
                         }}
                     </div>
-                    <Waveform/>
                     <IconButton
                         icon=Signal::derive(move || if liked() { "heart-filled".to_owned() } else { "heart".to_owned() })
                         size=22 class="like"
