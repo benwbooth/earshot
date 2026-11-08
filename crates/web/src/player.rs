@@ -51,6 +51,8 @@ pub struct Player {
     relay_tried: StoredValue<String>,
     /// The iPhone notice about YouTube songs starting slowly was shown.
     relay_explained: StoredValue<bool>,
+    /// The video whose relayed stream was picked up again after breaking off.
+    relay_resumed: StoredValue<String>,
     /// The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
     elsewhere_tried: StoredValue<String>,
     looking: StoredValue<HashSet<String>>,
@@ -116,6 +118,7 @@ impl Player {
             blocked_message: StoredValue::new(String::new()),
             relay_tried: StoredValue::new(String::new()),
             relay_explained: StoredValue::new(false),
+            relay_resumed: StoredValue::new(String::new()),
             elsewhere_tried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
             started_count: RwSignal::new(0),
@@ -317,6 +320,13 @@ impl Player {
                     self.relay_explained.set_value(true);
                     self.notify("YouTube songs start through Earshot's server on iPhone, which takes about 10 seconds.");
                 }
+                return;
+            }
+            // The relayed stream broke off mid-song (Safari drops it now and then):
+            // pick it up again from there, once per song.
+            if code == 1001 && self.relay_tried.get_value() == video && engine.relaying() && self.relay_resumed.get_value() != video {
+                self.relay_resumed.set_value(video.clone());
+                engine.reconnect_relay();
                 return;
             }
             // That didn't work either: say why the video itself wouldn't play.

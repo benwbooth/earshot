@@ -461,6 +461,13 @@ impl Engine {
         let _ = a.play();
     }
 
+    /// Asks for the relayed stream again from where it got to (it broke off).
+    pub fn reconnect_relay(&self) {
+        if self.relaying() {
+            self.relay_from(self.position.get_untracked());
+        }
+    }
+
     /// Hangs up the relayed stream, keeping the place.
     fn relay_hang_up(&self) {
         let a = audio();
