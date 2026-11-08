@@ -826,8 +826,10 @@ pub fn integrate() {
     if let Some(session) = media_session_object() {
         let set_handler = js_sys::Reflect::get(&session, &"setActionHandler".into()).ok().and_then(|f| f.dyn_into::<js_sys::Function>().ok());
         for (action, run) in [
-            ("play", Box::new(move || player.toggle()) as Box<dyn Fn()>),
-            ("pause", Box::new(move || player.toggle())),
+            // Only ever play, or only ever pause, and not right after a press in
+            // the page: iOS sends these for the page's own pausing too.
+            ("play", Box::new(move || player.system_toggle(true)) as Box<dyn Fn()>),
+            ("pause", Box::new(move || player.system_toggle(false))),
             ("nexttrack", Box::new(move || player.next(false))),
             ("previoustrack", Box::new(move || player.previous())),
         ] {

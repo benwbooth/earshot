@@ -51,6 +51,8 @@ pub struct Player {
     relay_tried: StoredValue<String>,
     /// The video whose relayed stream was picked up again after breaking off.
     relay_resumed: StoredValue<String>,
+    /// When play or pause was last pressed (see `system_toggle`).
+    toggled_at: StoredValue<f64>,
     /// The last song looked for on SoundCloud and Bandcamp after YouTube wouldn't play it.
     elsewhere_tried: StoredValue<String>,
     looking: StoredValue<HashSet<String>>,
@@ -116,6 +118,7 @@ impl Player {
             blocked_message: StoredValue::new(String::new()),
             relay_tried: StoredValue::new(String::new()),
             relay_resumed: StoredValue::new(String::new()),
+            toggled_at: StoredValue::new(0.0),
             elsewhere_tried: StoredValue::new(String::new()),
             looking: StoredValue::new(HashSet::new()),
             started_count: RwSignal::new(0),
@@ -784,10 +787,24 @@ impl Player {
         }
     }
 
+    /// Play or pause from the system (lock screen, headphones), not from the
+    /// page: iOS also sends these just after the page itself pauses or plays,
+    /// which mustn't undo what was just pressed.
+    pub fn system_toggle(&self, play: bool) {
+        if js_sys::Date::now() - self.toggled_at.get_value() < 1500.0 {
+            return;
+        }
+        let playing = self.playing() || self.engine.state.get_untracked() == 3;
+        if playing != play {
+            self.toggle();
+        }
+    }
+
     pub fn toggle(&self) {
         if self.current_untracked().is_none() {
             return;
         }
+        self.toggled_at.set_value(js_sys::Date::now());
         let state = self.engine.state.get_untracked();
         if state == 1 {
             self.engine.pause();
