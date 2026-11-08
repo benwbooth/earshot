@@ -503,3 +503,68 @@ mod tests {
         assert!(levels.len() / BANDS > 25 * 30, "{} frames", levels.len() / BANDS);
     }
 }
+
+/// Decodes a whole audio file (`kind`: "mp3" or "mp4") to 16-bit stereo
+/// samples, handing `each` the rate and a run of interleaved samples at a
+/// time: for turning an AAC stream into a plain MP3 that any browser plays
+/// (see the server's SoundCloud audio) without holding all of it decoded.
+pub fn decode_stereo(bytes: Vec<u8>, kind: &str, mut each: impl FnMut(u32, &[i16]) -> Result<(), String>) -> Result<(), String> {
+    let stream = MediaSourceStream::new(Box::new(io::Cursor::new(bytes)), Default::default());
+    let mut hint = Hint::new();
+    hint.with_extension(kind);
+    let probed = symphonia::default::get_probe()
+        .format(&hint, stream, &FormatOptions::default(), &MetadataOptions::default())
+        .map_err(|error| format!("Couldn't read the song's audio: {error}"))?;
+    let mut format = probed.format;
+    let track = format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("The song's audio has no sound in it.")?;
+    let track_id = track.id;
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|error| format!("Couldn't decode the song's audio: {error}"))?;
+    let mut out: Vec<i16> = Vec::new();
+    let mut any = false;
+    let mut samples: Option<SampleBuffer<i16>> = None;
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(Decoding::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(Decoding::ResetRequired) => break,
+            Err(error) if any => {
+                eprintln!("earshot: decoding stopped early: {error}");
+                break;
+            }
+            Err(error) => return Err(format!("Couldn't read the song's audio: {error}")),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(Decoding::DecodeError(_)) | Err(Decoding::IoError(_)) => continue,
+            Err(error) => return Err(format!("Couldn't decode the song's audio: {error}")),
+        };
+        let spec = *decoded.spec();
+        if decoded.frames() == 0 {
+            continue;
+        }
+        let channels = spec.channels.count().max(1);
+        if samples.as_ref().is_none_or(|buffer| buffer.capacity() < decoded.capacity() * channels) {
+            samples = Some(SampleBuffer::new(decoded.capacity() as u64, spec));
+        }
+        let Some(buffer) = samples.as_mut() else { continue };
+        buffer.copy_interleaved_ref(decoded);
+        out.clear();
+        for frame in buffer.samples().chunks(channels) {
+            let left = frame[0];
+            let right = if channels > 1 { frame[1] } else { left };
+            out.push(left);
+            out.push(right);
+        }
+        each(spec.rate, &out)?;
+        any = true;
+    }
+    if !any {
+        return Err("The song's audio was empty.".to_owned());
+    }
+    Ok(())
+}

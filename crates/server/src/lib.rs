@@ -19,7 +19,7 @@
 mod mp3;
 pub mod relay;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::io::Read;
 use std::net::SocketAddr;
@@ -283,6 +283,93 @@ fn ytdlp_address(video: &str) -> Result<(String, u64), String> {
     Ok((url, length))
 }
 
+/// A SoundCloud track's audio as one file, for browsers that can't start
+/// SoundCloud's own player by themselves (iPhones). The pieces (a whole MP3,
+/// or an HLS stream's init and segments) are fetched and joined in memory,
+/// then served with byte ranges, which Safari needs for seeking and for MP4.
+async fn soundcloud_audio(Query(query): Query<HashMap<String, String>>, headers: HeaderMap) -> Response {
+    let Some(track) = query.get("id").and_then(|id| id.parse::<u64>().ok()) else {
+        return (StatusCode::BAD_REQUEST, "Which track?").into_response();
+    };
+    let range = headers.get(header::RANGE).and_then(|value| value.to_str().ok()).map(str::to_owned);
+    let file = match tokio::task::spawn_blocking(move || soundcloud_file(track)).await {
+        Ok(Ok(file)) => file,
+        Ok(Err(message)) => return (StatusCode::BAD_GATEWAY, message).into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let (mime, bytes) = (&file.0, &file.1);
+    let length = bytes.len() as u64;
+    let (start, end) = byte_range(range.as_deref(), length);
+    if start > end || start >= length {
+        return Response::builder()
+            .status(416)
+            .header(header::CONTENT_RANGE, format!("bytes */{length}"))
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response());
+    }
+    let mut response = Response::builder()
+        .status(if range.is_some() { 206 } else { 200 })
+        .header(header::CONTENT_TYPE, mime.as_str())
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, (end - start + 1).to_string());
+    if range.is_some() {
+        response = response.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{length}"));
+    }
+    response
+        .body(Body::from(bytes.slice(start as usize..=end as usize)))
+        .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
+}
+
+/// A SoundCloud track's whole audio file and its type, kept for the last few
+/// tracks (a browser asks for the same file in several ranges).
+fn soundcloud_file(track: u64) -> Result<std::sync::Arc<(String, Bytes)>, String> {
+    static KEPT: OnceLock<std::sync::Mutex<VecDeque<(u64, std::sync::Arc<(String, Bytes)>)>>> = OnceLock::new();
+    static LOOKING: OnceLock<std::sync::Mutex<HashMap<u64, std::sync::Arc<std::sync::Mutex<()>>>>> = OnceLock::new();
+    let kept = KEPT.get_or_init(Default::default);
+    let turn = LOOKING.get_or_init(Default::default).lock().unwrap().entry(track).or_default().clone();
+    let _turn = turn.lock().unwrap();
+    if let Some((_, file)) = kept.lock().unwrap().iter().find(|(id, _)| *id == track) {
+        return Ok(file.clone());
+    }
+    let (parts, kind) = earshot_core::soundcloud::audio(track)?;
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .timeout_per_read(Some(Duration::from_secs(30)))
+        .build()
+        .into();
+    let mut joined = Vec::new();
+    for part in &parts {
+        let mut response = agent.get(part).call().map_err(|error| format!("SoundCloud: {error}"))?;
+        let piece = response.body_mut().with_config().limit(200 * 1024 * 1024).read_to_vec().map_err(|error| format!("SoundCloud: {error}"))?;
+        joined.extend_from_slice(&piece);
+    }
+    // AAC comes as HLS's fragmented MP4, which browsers don't reliably play
+    // as one file: make it a plain MP3 (decoded, then encoded with LAME).
+    let joined = if kind == "mp3" {
+        joined
+    } else {
+        let mut encoder: Option<mp3::Encoder> = None;
+        let mut out = Vec::new();
+        envelope::decode_stereo(joined, "mp4", |rate, samples| {
+            if encoder.is_none() {
+                encoder = Some(mp3::Encoder::new(rate, 192)?);
+            }
+            encoder.as_mut().map(|e| e.encode(samples, &mut out)).unwrap_or(Ok(()))
+        })?;
+        if let Some(encoder) = encoder.as_mut() {
+            encoder.flush(&mut out);
+        }
+        out
+    };
+    let file = std::sync::Arc::new(("audio/mpeg".to_owned(), Bytes::from(joined)));
+    let mut kept = kept.lock().unwrap();
+    kept.push_back((track, file.clone()));
+    while kept.len() > 4 {
+        kept.pop_front();
+    }
+    Ok(file)
+}
+
 /// Looks up a YouTube video's audio address ahead of time (the next song in
 /// the queue), so playing it later starts at once. Answers straight away.
 async fn youtube_warm(Query(query): Query<HashMap<String, String>>) -> StatusCode {
@@ -519,6 +606,7 @@ pub fn router(core: Arc<Earshot>, web_dir: PathBuf) -> Router {
         .route("/api/envelope", get(envelope))
         .route("/api/youtube-audio", get(youtube_audio))
         .route("/api/youtube-warm", get(youtube_warm))
+        .route("/api/soundcloud-audio", get(soundcloud_audio))
         .route("/api/relay", get(relay_audio))
         .route("/api/{method}", post(call))
         .fallback_service(files)
