@@ -519,7 +519,12 @@ async fn youtube_audio(Query(query): Query<HashMap<String, String>>, headers: He
 /// seeking asks again with a new `t`.
 async fn relay_audio(Query(query): Query<HashMap<String, String>>) -> Response {
     let video = query.get("v").cloned().unwrap_or_default();
-    if video.is_empty() || video.len() > 20 || !video.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    // A YouTube video's id, or a Mixcloud show ("mc:/user/show/").
+    let youtube = !video.is_empty() && video.len() <= 20 && video.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let mixcloud = video.strip_prefix("mc:/").is_some_and(|path| {
+        path.len() <= 300 && path.chars().all(|c| c.is_alphanumeric() || "-_/.%".contains(c)) && !path.contains("..")
+    });
+    if !youtube && !mixcloud {
         return (StatusCode::BAD_REQUEST, "Which video?").into_response();
     }
     if let Err(why) = relay::available() {

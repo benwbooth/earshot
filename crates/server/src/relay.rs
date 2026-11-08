@@ -373,6 +373,54 @@ const PRUNE_ADS: &str = r#"(function () {
   } catch (e) {}
 })();"#;
 
+/// [`POLL`] for a Mixcloud show in Mixcloud's own player page: no ads or
+/// consent questions there, just its <audio> element to tap, move and play.
+const MIXCLOUD_POLL: &str = r#"(function (gen, target, play, want) {
+  var r = {};
+  var v = document.querySelector('audio, video');
+  if (!v) { r.ready = false; return JSON.stringify(r); }
+  var E = window.__earshot;
+  if (!E || E.v !== v) {
+    try {
+      if (E && E.ctx) E.ctx.close();
+      var ctx = new AudioContext({ sampleRate: 44100 });
+      var tap = ctx.createScriptProcessor(4096, 2, 2);
+      ctx.createMediaElementSource(v).connect(tap);
+      tap.connect(ctx.destination); // its output stays silent
+      E = window.__earshot = { v: v, ctx: ctx, tap: tap, gen: 0, target: 0, sending: false, seekAt: 0 };
+      tap.onaudioprocess = function (e) {
+        var E = window.__earshot;
+        if (!E || E.v !== v) return;
+        var ok = E.gen > 0 && !v.paused && !v.seeking && v.readyState >= 3;
+        if (ok && !E.sending) { ok = Math.abs(v.currentTime - E.target) < 0.6; if (ok) E.sending = true; }
+        if (!ok) return;
+        var left = e.inputBuffer.getChannelData(0);
+        var right = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : left;
+        var out = new Int16Array(left.length * 2);
+        for (var i = 0; i < left.length; i++) {
+          out[2 * i] = Math.max(-1, Math.min(1, left[i])) * 32767;
+          out[2 * i + 1] = Math.max(-1, Math.min(1, right[i])) * 32767;
+        }
+        var bytes = new Uint8Array(out.buffer), text = '';
+        for (var j = 0; j < bytes.length; j += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(j, j + 0x8000));
+        earshotRelay(E.gen + ' ' + btoa(text));
+      };
+    } catch (e) { r.error = "Earshot couldn't take the page's sound: " + e; return JSON.stringify(r); }
+  }
+  if (E.gen !== gen) { E.gen = gen; E.target = target; E.sending = false; E.seekAt = 0; }
+  v.muted = false; v.volume = 1;
+  if (play && !E.sending && v.readyState >= 1 && Math.abs(v.currentTime - E.target) > 0.6 && Date.now() - E.seekAt > 2000) {
+    v.currentTime = E.target; E.seekAt = Date.now();
+  }
+  if (play && v.paused && !v.ended) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  if (!play && !v.paused) v.pause();
+  if (E.ctx.state !== 'running') E.ctx.resume();
+  r.ready = true;
+  r.state = v.ended ? 0 : v.paused ? 2 : v.readyState < 3 ? 3 : 1;
+  r.time = v.currentTime; r.duration = v.duration; r.video = want; r.sending = E.sending;
+  return JSON.stringify(r);
+})"#;
+
 /// Asked a few times a second: answers the cookie question, keeps the player
 /// unmuted and playing (or paused), taps its sound and reports its state.
 /// `gen` numbers the listener; `target` is where it asked to start; `want`
@@ -631,7 +679,8 @@ impl Tab {
             // The first listener's page opens where they asked.
             opened_for: 1,
         };
-        eprintln!("earshot: relaying {video}: opening youtube.com's page in Chromium");
+        let site = if video.starts_with("mc:") { "Mixcloud's player" } else { "youtube.com's page" };
+        eprintln!("earshot: relaying {video}: opening {site} in Chromium");
         let ready = (|| {
             tab.cdp("Runtime.enable", json!({}))?;
             tab.cdp("Runtime.addBinding", json!({ "name": "earshotRelay" }))?;
@@ -650,8 +699,13 @@ impl Tab {
         Ok(tab)
     }
 
-    /// The video's watch page, from `t` seconds.
+    /// The video's watch page, from `t` seconds (or a Mixcloud show's player,
+    /// which the poll then moves to `t`).
     fn navigate(&self, t: f64) -> Result<Value, String> {
+        if let Some(show) = self.video.strip_prefix("mc:") {
+            let url = format!("https://player-widget.mixcloud.com/?hide_cover=1&mini=1&autoplay=1&feed={}", earshot_core::net::encode(show));
+            return self.cdp("Page.navigate", json!({ "url": url }));
+        }
         let from = if t >= 1.0 { format!("&t={}s", t.floor()) } else { String::new() };
         self.cdp("Page.navigate", json!({ "url": format!("https://www.youtube.com/watch?v={}{from}", self.video) }))
     }
@@ -833,7 +887,8 @@ impl Tab {
         // Paused while a listener stops taking sound, so none is lost.
         let wanted = self.playing.as_ref().is_some_and(|p| p.backlog.len() < 16 && p.listener.body.capacity() > BACKLOG / 4);
         let (listener_no, t) = self.playing.as_ref().map(|p| (p.listener_no, p.listener.t)).unwrap_or((self.listener_no, 0.0));
-        let script = format!("({POLL})({listener_no}, {t}, {wanted}, {})", json!(self.video));
+        let poll = if self.video.starts_with("mc:") { MIXCLOUD_POLL } else { POLL };
+        let script = format!("({poll})({listener_no}, {t}, {wanted}, {})", json!(self.video));
         let status = match self.cdp("Runtime.evaluate", json!({ "expression": script, "returnByValue": true })) {
             Ok(answer) => answer["result"]["value"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()).unwrap_or(Value::Null),
             Err(_) => Value::Null,
