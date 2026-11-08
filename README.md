@@ -113,6 +113,17 @@ Use Earshot in a browser — on another computer or your phone — with the same
 
   Then open `http://<your server>:8790/` on any device on your network. Your library is kept in `~/earshot`.
 
+### On your phone
+
+Open the web version's address (`http://<your server>:8790/`) in your phone's browser, then add it to your home
+screen. It then opens from its own icon, full screen, like an app:
+
+- **iPhone or iPad**: in Safari, tap the **Share** button, then **Add to Home Screen**.
+- **Android**: in Chrome, open the **⋮** menu and tap **Add to Home screen** (or **Install app**).
+
+Your phone needs to reach the server, so use the Docker setup above (or any server on your network). The web version
+the desktop app opens is only reachable from that computer.
+
 ## Handy keys
 
 Space play/pause · Ctrl+← / Ctrl+→ previous/next · Ctrl+F search · Ctrl+N new playlist · Ctrl+S shuffle ·
