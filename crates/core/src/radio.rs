@@ -139,6 +139,17 @@ fn save(subreddit: &str, station: &Value) {
     }
 }
 
+/// The songs of every station kept on disk (the ones the listener has tuned in to).
+pub fn saved_songs() -> Vec<Value> {
+    let Some(Ok(entries)) = crate::library::data_dir().map(|dir| std::fs::read_dir(dir.join("radio"))) else { return Vec::new() };
+    entries
+        .flatten()
+        .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+        .filter_map(|text| serde_json::from_str::<Value>(&text).ok())
+        .flat_map(|saved| saved["station"]["tracks"].as_array().cloned().unwrap_or_default())
+        .collect()
+}
+
 /// A station's songs. While Reddit asks for a pause, the answer carries
 /// "retryIn" (seconds) and the last saved copy of the songs, if any, with its
 /// "savedMinutesAgo"; the radio page counts down and asks again. Loaded

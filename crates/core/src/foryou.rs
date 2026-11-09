@@ -11,16 +11,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 
 use crate::net::{encode, get_json};
-use crate::{archive, bandcamp, catalog, mixcloud, musicbrainz, random, soundcloud, youtube};
+use crate::{archive, bandcamp, catalog, mixcloud, musicbrainz, radio, random, soundcloud, youtube};
 
 const DAY_MS: u64 = 86_400_000;
 /// Fewer different songs than this and there's nothing to go on yet.
 pub const SONGS_NEEDED: usize = 1;
 /// How much a liked song counts, in plays (a song in a playlist counts one).
 pub const LIKED_WEIGHT: usize = 2;
-/// Which way of making the mixes saved ones came from (3: Bandcamp, SoundCloud
-/// and Mixcloud searched for every favourite, matching covers and remixes too).
-const MADE_BY: u64 = 3;
+/// Which way of making the mixes saved ones came from (4: every source,
+/// Deezer, the Internet Archive and Reddit too, taking turns).
+const MADE_BY: u64 = 4;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -132,52 +132,140 @@ fn about(track: &Value, artist: &str) -> bool {
     !words.is_empty() && words.iter().all(|word| found.contains(word))
 }
 
+/// Songs a source found, with the source's name ("bandcamp", "reddit"...).
+type Found = Vec<(&'static str, Vec<Value>)>;
+
+/// Deezer's songs for an artist: their own top songs and those of the
+/// artists Deezer finds related, or songs a search finds about them.
+fn deezer_like(seed: &Value, artist: &str) -> Vec<Value> {
+    let known = if seed["key"].as_str().is_some_and(|k| k.starts_with("dz:")) { seed["artistId"].as_str().unwrap_or("") } else { "" };
+    let top = |id: &str, count: usize| -> Vec<Value> {
+        get_json(&format!("https://api.deezer.com/artist/{id}/top?limit={count}"))
+            .ok()
+            .and_then(|found| found["data"].as_array().map(|songs| songs.iter().map(|song| catalog::track(song, None)).collect()))
+            .unwrap_or_default()
+    };
+    let Some(id) = deezer_artist(artist, known) else {
+        return tracks_of(catalog::search(artist)).into_iter().filter(|t| about(t, artist)).collect();
+    };
+    let mut songs = top(&id, 5);
+    if let Ok(related) = get_json(&format!("https://api.deezer.com/artist/{id}/related?limit=4")) {
+        for other in related["data"].as_array().cloned().unwrap_or_default() {
+            songs.extend(top(&other["id"].to_string(), 4));
+        }
+    }
+    songs
+}
+
+/// A few songs from each of a couple of the Internet Archive's recordings about an artist.
+fn archive_like(artist: &str) -> Vec<Value> {
+    let Ok(found) = archive::search(artist) else { return Vec::new() };
+    let mut items: Vec<Value> = found["albums"].as_array().cloned().unwrap_or_default().into_iter().filter(|item| about(item, artist)).take(6).collect();
+    random::shuffle(&mut items);
+    let mut songs = Vec::new();
+    for item in items.iter().take(2) {
+        let Some(Ok(album)) = item["id"].as_str().map(archive::album) else { continue };
+        let mut tracks = album["tracks"].as_array().cloned().unwrap_or_default();
+        random::shuffle(&mut tracks);
+        songs.extend(tracks.into_iter().take(4));
+    }
+    songs
+}
+
+/// Songs shared on Reddit in the stations the listener has tuned in to:
+/// ones about the artist first, then a few others (people's picks, not an
+/// algorithm's; only a few, so they don't take over when other sources run dry).
+fn reddit_like(artist: &str) -> Vec<Value> {
+    let (mut matching, mut rest): (Vec<Value>, Vec<Value>) = radio::saved_songs().into_iter().partition(|song| about(song, artist));
+    random::shuffle(&mut matching);
+    random::shuffle(&mut rest);
+    matching.extend(rest.into_iter().take(3));
+    matching
+}
+
 /// Songs like `seed` from every source that has some, one list per source:
 /// the seed's own site's suggestions (SoundCloud's related tracks, Mixcloud's
 /// similar shows, Bandcamp's recommendations, the Internet Archive's other
-/// recordings), YouTube's mix for it, and the artist on Bandcamp, SoundCloud
-/// and Mixcloud (each but the seed's own site, which already had its say).
-fn similar(seed: &Value, video: &str) -> Vec<Vec<Value>> {
+/// recordings), YouTube's mix for it, Deezer's related artists, songs about
+/// the artist on Bandcamp, SoundCloud, Mixcloud and the Internet Archive (each
+/// but the seed's own site, which already had its say), and Reddit's.
+fn similar(seed: &Value, video: &str) -> Found {
     let artist = seed["artist"].as_str().unwrap_or("").trim().to_owned();
     let service = seed["service"].as_str().unwrap_or("");
-    let own = match service {
-        "soundcloud" => seed["soundcloudId"].as_u64().map(soundcloud::related),
-        "mixcloud" => seed["mixcloudKey"].as_str().map(mixcloud::similar),
-        "bandcamp" => Some(bandcamp::related(seed)),
-        "archive" => Some(archive::related(seed)),
+    let own: Option<(&'static str, Result<Vec<Value>, String>)> = match service {
+        "soundcloud" => seed["soundcloudId"].as_u64().map(|id| ("soundcloud", soundcloud::related(id))),
+        "mixcloud" => seed["mixcloudKey"].as_str().map(|key| ("mixcloud", mixcloud::similar(key))),
+        "bandcamp" => Some(("bandcamp", bandcamp::related(seed))),
+        "archive" => Some(("archive", archive::related(seed))),
         _ => None,
     };
     let search = |site: &str| !artist.is_empty() && service != site;
-    std::thread::scope(|scope| {
+    let about_artist = |found: Vec<Value>| -> Vec<Value> { found.into_iter().filter(|t| about(t, &artist)).collect() };
+    let mut lists: Found = std::thread::scope(|scope| {
         let youtube = scope.spawn(|| video_for(seed, video).and_then(|video| youtube::mix(&video).ok()).unwrap_or_default());
+        let deezer = (!artist.is_empty()).then(|| scope.spawn(|| deezer_like(seed, &artist)));
         let bandcamp = search("bandcamp").then(|| scope.spawn(|| tracks_of(bandcamp::search(&artist))));
         let soundcloud = search("soundcloud").then(|| scope.spawn(|| tracks_of(soundcloud::search(&artist))));
         let mixcloud = search("mixcloud").then(|| scope.spawn(|| tracks_of(mixcloud::search(&artist))));
-        let mut lists = vec![own.and_then(Result::ok).unwrap_or_default(), youtube.join().unwrap_or_default()];
-        for job in [bandcamp, soundcloud, mixcloud].into_iter().flatten() {
-            // Only songs to do with the artist, not everything the search matched.
-            let found: Vec<Value> = job.join().unwrap_or_default();
-            lists.push(found.into_iter().filter(|t| about(t, &artist)).collect());
+        let archive = search("archive").then(|| scope.spawn(|| archive_like(&artist)));
+        let mut lists: Found = vec![("youtube", youtube.join().unwrap_or_default())];
+        lists.extend(own.map(|(source, found)| (source, found.unwrap_or_default())));
+        lists.extend(deezer.map(|job| ("deezer", job.join().unwrap_or_default())));
+        lists.extend(archive.map(|job| ("archive", job.join().unwrap_or_default())));
+        // Only songs to do with the artist, not everything a search matched.
+        for (source, job) in [("bandcamp", bandcamp), ("soundcloud", soundcloud), ("mixcloud", mixcloud)] {
+            lists.extend(job.map(|job| (source, about_artist(job.join().unwrap_or_default()))));
         }
         lists
-    })
+    });
+    for (source, songs) in &mut lists {
+        if *source != "reddit" {
+            random::shuffle(songs);
+        }
+    }
+    if !artist.is_empty() {
+        lists.push(("reddit", reddit_like(&artist)));
+    }
+    lists
 }
 
 /// Takes up to `count` songs that haven't been heard (and aren't in
-/// `taken`), a source at a time in turn, so every source gets a say.
-fn pick(mut lists: Vec<Vec<Value>>, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
-    for list in &mut lists {
-        random::shuffle(list);
-        list.reverse(); // popped from the end
+/// `taken`) from what was found for each favourite, a source at a time in
+/// turn so every source gets an equal say (a source that runs out leaves
+/// its turns to the rest), and each favourite in turn within a source.
+fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
+    let mut by_source: Vec<(&str, Vec<Vec<Value>>)> = Vec::new();
+    for lists in found {
+        for (source, songs) in lists {
+            match by_source.iter_mut().find(|(name, _)| *name == source) {
+                Some((_, all)) => all.push(songs),
+                None => by_source.push((source, vec![songs])),
+            }
+        }
     }
+    let mut queues: Vec<std::vec::IntoIter<Value>> = by_source
+        .into_iter()
+        .map(|(_, lists)| {
+            let longest = lists.iter().map(Vec::len).max().unwrap_or(0);
+            let mut lists: Vec<_> = lists.into_iter().map(Vec::into_iter).collect();
+            (0..longest).flat_map(|_| lists.iter_mut().filter_map(Iterator::next).collect::<Vec<_>>()).collect::<Vec<_>>().into_iter()
+        })
+        .collect();
+    random::shuffle(&mut queues);
     let mut picked = Vec::new();
-    while picked.len() < count && lists.iter().any(|list| !list.is_empty()) {
-        for list in &mut lists {
-            while let Some(song) = list.pop() {
+    let mut going = true;
+    while picked.len() < count && going {
+        going = false;
+        for queue in &mut queues {
+            for song in queue.by_ref() {
                 let key = song["key"].as_str().unwrap_or("").to_owned();
-                let video = song["youtubeId"].as_str().map(|v| format!("yt:{v}")).unwrap_or_default();
+                let video = song["youtubeId"].as_str().filter(|v| !v.is_empty()).map(|v| format!("yt:{v}")).unwrap_or_default();
                 if !key.is_empty() && !heard.contains(&key) && !heard.contains(&video) && taken.insert(key) {
+                    if !video.is_empty() {
+                        taken.insert(video);
+                    }
                     picked.push(song);
+                    going = true;
                     break;
                 }
             }
@@ -191,25 +279,21 @@ fn pick(mut lists: Vec<Vec<Value>>, heard: &HashSet<String>, taken: &mut HashSet
 
 /// New songs like `seed`, from all the sources, that haven't been heard.
 fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
-    pick(similar(seed, video), heard, taken, count)
+    blend(vec![similar(seed, video)], heard, taken, count)
 }
 
 fn discover_weekly(taste: &Taste) -> Value {
     let mut taken = HashSet::new();
-    let mut tracks = Vec::new();
-    // About 30 songs, from up to six favourites (more from each when there are few).
+    // About 30 songs, from what's like up to six favourites, every source in turn.
     let seeds: Vec<_> = taste.songs.iter().take(6).collect();
-    let per_seed = (30 / seeds.len().max(1)).max(5);
     // Every favourite's suggestions are looked up at the same time.
-    let found: Vec<Vec<Vec<Value>>> =
+    let found: Vec<Found> =
         std::thread::scope(|scope| seeds.iter().map(|(seed, video, _)| scope.spawn(move || similar(seed, video))).collect::<Vec<_>>().into_iter().map(|job| job.join().unwrap_or_default()).collect());
-    for lists in found {
-        tracks.extend(pick(lists, &taste.heard, &mut taken, per_seed));
-    }
+    let mut tracks = blend(found, &taste.heard, &mut taken, 30);
     random::shuffle(&mut tracks);
     json!({
         "id": "discover-weekly", "title": "Discover Weekly",
-        "subtitle": "Songs you haven't heard, like the ones you've been playing. New every Monday.",
+        "subtitle": "Songs you haven't heard, like the ones you've been playing, from every source. New every Monday.",
         "tracks": tracks,
     })
 }
@@ -384,12 +468,24 @@ fn best_album(name: &str, musicbrainz_id: Option<&str>) -> Option<Value> {
     musicbrainz::releases(musicbrainz_id?, name).into_iter().find(|release| release["kind"] == "album")
 }
 
+/// Albums a site's search finds about each of `names` (by someone new to the listener), two for each name.
+fn albums_about(names: &[String], search: impl Fn(&str) -> Result<Value, String>, fresh: &dyn Fn(&str) -> bool) -> Vec<Value> {
+    let mut found = Vec::new();
+    for name in names {
+        let albums = search(name).ok().and_then(|value| value["albums"].as_array().cloned()).unwrap_or_default();
+        found.extend(albums.into_iter().filter(|album| about(album, name) && fresh(album["artist"].as_str().unwrap_or(""))).take(2));
+    }
+    found
+}
+
 fn albums_for_you(taste: &Taste, artists: &Artists) -> Value {
     let known: HashSet<String> = taste.artists.iter().map(|a| a.0.to_lowercase()).collect();
     let seen = Mutex::new(known.clone());
     // Each artist once, and none the listener already plays.
     let fresh = |name: &str| !name.trim().is_empty() && seen.lock().unwrap().insert(name.trim().to_lowercase());
-    let picks: Vec<Value> = std::thread::scope(|scope| {
+    // The artists searched for on the sites that have no "related" of their own.
+    let names: Vec<String> = taste.artists.iter().take(4).map(|a| a.0.clone()).collect();
+    let picks: Vec<Vec<Value>> = std::thread::scope(|scope| {
         // Deezer's related artists.
         let deezer = scope.spawn(|| {
             let mut found = Vec::new();
@@ -433,28 +529,43 @@ fn albums_for_you(taste: &Taste, artists: &Artists) -> Value {
             }
             found
         });
-        // Bandcamp: what the pages of the listener's Bandcamp songs recommend.
+        // Bandcamp: what the pages of the listener's Bandcamp songs recommend,
+        // and albums about their other artists (covers, remixes, tributes).
         let bandcamp = scope.spawn(|| {
-            taste
+            let mut found: Vec<Value> = taste
                 .songs
                 .iter()
                 .filter(|(song, _, _)| song["service"] == "bandcamp")
                 .take(2)
                 .flat_map(|(song, _, _)| bandcamp::recommended_albums(song, 4))
-                .collect::<Vec<_>>()
+                .collect();
+            found.extend(albums_about(&names, |name| bandcamp::search(name), &fresh));
+            found
         });
-        let mut all: Vec<Value> = Vec::new();
-        for job in [deezer, listenbrainz, youtube, bandcamp] {
-            all.extend(job.join().unwrap_or_default());
-        }
-        all
+        // SoundCloud's albums and playlists, and the Internet Archive's recordings, about the listener's artists.
+        let soundcloud = scope.spawn(|| albums_about(&names, |name| soundcloud::search(name), &fresh));
+        let archive = scope.spawn(|| albums_about(&names, |name| archive::search(name), &fresh));
+        [deezer, listenbrainz, youtube, bandcamp, soundcloud, archive].map(|job| job.join().unwrap_or_default()).into_iter().collect::<Vec<_>>()
     });
-    let mut picks = picks;
-    random::shuffle(&mut picks);
+    // A source at a time in turn, so every source gets an equal say.
+    let mut lists = picks;
+    for list in &mut lists {
+        random::shuffle(list);
+    }
+    random::shuffle(&mut lists);
+    let mut lists: Vec<_> = lists.into_iter().map(Vec::into_iter).collect();
+    let mut picks = Vec::new();
+    while picks.len() < 24 {
+        let round: Vec<Value> = lists.iter_mut().filter_map(Iterator::next).collect();
+        if round.is_empty() {
+            break;
+        }
+        picks.extend(round);
+    }
     picks.truncate(24);
     json!({
         "id": "albums-for-you", "title": "Albums for you",
-        "subtitle": "By artists like the ones you play: from YouTube's mixes, Bandcamp's recommendations, ListenBrainz and Deezer.",
+        "subtitle": "By artists like the ones you play: from YouTube's mixes, Bandcamp, SoundCloud, the Internet Archive, ListenBrainz and Deezer.",
         "albums": picks,
     })
 }
