@@ -508,8 +508,16 @@ mod tests {
 /// samples, handing `each` the rate and a run of interleaved samples at a
 /// time: for turning an AAC stream into a plain MP3 that any browser plays
 /// (see the server's SoundCloud audio) without holding all of it decoded.
-pub fn decode_stereo(bytes: Vec<u8>, kind: &str, mut each: impl FnMut(u32, &[i16]) -> Result<(), String>) -> Result<(), String> {
-    let stream = MediaSourceStream::new(Box::new(io::Cursor::new(bytes)), Default::default());
+pub fn decode_stereo(bytes: Vec<u8>, kind: &str, each: impl FnMut(u32, &[i16]) -> Result<(), String>) -> Result<(), String> {
+    decode_stream(MediaSourceStream::new(Box::new(io::Cursor::new(bytes)), Default::default()), kind, each)
+}
+
+/// [`decode_stereo`] reading as the bytes arrive (a download under way).
+pub fn decode_stereo_from<R: Read + Send + Sync + 'static>(reader: R, kind: &str, each: impl FnMut(u32, &[i16]) -> Result<(), String>) -> Result<(), String> {
+    decode_stream(MediaSourceStream::new(Box::new(ReadOnlySource::new(reader)), Default::default()), kind, each)
+}
+
+fn decode_stream(stream: MediaSourceStream, kind: &str, mut each: impl FnMut(u32, &[i16]) -> Result<(), String>) -> Result<(), String> {
     let mut hint = Hint::new();
     hint.with_extension(kind);
     let probed = symphonia::default::get_probe()
