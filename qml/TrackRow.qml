@@ -126,17 +126,26 @@ Rectangle {
                     Text { anchors.centerIn: parent; text: "E"; font.pixelSize: 9; font.bold: true; color: Theme.background }
                 }
                 // Where the song plays from: the site's logo (one colour, like the
-                // other small icons), its name on hover.
+                // other small icons), its name on hover; a click opens the song's
+                // page on that site.
                 Icon {
                     id: sourceLogo
                     readonly property var source_: Api.source(row.track)
                     name: source_.logo
                     size: 14
-                    color: logoHover.hovered ? Theme.textMuted : Theme.textFaint
-                    HoverHandler { id: logoHover }
-                    ToolTip.visible: logoHover.hovered
-                    ToolTip.text: "Plays from " + source_.name
+                    color: logoMouse.containsMouse ? Theme.textMuted : Theme.textFaint
+                    ToolTip.visible: logoMouse.containsMouse
+                    ToolTip.text: "Open on " + source_.name
                     ToolTip.delay: 300
+                    MouseArea {
+                        id: logoMouse
+                        anchors.fill: parent
+                        anchors.margins: -3
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Api.openSongPage(row.track)
+                        onDoubleClicked: {}
+                    }
                 }
                 Text {
                     Layout.fillWidth: true

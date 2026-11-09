@@ -117,6 +117,29 @@ QtObject {
                 return name
         return "the web"
     }
+    // Opens a song's page on the site it plays from (its source badge): the
+    // Bandcamp, SoundCloud, Mixcloud or archive.org page, or its YouTube video,
+    // looked up first for catalogue songs that haven't played yet.
+    function openSongPage(track) {
+        if (!track)
+            return
+        const page = songPage(track)
+        if (page && (source(track).name !== "YouTube" || page.indexOf("youtube.com") >= 0)) {
+            openWeb(page)
+            return
+        }
+        const fallback = function () {
+            openWeb(page || "https://www.youtube.com/results?search_query="
+                    + encodeURIComponent(((track.artist || "") + " " + (track.title || "")).trim()))
+        }
+        call(Backend.resolve(JSON.stringify(track)), function (result) {
+            Player.remember(result)
+            if (result.videos && result.videos.length > 0)
+                openWeb(songPage(track))
+            else
+                fallback()
+        }, fallback)
+    }
     // Opens a page in the system's web browser.
     function openWeb(url) {
         if (url)

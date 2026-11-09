@@ -440,8 +440,16 @@ pub fn TrackRow(
                     {track["explicit"].as_bool().unwrap_or(false).then(|| view! { <span class="explicit">"E"</span> })}
                     {
                         let (name, logo) = source(&track);
+                        let page_track = track.clone();
                         // One colour, like the other small icons; the name on hover.
-                        view! { <span class="source" role="img" aria-label=name title=format!("Plays from {name}")><Icon name=logo.to_owned() size=14/></span> }
+                        // A click opens the song's page on that site.
+                        view! {
+                            <button class="source" aria-label=format!("Open on {name}") title=format!("Open on {name}")
+                                on:click=move |e: MouseEvent| { e.stop_propagation(); player.open_song_page(page_track.clone()); }
+                                on:dblclick=|e: MouseEvent| e.stop_propagation()>
+                                <Icon name=logo.to_owned() size=14/>
+                            </button>
+                        }
                     }
                     {if artist_id.is_empty() {
                         view! { <span>{by}</span> }.into_any()

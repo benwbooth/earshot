@@ -317,7 +317,7 @@ h1, h2, h3, p { margin: 0; }
 .row-by a:hover { color: var(--text); text-decoration: underline; }
 .explicit { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 3px; background: var(--text-faint); color: var(--background); font-size: 9px; font-weight: 700; flex: none; }
 /* Where the song plays from: the site's logo in one colour (its name on hover) */
-.row-by .source { display: inline-flex; flex: none; color: var(--text-faint); }
+.row-by .source { display: inline-flex; flex: none; padding: 0; border: 0; background: none; cursor: pointer; color: var(--text-faint); }
 .row-by .source:hover { color: var(--text-muted); }
 .row-album { flex: 2; min-width: 0; color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
 a.row-album:hover { color: var(--text); text-decoration: underline; }

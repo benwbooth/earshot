@@ -543,6 +543,44 @@ impl Player {
         self.play_tracks(items, start, context, route);
     }
 
+    /// Opens a song's page on the site it plays from (its source badge): the
+    /// Bandcamp, SoundCloud, Mixcloud or archive.org page, or its YouTube video,
+    /// looked up first for catalogue songs that haven't played yet.
+    pub fn open_song_page(&self, track: Value) {
+        let key = s(&track, "key");
+        let found = self.found.with_untracked(|f| f.get(&key).and_then(|v| v.first().cloned()));
+        let page = crate::state::song_page(&track, found.as_ref());
+        if !page.is_empty() && (crate::components::source(&track).0 != "YouTube" || page.contains("youtube.com")) {
+            crate::state::open_web(&page);
+            return;
+        }
+        // The tab opens now, while the click still counts, or the browser blocks it.
+        let Ok(Some(tab)) = leptos::prelude::window().open_with_url_and_target("about:blank", "_blank") else { return };
+        let player = *self;
+        spawn_local(async move {
+            let video = match api::call("resolve", json!({ "track": track })).await {
+                Ok(result) => {
+                    let videos: Vec<String> = list(&result, "videos").iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
+                    let first = videos.first().cloned();
+                    player.found.update(|f| {
+                        f.insert(key, videos);
+                    });
+                    first
+                }
+                Err(_) => None,
+            };
+            let url = match video {
+                Some(video) => crate::state::song_page(&track, Some(&video)),
+                None if !page.is_empty() => page,
+                None => {
+                    let query = format!("{} {}", s(&track, "artist"), s(&track, "title"));
+                    format!("https://www.youtube.com/results?search_query={}", String::from(js_sys::encode_uri_component(query.trim())))
+                }
+            };
+            let _ = tab.location().set_href(&url);
+        });
+    }
+
     /// Opens the album, playlist or page the music is playing from.
     pub fn open_source(&self) {
         let app = app();
