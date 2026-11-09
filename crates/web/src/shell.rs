@@ -232,6 +232,7 @@ pub fn Sidebar() -> impl IntoView {
             <div class="nav-heading">"YOUR LIBRARY"</div>
             <NavItem icon="album" label="Albums" href="/albums" detail=albums/>
             <NavItem icon="heart" label="Liked songs" href=playlist_href("liked") detail=liked/>
+            <NavItem icon="history" label="History" href="/history"/>
             <div class="nav-heading with-buttons">
                 <span>"PLAYLISTS"</span>
                 <IconButton icon="link" size=15 tip="Import a playlist from YouTube, SoundCloud or Bandcamp" on_click=move |_| app.prompt.set(Some(Prompt::Import))/>
@@ -606,6 +607,7 @@ pub fn TrackMenu() -> impl IntoView {
             let (t1, t2, t3, t4, t5, t6) = (tracks.clone(), tracks.clone(), tracks.clone(), one.clone(), one.clone(), one.clone());
             let (playlist_id, index, length, queue_index) = (request.playlist_id.clone(), request.playlist_index, request.playlist_length, request.queue_index);
             let (pid1, pid2, pid3) = (playlist_id.clone(), playlist_id.clone(), playlist_id.clone());
+            let forget = one.as_ref().filter(|_| request.history).map(|t| s(t, "key"));
             view! {
                 <div class="menu-backdrop" on:click=move |_| close() on:contextmenu=move |e: MouseEvent| { e.prevent_default(); close(); }></div>
                 <div class="menu track-menu" style=format!("left:{x}px;top:{y}px")>
@@ -666,6 +668,9 @@ pub fn TrackMenu() -> impl IntoView {
                     })}
                     {(queue_index >= 0 && queue_index != player.index.get_untracked()).then(|| view! {
                         <button class="menu-item" on:click=move |_| { player.remove_at(queue_index); close(); }>"Remove from queue"</button>
+                    })}
+                    {forget.map(|key| view! {
+                        <button class="menu-item" on:click=move |_| { app.change("forgetPlay", json!({ "key": key })); close(); }>"Remove from History"</button>
                     })}
                 </div>
             }

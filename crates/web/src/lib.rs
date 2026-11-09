@@ -43,6 +43,7 @@ fn Shell() -> impl IntoView {
                     <Route path=path!("/albums") view=pages::library::AlbumsPage/>
                     <Route path=path!("/library") view=pages::library::LibraryPage/>
                     <Route path=path!("/queue") view=pages::queue::QueuePage/>
+                    <Route path=path!("/history") view=pages::history::HistoryPage/>
                     <Route path=path!("/bandcamp") view=pages::bandcamp::BandcampPage/>
                     <Route path=path!("/bandcamp/tag") view=pages::bandcamp::BandcampTagPage/>
                     <Route path=path!("/service") view=pages::service::ServicePage/>

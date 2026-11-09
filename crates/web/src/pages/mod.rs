@@ -7,6 +7,7 @@ pub mod artist;
 pub mod bandcamp;
 pub mod chart;
 pub mod foryou;
+pub mod history;
 pub mod home;
 pub mod library;
 pub mod playlist;

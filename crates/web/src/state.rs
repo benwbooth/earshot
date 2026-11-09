@@ -172,11 +172,13 @@ pub struct MenuRequest {
     pub playlist_index: i64,
     pub playlist_length: usize,
     pub queue_index: i64,
+    /// Shown on the History page: the song can be forgotten.
+    pub history: bool,
 }
 
 impl MenuRequest {
     pub fn new(tracks: Vec<Value>, x: f64, y: f64) -> Self {
-        Self { tracks, x, y, playlist_id: String::new(), playlist_index: -1, playlist_length: 0, queue_index: -1 }
+        Self { tracks, x, y, playlist_id: String::new(), playlist_index: -1, playlist_length: 0, queue_index: -1, history: false }
     }
 }
 

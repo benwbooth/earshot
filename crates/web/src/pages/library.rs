@@ -112,6 +112,7 @@ pub fn LibraryPage() -> impl IntoView {
                 <div class="nav-heading">"YOUR LIBRARY"</div>
                 <Entry icon="album" label="Albums" href="/albums" detail=albums/>
                 <Entry icon="heart" label="Liked songs" href=playlist_href("liked") detail=liked/>
+                <Entry icon="history" label="History" href="/history" detail=none/>
                 <div class="nav-heading with-buttons">
                     <span>"PLAYLISTS"</span>
                     <IconButton icon="link" size=15 tip="Import a playlist from YouTube, SoundCloud or Bandcamp" on_click=move |_| app.prompt.set(Some(Prompt::Import))/>

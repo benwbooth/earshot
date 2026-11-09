@@ -1,0 +1,7 @@
+/* The songs you've listened to (qml/HistoryPage.qml) */
+.history-page-head { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.history-page-head .hero { flex: 1; }
+@media (max-width: 760px) {
+  .history-page-head .hero { flex-basis: 100%; }
+  .history .playlist-actions .spacer { display: none; }
+}

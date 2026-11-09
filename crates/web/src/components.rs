@@ -495,6 +495,8 @@ pub fn TrackList(
     #[prop(optional)] queue_mode: bool,
     /// The page to come back to from the player bar (the current page by default).
     #[prop(optional, into)] route: Option<String>,
+    /// Songs from the History page: their menu can forget them.
+    #[prop(optional)] history_mode: bool,
 ) -> impl IntoView {
     let app = app();
     let player = app.player;
@@ -529,6 +531,7 @@ pub fn TrackList(
                     if queue_mode {
                         request.queue_index = at as i64;
                     }
+                    request.history = history_mode;
                     app.menu.set(Some(request));
                 });
                 view! {
