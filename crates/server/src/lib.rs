@@ -418,6 +418,263 @@ fn youtube_file(video: &str) -> Result<Kept, String> {
     })
 }
 
+/// An MP3 being made from a download, for serving while it grows: its final
+/// size is known up front (from the song's length, at a constant bitrate),
+/// so Safari sees the right length and can seek; bytes not made yet are
+/// waited for.
+struct Growing {
+    total: u64,
+    state: std::sync::Mutex<GrowState>,
+    grown: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct GrowState {
+    data: Vec<u8>,
+    /// Finished (or why it stopped).
+    done: Option<Result<(), String>>,
+}
+
+impl Growing {
+    fn push(&self, bytes: &[u8]) {
+        let mut state = self.state.lock().unwrap();
+        let room = (self.total as usize).saturating_sub(state.data.len());
+        state.data.extend_from_slice(&bytes[..bytes.len().min(room)]);
+        self.grown.notify_all();
+    }
+
+    fn finish(&self, how: Result<(), String>) {
+        let mut state = self.state.lock().unwrap();
+        if let Err(why) = &how {
+            eprintln!("earshot: making the MP3 stopped: {why}");
+        }
+        state.done = Some(how);
+        self.grown.notify_all();
+    }
+
+    /// Bytes from `at` (up to `most`) once there are some; empty at the end.
+    fn read(&self, at: u64, most: usize) -> Result<Vec<u8>, String> {
+        let mut state = self.state.lock().unwrap();
+        loop {
+            if (at as usize) < state.data.len() {
+                let end = state.data.len().min(at as usize + most);
+                return Ok(state.data[at as usize..end].to_vec());
+            }
+            match &state.done {
+                // Short of the size promised (a song that ended early): silence-free zeros.
+                Some(Ok(())) => return Ok(vec![0; ((self.total - at) as usize).min(most)]),
+                Some(Err(why)) => return Err(why.clone()),
+                None => {}
+            }
+            let (next, timeout) = self.grown.wait_timeout(state, Duration::from_secs(60)).unwrap();
+            state = next;
+            if timeout.timed_out() && (at as usize) >= state.data.len() && state.done.is_none() {
+                return Err("the MP3 stopped growing".into());
+            }
+        }
+    }
+}
+
+/// MP3s at this bitrate (bytes a second = 192000 / 8).
+const GROWING_KBPS: u32 = 192;
+
+/// A song's length from a fragmented MP4's index ("sidx"), in seconds.
+fn sidx_seconds(bytes: &[u8]) -> Option<f64> {
+    let at = bytes.windows(4).position(|w| w == b"sidx")?;
+    let b = &bytes[at + 4..];
+    let u32_at = |i: usize| b.get(i..i + 4).map(|x| u32::from_be_bytes([x[0], x[1], x[2], x[3]]));
+    let version = *b.first()?;
+    let timescale = u32_at(8)? as f64;
+    let mut i = if version == 0 { 12 + 8 } else { 12 + 16 };
+    let count = b.get(i + 2..i + 4).map(|x| u16::from_be_bytes([x[0], x[1]]))? as usize;
+    i += 4;
+    let mut total = 0u64;
+    for n in 0..count {
+        total += u32_at(i + n * 12 + 4)? as u64;
+    }
+    (timescale > 0.0 && total > 0).then(|| total as f64 / timescale)
+}
+
+/// Reads what a channel brings, as the download arrives.
+struct Arriving {
+    receiver: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
+    buffer: Vec<u8>,
+    at: usize,
+}
+
+impl std::io::Read for Arriving {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        if self.at >= self.buffer.len() {
+            match self.receiver.lock().unwrap().recv() {
+                Ok(next) => {
+                    self.buffer = next;
+                    self.at = 0;
+                }
+                Err(_) => return Ok(0),
+            }
+        }
+        let n = out.len().min(self.buffer.len() - self.at);
+        out[..n].copy_from_slice(&self.buffer[self.at..self.at + n]);
+        self.at += n;
+        Ok(n)
+    }
+}
+
+/// A YouTube song's MP3, made while it downloads, kept for the last few.
+/// The start comes at once through YouTube's own address (which gives only
+/// the first megabyte or so without a sign-in, about a minute of sound);
+/// the rest through yt-dlp's, looked up meanwhile (YouTube makes it wait a
+/// few seconds). The two hand out the same file.
+fn youtube_growing(video: &str) -> Result<std::sync::Arc<Growing>, String> {
+    use earshot_core::youtube::AUDIO_PIECE;
+    static KEPT: OnceLock<std::sync::Mutex<VecDeque<(String, std::sync::Arc<Growing>)>>> = OnceLock::new();
+    let kept = KEPT.get_or_init(Default::default);
+    // Started once per song (the lock is held while it starts, a moment).
+    let mut list = kept.lock().unwrap();
+    if let Some((_, found)) = list.iter().find(|(k, _)| k == video) {
+        let failed = matches!(found.state.lock().unwrap().done, Some(Err(_)));
+        if !failed {
+            return Ok(found.clone());
+        }
+    }
+    list.retain(|(k, _)| k != video);
+    let started = std::time::Instant::now();
+    let (start_url, length) = earshot_core::youtube::audio(video)?;
+    if length > WHOLE_FILE_LIMIT {
+        return Err("too long to make whole".into());
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .timeout_per_read(Some(Duration::from_secs(30)))
+        .build()
+        .into();
+    let fetch = move |url: &str, from: u64, to: u64| -> Result<Vec<u8>, String> {
+        let mut response = agent.get(&format!("{url}&range={from}-{to}")).call().map_err(|error| format!("YouTube: {error}"))?;
+        response.body_mut().with_config().limit(AUDIO_PIECE + 1024).read_to_vec().map_err(|error| format!("YouTube: {error}"))
+    };
+    let first = fetch(&start_url, 0, AUDIO_PIECE.min(length) - 1)?;
+    let seconds = sidx_seconds(&first).ok_or("the audio doesn't say how long it is")?;
+    let growing = std::sync::Arc::new(Growing {
+        total: (seconds * GROWING_KBPS as f64 * 1000.0 / 8.0).floor() as u64,
+        state: Default::default(),
+        grown: Default::default(),
+    });
+    list.push_back((video.to_owned(), growing.clone()));
+    while list.len() > 6 {
+        list.pop_front();
+    }
+    drop(list);
+    let (send, receive) = std::sync::mpsc::sync_channel::<Vec<u8>>(64);
+    let video_owned = video.to_owned();
+    // The download: the start at once, the rest once yt-dlp has the address.
+    std::thread::spawn(move || {
+        let video = video_owned;
+        let mut at = first.len() as u64;
+        if send.send(first).is_err() {
+            return;
+        }
+        let mut url = start_url;
+        let mut switched = false;
+        while at < length {
+            let to = (at + AUDIO_PIECE - 1).min(length - 1);
+            let piece = match fetch(&url, at, to) {
+                Ok(piece) if !piece.is_empty() => piece,
+                _ if !switched => {
+                    switched = true;
+                    match youtube_address(&video, false) {
+                        Ok((other, _)) => {
+                            url = other;
+                            continue;
+                        }
+                        Err(why) => {
+                            eprintln!("earshot: {video}: no address for the rest of its audio: {why}");
+                            return;
+                        }
+                    }
+                }
+                _ => return,
+            };
+            at += piece.len() as u64;
+            if send.send(piece).is_err() {
+                return;
+            }
+        }
+    });
+    // The MP3, made as the download arrives.
+    let maker = growing.clone();
+    let video_owned = video.to_owned();
+    std::thread::spawn(move || {
+        let reader = Arriving { receiver: std::sync::Mutex::new(receive), buffer: Vec::new(), at: 0 };
+        let mut encoder: Option<mp3::Encoder> = None;
+        let mut out = Vec::new();
+        let mut first_sound = true;
+        let result = envelope::decode_stereo_from(reader, "mp4", |rate, samples| {
+            if encoder.is_none() {
+                encoder = Some(mp3::Encoder::new(rate, GROWING_KBPS)?);
+            }
+            out.clear();
+            encoder.as_mut().map(|e| e.encode(samples, &mut out)).unwrap_or(Ok(()))?;
+            if !out.is_empty() {
+                if first_sound {
+                    first_sound = false;
+                    eprintln!("earshot: {video_owned}: first MP3 after {:.2}s", started.elapsed().as_secs_f64());
+                }
+                maker.push(&out);
+            }
+            Ok(())
+        });
+        if let Some(encoder) = encoder.as_mut() {
+            out.clear();
+            encoder.flush(&mut out);
+            maker.push(&out);
+        }
+        eprintln!("earshot: {video_owned}: MP3 made in {:.1}s", started.elapsed().as_secs_f64());
+        maker.finish(result);
+    });
+    Ok(growing)
+}
+
+/// Serves part of a growing MP3, waiting for what isn't made yet.
+fn serve_growing(growing: std::sync::Arc<Growing>, range: Option<&str>) -> Response {
+    let length = growing.total;
+    let (start, end) = byte_range(range, length);
+    if start > end || start >= length {
+        return Response::builder()
+            .status(416)
+            .header(header::CONTENT_RANGE, format!("bytes */{length}"))
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response());
+    }
+    let (send, receive) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+    tokio::task::spawn_blocking(move || {
+        let mut at = start;
+        while at <= end {
+            match growing.read(at, ((end - at + 1) as usize).min(256 * 1024)) {
+                Ok(bytes) if !bytes.is_empty() => {
+                    at += bytes.len() as u64;
+                    if send.blocking_send(Ok(Bytes::from(bytes))).is_err() {
+                        return; // the browser stopped listening
+                    }
+                }
+                Ok(_) => return,
+                Err(why) => {
+                    let _ = send.blocking_send(Err(std::io::Error::other(why)));
+                    return;
+                }
+            }
+        }
+    });
+    let mut response = Response::builder()
+        .status(if range.is_some() { 206 } else { 200 })
+        .header(header::CONTENT_TYPE, "audio/mpeg")
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, (end - start + 1).to_string());
+    if range.is_some() {
+        response = response.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{length}"));
+    }
+    response.body(Body::from_stream(ReceiverStream::new(receive))).unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
+}
+
 /// Looks up a YouTube video's audio address ahead of time (the next song in
 /// the queue), so playing it later starts at once. Answers straight away.
 async fn youtube_warm(Query(query): Query<HashMap<String, String>>) -> StatusCode {
@@ -426,7 +683,9 @@ async fn youtube_warm(Query(query): Query<HashMap<String, String>>) -> StatusCod
         return StatusCode::BAD_REQUEST;
     }
     tokio::task::spawn_blocking(move || {
-        let _ = youtube_file(&video);
+        if youtube_growing(&video).is_err() {
+            let _ = youtube_file(&video);
+        }
     });
     StatusCode::ACCEPTED
 }
@@ -456,7 +715,15 @@ async fn youtube_audio(Query(query): Query<HashMap<String, String>>, headers: He
         return (StatusCode::BAD_REQUEST, "Which video?").into_response();
     }
     let range = headers.get(header::RANGE).and_then(|value| value.to_str().ok()).map(str::to_owned);
-    // Whole, as an MP3, when it's a song's length; otherwise streamed as YouTube sends it.
+    // As an MP3 made while it downloads (starting at once), when it's a
+    // song's length; else whole; else streamed as YouTube sends it.
+    let growing = {
+        let video = video.clone();
+        tokio::task::spawn_blocking(move || youtube_growing(&video)).await
+    };
+    if let Ok(Ok(growing)) = growing {
+        return serve_growing(growing, range.as_deref());
+    }
     let whole = {
         let video = video.clone();
         tokio::task::spawn_blocking(move || youtube_file(&video)).await
