@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Rebuilds and restarts Earshot every time you save a change.
-#   ./dev.sh          the Qt app
+#   ./dev.sh          the Qt app, via devloop (~/src/home-services/devloop):
+#                     the same optimized build the Earshot launcher runs
 #   ./dev.sh web      the web version: rebuilds the interface, restarts its server
 #   ./dev.sh all      both at once
-# Extra arguments after the mode go to watchexec (e.g. ./dev.sh app --clear).
+# Extra arguments after web/all go to watchexec (e.g. ./dev.sh web --clear).
 #
 # Only one copy runs at a time: starting dev.sh stops an earlier dev.sh, any
 # running Earshot app, and any earlier dev web server first. The dev app then
@@ -15,6 +16,13 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 cd "$root"
+devloop="$HOME/src/home-services/devloop/devloop"
+
+# The app alone is devloop's job.
+if [ "${1:-app}" = app ]; then
+  [ $# -gt 0 ] && shift
+  exec "$devloop" dev earshot "$@"
+fi
 
 # Everything (Qt, watchexec, the wasm tools) comes from the flake's dev shell.
 if [ -z "${IN_NIX_SHELL:-}" ]; then
@@ -79,13 +87,7 @@ export EARSHOT_LISTEN=${EARSHOT_LISTEN:-127.0.0.1:8791}
 common=(--restart --debounce 500ms --stop-signal SIGTERM --stop-timeout 5s
         --ignore 'target/**' --ignore 'result*')
 
-watch_app() {
-  watchexec "${common[@]}" \
-    -w src -w qml -w native -w crates/core -w crates/server -w crates/speakers \
-    -w build.rs -w Cargo.toml -w Cargo.lock \
-    -e rs,qml,js,cpp,h,svg,png,toml,lock \
-    "$@" -- cargo run
-}
+watch_app() { "$devloop" dev earshot; }
 
 watch_web() {
   watchexec "${common[@]}" \

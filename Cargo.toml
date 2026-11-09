@@ -42,3 +42,14 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# One build for everything: devloop (the app you run), cargo run, cargo test
+# and the editor all use this profile, so they share target/debug. It's
+# release-grade (optimized, no debug info) and stays incremental, so a small
+# change rebuilds in seconds. `cargo build --release` is only for packaging.
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = true
