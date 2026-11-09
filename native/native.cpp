@@ -6,6 +6,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
+#include <QtGui/QFont>
 #include <QtGui/QIcon>
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
@@ -87,6 +88,13 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     // subpixel settings from the desktop), not Qt Quick's distance fields,
     // which look soft at small sizes. Every window and Text item picks it up.
     QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
+    // Full hinting snaps every glyph to the pixel grid. With the desktop's
+    // usual slight hinting, at fractional scales (130%) round letters like
+    // e and o land half a pixel below the others, depending on where a line
+    // of text falls. Text items inherit this from the application font.
+    QFont font = QGuiApplication::font();
+    font.setHintingPreference(QFont::PreferFullHinting);
+    QGuiApplication::setFont(font);
 
     // Only one Earshot at a time: a second launch asks the running one to show
     // its window, then quits.
