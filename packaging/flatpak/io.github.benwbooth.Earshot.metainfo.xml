@@ -53,6 +53,17 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.4" date="2026-11-09">
+      <description>
+        <ul>
+          <li>The web version plays YouTube, SoundCloud and Mixcloud on iPhones and iPads, and YouTube songs start in about a second.</li>
+          <li>When a SoundCloud song won't play, the same song plays from YouTube.</li>
+          <li>Seeking and song lengths are right on iPhones, and a pause stays paused.</li>
+          <li>A bigger waveform beside the title on the phone's Now playing page.</li>
+          <li>Only "Couldn't play" when nothing will play a song; no other notices.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-11-08">
       <description>
         <ul>
