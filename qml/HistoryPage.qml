@@ -11,11 +11,14 @@ Flickable {
     property var plays: []
     property bool loaded: false
     property string filter: ""
+    // Newest first (as the server answers), or oldest first.
+    property bool newestFirst: true
+    readonly property var ordered: newestFirst ? plays : plays.slice().reverse()
     readonly property var shown: {
         const f = filter.trim().toLowerCase()
         if (f === "")
-            return plays
-        return plays.filter(t => (t.title + " " + t.artist + " " + (t.album || "")).toLowerCase().indexOf(f) >= 0)
+            return ordered
+        return ordered.filter(t => (t.title + " " + t.artist + " " + (t.album || "")).toLowerCase().indexOf(f) >= 0)
     }
     readonly property bool playingThis: Player.playingRoute("history", "history")
 
@@ -119,6 +122,9 @@ Flickable {
             tracks: page.shown
             context: "History"
             historyMode: true
+            showPlayed: true
+            newestFirst: page.newestFirst
+            onPlayedSortRequested: page.newestFirst = !page.newestFirst
             route: ({ page: "history", args: { id: "history" } })
         }
     }

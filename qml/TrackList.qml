@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Earshot
 
@@ -16,6 +17,10 @@ ColumnLayout {
     property bool queueMode: false
     // Songs from the History page: their menu can forget them.
     property bool historyMode: false
+    // A "Played" column; its heading sorts (newestFirst says which way).
+    property bool showPlayed: false
+    property bool newestFirst: true
+    signal playedSortRequested()
     // Where the player bar takes you back to (default: the page shown).
     property var route: null
     // Where each song shown sits in `tracks` (explicit songs are left out
@@ -42,6 +47,24 @@ ColumnLayout {
         Item { visible: list.showCover; Layout.preferredWidth: 40 }
         Text { Layout.fillWidth: true; Layout.preferredWidth: 3; text: "TITLE"; color: Theme.textFaint; font.pixelSize: Theme.fontSmall - 1; font.letterSpacing: 1 }
         Text { visible: list.showAlbum && list.width > 640; Layout.fillWidth: true; Layout.preferredWidth: 2; text: "ALBUM"; color: Theme.textFaint; font.pixelSize: Theme.fontSmall - 1; font.letterSpacing: 1 }
+        Text {
+            visible: list.showPlayed
+            Layout.preferredWidth: 124
+            text: "PLAYED " + (list.newestFirst ? "↓" : "↑")
+            color: playedMouse.containsMouse ? Theme.text : Theme.textFaint
+            font.pixelSize: Theme.fontSmall - 1
+            font.letterSpacing: 1
+            MouseArea {
+                id: playedMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: list.playedSortRequested()
+            }
+            ToolTip.visible: playedMouse.containsMouse
+            ToolTip.text: list.newestFirst ? "Newest first: click for oldest first" : "Oldest first: click for newest first"
+            ToolTip.delay: 400
+        }
         Item { Layout.preferredWidth: 36 }
         Text { Layout.preferredWidth: 44; text: "TIME"; horizontalAlignment: Text.AlignRight; color: Theme.textFaint; font.pixelSize: Theme.fontSmall - 1; font.letterSpacing: 1 }
         Item { Layout.preferredWidth: 32 }
@@ -66,6 +89,7 @@ ColumnLayout {
             showCover: list.showCover
             showAlbum: list.showAlbum
             showNumber: list.showNumber
+            showPlayed: list.showPlayed
             onActivated: {
                 if (list.queueMode)
                     Player.jump(list.shownAt[index])

@@ -11,6 +11,8 @@ Rectangle {
     property bool showCover: true
     property bool showAlbum: true
     property bool showNumber: true
+    // The History page: when the song last played, as 2026-11-08 21:35.
+    property bool showPlayed: false
     readonly property bool isCurrent: Player.current !== null && track !== undefined && Player.current.key === track.key
     readonly property bool liked: (Backend.libraryRevision, Backend.isLiked(track.key))
 
@@ -183,6 +185,15 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: Nav.album(row.track.albumId)
             }
+        }
+
+        Text {
+            visible: row.showPlayed
+            Layout.preferredWidth: 124
+            text: row.track.playedAt ? Qt.formatDateTime(new Date(row.track.playedAt), "yyyy-MM-dd hh:mm") : ""
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontSmall + 1
+            font.features: { "tnum": 1 }
         }
 
         IconButton {
