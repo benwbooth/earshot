@@ -85,10 +85,12 @@ fn audio() -> HtmlAudioElement {
 }
 
 /// Whether the page can set how loud it plays. iPhones and iPads can't:
-/// there a page's volume always reads 1 and only the side buttons change it.
+/// only the side buttons change it there. (Newer iOS reads back the volume a
+/// page sets while ignoring it, so iOS is known by name; the probe is for
+/// other browsers that can't.)
 pub fn volume_works() -> bool {
     thread_local! {
-        static WORKS: bool = HtmlAudioElement::new().map(|probe| {
+        static WORKS: bool = !is_ios() && HtmlAudioElement::new().map(|probe| {
             probe.set_volume(0.5);
             (probe.volume() - 0.5).abs() < 0.01
         }).unwrap_or(true);
