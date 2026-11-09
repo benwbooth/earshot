@@ -91,7 +91,8 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     // Full hinting snaps every glyph to the pixel grid. With the desktop's
     // usual slight hinting, at fractional scales (130%) round letters like
     // e and o land half a pixel below the others, depending on where a line
-    // of text falls. Text items inherit this from the application font.
+    // of text falls. Plain windows inherit this from the application font;
+    // Main.qml sets it on the main window, whose font comes from the style.
     QFont font = QGuiApplication::font();
     font.setHintingPreference(QFont::PreferFullHinting);
     QGuiApplication::setFont(font);

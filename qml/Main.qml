@@ -17,6 +17,10 @@ ApplicationWindow {
     color: Theme.background
     font.family: Theme.fontFamily
     font.pixelSize: Theme.fontBody
+    // Full hinting keeps round letters (e, o) on the baseline at fractional
+    // scales; Qt otherwise turns hinting off whenever the display is scaled.
+    // Controls and Text inside the window inherit this font.
+    font.hintingPreference: Font.PreferFullHinting
 
     palette {
         window: Theme.background
