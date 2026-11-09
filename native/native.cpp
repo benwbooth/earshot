@@ -10,6 +10,7 @@
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 #include <QtQml/QQmlApplicationEngine>
+#include <QtQuick/QQuickWindow>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QtWidgets/QApplication>
 #ifdef Q_OS_LINUX
@@ -82,6 +83,10 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     QApplication::setOrganizationName(QStringLiteral("Earshot"));
     QGuiApplication::setDesktopFileName(desktopId);
     QGuiApplication::setWindowIcon(QIcon(icon));
+    // Draw text with the platform's own rasterizer (FreeType hinting and
+    // subpixel settings from the desktop), not Qt Quick's distance fields,
+    // which look soft at small sizes. Every window and Text item picks it up.
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
 
     // Only one Earshot at a time: a second launch asks the running one to show
     // its window, then quits.
