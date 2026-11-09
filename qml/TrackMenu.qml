@@ -9,6 +9,7 @@ Menu {
     property int playlistIndex: -1
     property int playlistLength: 0
     property int queueIndex: -1
+    property bool historyMode: false  // set on the History page
     property var playlists: []
 
     readonly property var track: tracks.length === 1 ? tracks[0] : null
@@ -137,5 +138,11 @@ Menu {
         height: menu.queueIndex >= 0 && menu.queueIndex !== Player.index ? implicitHeight : 0
         visible: height > 0
         onTriggered: Player.removeAt(menu.queueIndex)
+    }
+    MenuItem {
+        text: "Remove from History"
+        height: menu.historyMode && menu.track !== null ? implicitHeight : 0
+        visible: height > 0
+        onTriggered: Api.call(Backend.call("forgetPlay", JSON.stringify({ key: menu.track.key })), function () {}, function (message) { Nav.notify(message) })
     }
 }

@@ -292,6 +292,16 @@ impl Earshot {
                 self.library().record_play(&args["track"], &text("video"));
                 changes(Value::Null)
             }
+            // The songs listened to, newest first, each once: [track + { playedAt, plays }].
+            "recentlyPlayed" => Ok(json!(self.library().recently_played(args["limit"].as_u64().unwrap_or(500) as usize))),
+            "forgetPlay" => {
+                self.library().forget_play(&text("key"));
+                changes(Value::Null)
+            }
+            "clearHistory" => {
+                self.library().clear_history();
+                changes(Value::Null)
+            }
             "rememberVideo" => {
                 self.library().remember_video(&text("key"), &text("video"));
                 Ok(Value::Null)

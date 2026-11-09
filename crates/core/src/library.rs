@@ -423,6 +423,43 @@ impl Library {
         query.query_map([], |row| row.get::<_, String>(0)).map(|rows| rows.filter_map(Result::ok).map(parse).collect()).unwrap_or_default()
     }
 
+    /// The songs listened to, newest first, each once (at its latest play),
+    /// with "playedAt" and how many times it played ("plays"); at most `limit`.
+    pub fn recently_played(&self, limit: usize) -> Vec<Value> {
+        let Ok(mut query) = self.db.prepare_cached(
+            "SELECT h.entry, g.plays FROM history h \
+             JOIN (SELECT key, MAX(id) AS last, COUNT(*) AS plays FROM history GROUP BY key) g ON h.id = g.last \
+             ORDER BY h.id DESC LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        query
+            .query_map([limit as i64], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .map(|rows| {
+                rows.filter_map(Result::ok)
+                    .map(|(entry, plays)| {
+                        let mut track = parse(entry);
+                        if let Some(map) = track.as_object_mut() {
+                            map.remove("video");
+                            map.insert("plays".into(), json!(plays));
+                        }
+                        track
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Forgets every play of one song.
+    pub fn forget_play(&mut self, key: &str) {
+        self.write(|tx| tx.execute("DELETE FROM history WHERE key = ?1", [key]));
+    }
+
+    /// Forgets the whole listening history.
+    pub fn clear_history(&mut self) {
+        self.write(|tx| tx.execute("DELETE FROM history", []));
+    }
+
     /// Subreddits added to Reddit radio, in the order they were added.
     pub fn stations(&self) -> Vec<String> {
         let Ok(mut query) = self.db.prepare_cached("SELECT subreddit FROM stations ORDER BY added, rowid") else {
@@ -513,6 +550,25 @@ mod tests {
     }
 
     /// Subreddits added to Reddit radio: kept once each, in order, shared, removable.
+    #[test]
+    fn lists_each_played_song_once_newest_first() {
+        let path = temp_dir().join("earshot.db");
+        let mut library = Library::open(Some(path));
+        for key in ["a", "b", "a", "c"] {
+            library.record_play(&track(key), "v");
+        }
+        let recent = library.recently_played(10);
+        let keys: Vec<&str> = recent.iter().map(|t| t["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, ["c", "a", "b"]);
+        assert_eq!(recent[1]["plays"], 2);
+        assert!(recent[0].get("video").is_none());
+        library.forget_play("a");
+        assert_eq!(library.recently_played(10).len(), 2);
+        library.clear_history();
+        assert!(library.recently_played(10).is_empty());
+        assert!(library.history().is_empty());
+    }
+
     #[test]
     fn keeps_added_radio_stations() {
         let path = temp_dir().join("earshot.db");

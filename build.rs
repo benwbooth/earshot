@@ -45,6 +45,7 @@ fn main() {
         QmlFile::from("qml/AlbumPage.qml"),
         QmlFile::from("qml/ArtistPage.qml"),
         QmlFile::from("qml/PlaylistPage.qml"),
+        QmlFile::from("qml/HistoryPage.qml"),
         QmlFile::from("qml/LibraryAlbumsPage.qml"),
         QmlFile::from("qml/QueuePage.qml"),
         QmlFile::from("qml/TagChips.qml"),

@@ -85,6 +85,7 @@ Rectangle {
         }
         NavItem { iconName: "album"; label: "Albums"; page: "albums"; detail: (Backend.libraryRevision, JSON.parse(Backend.savedAlbums()).length || "") }
         NavItem { iconName: "heart"; label: "Liked songs"; page: "playlist"; args: ({ id: "liked" }); detail: sidebar.playlists.length > 0 && sidebar.playlists[0].count > 0 ? sidebar.playlists[0].count : "" }
+        NavItem { iconName: "history"; label: "History"; page: "history" }
 
         RowLayout {
             Layout.topMargin: 24

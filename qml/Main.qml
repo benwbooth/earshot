@@ -201,7 +201,7 @@ ApplicationWindow {
 
     readonly property var pages: ({
         home: forYouPage, trending: homePage, search: searchPage, radio: radioPage, chart: chartPage, album: albumPage,
-        artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage,
+        artist: artistPage, playlist: playlistPage, albums: albumsPage, queue: queuePage, history: historyPage,
         bandcamp: bandcampPage, "bandcamp-tag": bandcampTagPage, service: servicePage,
         // Made for you is Home now; "foryou" is kept for places saved before.
         foryou: forYouPage
@@ -215,7 +215,7 @@ ApplicationWindow {
         const top = stack.currentItem
         if (top && top.pageName === page && JSON.stringify(top.args) === JSON.stringify(args))
             return
-        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "foryou" || page === "trending" || page === "albums" || page === "queue" || (page === "playlist" && top && top.pageName === "playlist"))
+        if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "foryou" || page === "trending" || page === "albums" || page === "queue" || page === "history" || (page === "playlist" && top && top.pageName === "playlist"))
             stack.replace(null, component, { args: args })
         else
             stack.push(component, { args: args })
@@ -262,6 +262,7 @@ ApplicationWindow {
     Component { id: playlistPage; PlaylistPage {} }
     Component { id: albumsPage; LibraryAlbumsPage {} }
     Component { id: queuePage; QueuePage {} }
+    Component { id: historyPage; HistoryPage {} }
     Component { id: bandcampPage; BandcampPage {} }
     Component { id: bandcampTagPage; BandcampTagPage {} }
     Component { id: servicePage; ServicePage {} }

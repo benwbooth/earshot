@@ -14,6 +14,10 @@ ColumnLayout {
     property string playlistId: ""
     property int limit: -1
     property bool queueMode: false
+    // Songs from the History page: their menu can forget them.
+    property bool historyMode: false
+    // Where the player bar takes you back to (default: the page shown).
+    property var route: null
     // Where each song shown sits in `tracks` (explicit songs are left out
     // while they're hidden), and the songs shown.
     readonly property var shownAt: {
@@ -66,13 +70,14 @@ ColumnLayout {
                 if (list.queueMode)
                     Player.jump(list.shownAt[index])
                 else
-                    Player.playTracks(list.shown, index, list.context)
+                    Player.playTracks(list.shown, index, list.context, list.route)
             }
             onMenuRequested: anchor => {
                 menu.playlistId = list.playlistId
                 menu.playlistIndex = list.playlistId !== "" ? list.shownAt[index] : -1
                 menu.playlistLength = list.tracks.length
                 menu.queueIndex = list.queueMode ? list.shownAt[index] : -1
+                menu.historyMode = list.historyMode
                 menu.openFor([modelData], anchor)
             }
         }
