@@ -455,6 +455,7 @@ pub fn PlayerBar() -> impl IntoView {
             <div class="volume">
                 <IconButton icon="queue" size=18 tip="Queue" active=Signal::derive(on_queue)
                     on_click=move |_| if on_queue() { let _ = window().history().map(|h| h.back()); } else { app.go("/queue") }/>
+                <Show when=crate::engine::volume_works>
                 <IconButton
                     icon=Signal::derive(move || if player.muted.get() || player.volume.get() == 0.0 { "volume-mute".to_owned() } else { "volume".to_owned() })
                     size=18 class="desktop-only"
@@ -462,6 +463,7 @@ pub fn PlayerBar() -> impl IntoView {
                     on_click=move |_| player.muted.update(|m| *m = !*m)/>
                 <Slider class="volume-slider desktop-only" percent=true value=Signal::derive(move || player.volume.get()) max=1.0
                     on_change=move |v| { player.volume.set(v); player.muted.set(false); }/>
+                </Show>
             </div>
             <div class="mobile-progress" style=move || format!("--fill:{}%", (player.position() / player.length().max(1.0) * 100.0).clamp(0.0, 100.0))></div>
         </footer>
@@ -563,6 +565,8 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
                     <IconButton icon="dice" size=20 active=Signal::derive(move || player.radio.get())
                         tip=Signal::derive(move || if player.radio.get() { "Random radio is on".to_owned() } else { "Random radio: keep playing songs like these".to_owned() })
                         on_click=move |_| player.radio.update(|on| *on = !*on)/>
+                    // iPhones only let their side buttons change the volume, so there's no slider there.
+                    <Show when=crate::engine::volume_works>
                     <div class="np-volume">
                         <IconButton
                             icon=Signal::derive(move || if player.muted.get() || player.volume.get() == 0.0 { "volume-mute".to_owned() } else { "volume".to_owned() })
@@ -572,6 +576,7 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
                         <Slider class="volume-slider" percent=true value=Signal::derive(move || player.volume.get()) max=1.0
                             on_change=move |v| { player.volume.set(v); player.muted.set(false); }/>
                     </div>
+                    </Show>
                     <Show when=move || !page.get().is_empty()>
                         <IconButton icon="external" size=20
                             tip=Signal::derive(move || format!("Open on {}", site_name(&page.get())))

@@ -84,6 +84,18 @@ fn audio() -> HtmlAudioElement {
     AUDIO.with(|a| a.clone())
 }
 
+/// Whether the page can set how loud it plays. iPhones and iPads can't:
+/// there a page's volume always reads 1 and only the side buttons change it.
+pub fn volume_works() -> bool {
+    thread_local! {
+        static WORKS: bool = HtmlAudioElement::new().map(|probe| {
+            probe.set_volume(0.5);
+            (probe.volume() - 0.5).abs() < 0.01
+        }).unwrap_or(true);
+    }
+    WORKS.with(|works| *works)
+}
+
 /// iPhones and iPads (iPadOS calls itself a Mac, but has a touch screen).
 /// Their browsers only let a page start sound from a tap, so YouTube's
 /// embedded player, started after the song is looked up, never plays there.
