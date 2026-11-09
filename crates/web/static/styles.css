@@ -327,6 +327,9 @@ a.row-album:hover { color: var(--text); text-decoration: underline; }
 .track-row .row-like { opacity: 0; }
 .track-row:hover .row-like, .track-row .row-like.active, .track-row .row-like:has(.icon[style*="heart-filled"]) { opacity: 1; }
 .row-like:has(.icon[style*="heart-filled"]) { color: var(--accent); }
+.row-played { width: 128px; flex: none; white-space: nowrap; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.track-header .row-played { font-size: 11px; letter-spacing: 1px; color: inherit; text-align: left; cursor: pointer; }
+.track-header .row-played:hover { color: var(--text); }
 .row-time { width: 44px; flex: none; text-align: right; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .row-more { width: 32px; flex: none; }
 .track-row .row-more { opacity: 0; }

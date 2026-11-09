@@ -368,6 +368,8 @@ pub fn TrackRow(
     #[prop(default = true)] show_cover: bool,
     #[prop(default = true)] show_album: bool,
     #[prop(default = true)] show_number: bool,
+    /// The History page: when the song last played, as 2026-11-08 21:35.
+    #[prop(optional)] show_played: bool,
     #[prop(into)] on_play: Callback<()>,
     #[prop(into)] on_menu: Callback<MenuRequest>,
 ) -> impl IntoView {
@@ -466,6 +468,7 @@ pub fn TrackRow(
                     view! { <a class="row-album" href=album_href(&album_id)>{album}</a> }.into_any()
                 }
             })}
+            {show_played.then(|| view! { <span class="row-played">{played_at(&track)}</span> })}
             <IconButton
                 icon=Signal::derive(move || if liked.get() { "heart-filled".to_owned() } else { "heart".to_owned() })
                 size=16
@@ -479,6 +482,21 @@ pub fn TrackRow(
                 on_click=move |event: MouseEvent| on_menu.run(opens_menu(vec![menu_track.clone()], &event))/>
         </div>
     }
+}
+
+/// When a song from the history last played, in this computer's time:
+/// 2026-11-08 21:35 (easy to read, and sorts as text).
+fn played_at(track: &Value) -> String {
+    let Some(ms) = track["playedAt"].as_f64().filter(|ms| *ms > 0.0) else { return String::new() };
+    let date = js_sys::Date::new(&ms.into());
+    format!(
+        "{}-{:02}-{:02} {:02}:{:02}",
+        date.get_full_year(),
+        date.get_month() + 1,
+        date.get_date(),
+        date.get_hours(),
+        date.get_minutes()
+    )
 }
 
 /// A list of songs. Double-click (or the play button) plays from that song on.
@@ -497,7 +515,11 @@ pub fn TrackList(
     #[prop(optional, into)] route: Option<String>,
     /// Songs from the History page: their menu can forget them.
     #[prop(optional)] history_mode: bool,
+    /// A "Played" column; clicking its heading asks for the other order.
+    #[prop(optional)] newest_first: Option<Signal<bool>>,
+    #[prop(optional, into)] on_sort_played: Option<Callback<()>>,
 ) -> impl IntoView {
+    let show_played = newest_first.is_some();
     let app = app();
     let player = app.player;
     let playlist_id = StoredValue::new(playlist_id);
@@ -535,7 +557,7 @@ pub fn TrackList(
                     app.menu.set(Some(request));
                 });
                 view! {
-                    <TrackRow track=track number=number show_cover=show_cover show_album=show_album show_number=show_number on_play=on_play on_menu=on_menu/>
+                    <TrackRow track=track number=number show_cover=show_cover show_album=show_album show_number=show_number show_played=show_played on_play=on_play on_menu=on_menu/>
                 }
             })
             .collect_view()
@@ -548,6 +570,12 @@ pub fn TrackList(
                     {show_cover.then(|| view! { <span class="row-cover"></span> })}
                     <span class="row-text">"TITLE"</span>
                     {show_album.then(|| view! { <span class="row-album">"ALBUM"</span> })}
+                    {newest_first.map(|newest| view! {
+                        <button class="row-played sort" on:click=move |_| if let Some(sort) = on_sort_played { sort.run(()) }
+                            title=move || if newest.get() { "Newest first: click for oldest first" } else { "Oldest first: click for newest first" }>
+                            {move || if newest.get() { "PLAYED ↓" } else { "PLAYED ↑" }}
+                        </button>
+                    })}
                     <span class="row-like"></span>
                     <span class="row-time">"TIME"</span>
                     <span class="row-more"></span>

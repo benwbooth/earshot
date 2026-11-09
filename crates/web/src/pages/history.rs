@@ -40,7 +40,15 @@ pub fn HistoryPage() -> impl IntoView {
     });
 
     let filter = RwSignal::new(String::new());
-    let all = Signal::derive(move || plays.get().unwrap_or_default());
+    // Newest first (as the server answers), or oldest first.
+    let newest_first = RwSignal::new(true);
+    let all = Signal::derive(move || {
+        let mut all = plays.get().unwrap_or_default();
+        if !newest_first.get() {
+            all.reverse();
+        }
+        all
+    });
     let count = Signal::derive(move || plays.with(|p| p.as_ref().map_or(0, Vec::len)));
     let shown = Signal::derive(move || {
         let wanted = filter.with(|f| f.trim().to_lowercase());
@@ -96,7 +104,8 @@ pub fn HistoryPage() -> impl IntoView {
                 on_retry=Callback::new(move |_| retry.update(|n| *n += 1))/>
 
             <Show when=move || { count.get() > 0 }>
-                <TrackList tracks=shown context="History".to_owned() route=ROUTE.to_owned() history_mode=true/>
+                <TrackList tracks=shown context="History".to_owned() route=ROUTE.to_owned() history_mode=true
+                    newest_first=Signal::from(newest_first) on_sort_played=Callback::new(move |_| newest_first.update(|n| *n = !*n))/>
             </Show>
 
             // Placed on the document's body, so it covers the whole window.
