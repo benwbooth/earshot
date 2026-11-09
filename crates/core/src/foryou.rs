@@ -18,8 +18,9 @@ const DAY_MS: u64 = 86_400_000;
 pub const SONGS_NEEDED: usize = 1;
 /// How much a liked song counts, in plays (a song in a playlist counts one).
 pub const LIKED_WEIGHT: usize = 2;
-/// Which way of making the mixes saved ones came from (2: from every source).
-const MADE_BY: u64 = 2;
+/// Which way of making the mixes saved ones came from (3: Bandcamp, SoundCloud
+/// and Mixcloud searched for every favourite, matching covers and remixes too).
+const MADE_BY: u64 = 3;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -104,35 +105,59 @@ fn tracks_of(found: Result<Value, String>) -> Vec<Value> {
     found.ok().and_then(|value| value["tracks"].as_array().cloned()).unwrap_or_default()
 }
 
+/// The words of a name worth matching on: "Donkey Kong Country 2 OST" ->
+/// donkey, kong, country, 2 (not "OST", "Music" or "- Topic").
+fn name_words(name: &str) -> Vec<String> {
+    const NOISE: [&str; 9] = ["ost", "music", "official", "topic", "vevo", "soundtrack", "records", "the", "and"];
+    name.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty() && !NOISE.contains(word))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether a song a search for `artist` found is really to do with them: by
+/// them, or with every word of their name in its title or album. (A YouTube
+/// song's "artist" is often its channel, named after a game or a series,
+/// so covers and remixes on Bandcamp count; songs that only share a word don't.)
+fn about(track: &Value, artist: &str) -> bool {
+    let wanted = artist.trim().to_lowercase();
+    let by = track["artist"].as_str().unwrap_or("").trim().to_lowercase();
+    if !by.is_empty() && !wanted.is_empty() && (by.contains(&wanted) || wanted.contains(&by)) {
+        return true;
+    }
+    let words = name_words(artist);
+    let text = format!("{} {}", track["title"].as_str().unwrap_or(""), track["album"].as_str().unwrap_or("")).to_lowercase();
+    let found = name_words(&text);
+    !words.is_empty() && words.iter().all(|word| found.contains(word))
+}
+
 /// Songs like `seed` from every source that has some, one list per source:
 /// the seed's own site's suggestions (SoundCloud's related tracks, Mixcloud's
 /// similar shows, Bandcamp's recommendations, the Internet Archive's other
-/// recordings), YouTube's mix for it, and, for songs from YouTube or the
-/// catalogue, the artist on Bandcamp and SoundCloud.
+/// recordings), YouTube's mix for it, and the artist on Bandcamp, SoundCloud
+/// and Mixcloud (each but the seed's own site, which already had its say).
 fn similar(seed: &Value, video: &str) -> Vec<Vec<Value>> {
     let artist = seed["artist"].as_str().unwrap_or("").trim().to_owned();
-    let own = match seed["service"].as_str() {
-        Some("soundcloud") => seed["soundcloudId"].as_u64().map(soundcloud::related),
-        Some("mixcloud") => seed["mixcloudKey"].as_str().map(mixcloud::similar),
-        Some("bandcamp") => Some(bandcamp::related(seed)),
-        Some("archive") => Some(archive::related(seed)),
+    let service = seed["service"].as_str().unwrap_or("");
+    let own = match service {
+        "soundcloud" => seed["soundcloudId"].as_u64().map(soundcloud::related),
+        "mixcloud" => seed["mixcloudKey"].as_str().map(mixcloud::similar),
+        "bandcamp" => Some(bandcamp::related(seed)),
+        "archive" => Some(archive::related(seed)),
         _ => None,
     };
-    let elsewhere = own.is_none() && !artist.is_empty();
+    let search = |site: &str| !artist.is_empty() && service != site;
     std::thread::scope(|scope| {
         let youtube = scope.spawn(|| video_for(seed, video).and_then(|video| youtube::mix(&video).ok()).unwrap_or_default());
-        let bandcamp = elsewhere.then(|| scope.spawn(|| tracks_of(bandcamp::search(&artist))));
-        let soundcloud = elsewhere.then(|| scope.spawn(|| tracks_of(soundcloud::search(&artist))));
+        let bandcamp = search("bandcamp").then(|| scope.spawn(|| tracks_of(bandcamp::search(&artist))));
+        let soundcloud = search("soundcloud").then(|| scope.spawn(|| tracks_of(soundcloud::search(&artist))));
+        let mixcloud = search("mixcloud").then(|| scope.spawn(|| tracks_of(mixcloud::search(&artist))));
         let mut lists = vec![own.and_then(Result::ok).unwrap_or_default(), youtube.join().unwrap_or_default()];
-        for job in [bandcamp, soundcloud].into_iter().flatten() {
-            // Only songs actually by the artist, not everything the search matched.
+        for job in [bandcamp, soundcloud, mixcloud].into_iter().flatten() {
+            // Only songs to do with the artist, not everything the search matched.
             let found: Vec<Value> = job.join().unwrap_or_default();
-            let wanted = artist.to_lowercase();
-            let by_artist = |name: &str| {
-                let name = name.trim().to_lowercase();
-                !name.is_empty() && (name.contains(&wanted) || wanted.contains(&name))
-            };
-            lists.push(found.into_iter().filter(|t| t["artist"].as_str().is_some_and(by_artist)).collect());
+            lists.push(found.into_iter().filter(|t| about(t, &artist)).collect());
         }
         lists
     })
@@ -559,6 +584,19 @@ mod tests {
         assert_eq!(built["daily"].as_array().unwrap().len(), 3);
         assert!(!built["albums"]["albums"].as_array().unwrap().is_empty(), "Albums for you");
         assert!(built["radar"]["albums"].is_array());
+    }
+
+    #[test]
+    fn keeps_songs_about_the_artist() {
+        let song = |artist: &str, title: &str| json!({ "artist": artist, "title": title, "album": "" });
+        // A YouTube channel named after a game: covers and remixes of it count.
+        assert!(about(&song("Banjo Guy Ollie", "Stickerbrush Symphony (Donkey Kong Country 2)"), "Donkey Kong Country 2"));
+        assert!(about(&song("David Wise", "Lost World Anthem"), "David Wise"));
+        // Ignoring "OST", "Music" and the like in the name.
+        assert!(about(&song("Someone", "Donkey Kong Country 2 - Bramble Blast"), "Donkey Kong Country 2 OST"));
+        // A song that only shares a word doesn't.
+        assert!(!about(&song("JK Soul", "Music for the Soul"), "Collosia Music"));
+        assert!(!about(&song("Someone", "Donkey Kong 64 - Fungi Forest"), "Donkey Kong Country 2"));
     }
 
     #[test]
