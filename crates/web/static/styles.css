@@ -476,14 +476,14 @@ a.song-artist:hover { color: var(--text); }
 .np-from .marquee { width: 100%; }
 .np-label { color: var(--text-muted); font-size: 10px; letter-spacing: 1.2px; }
 .np-art { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; cursor: zoom-in; }
-.np-art .cover { width: min(100%, 52vh); aspect-ratio: 1; height: auto; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+.np-art .cover { width: min(100%, 47vh); aspect-ratio: 1; height: auto; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
 .np-song { display: flex; align-items: center; gap: 12px; }
 .np-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .np-title { font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .np-title .marquee { flex: 1; }
 .np-artist { color: var(--text-muted); font-size: var(--font-body); }
-.np-title .waveform { height: 26px; width: 34px; }
-.np-title .waveform i { width: 4px; }
+.np-title .waveform { height: 52px; width: 68px; gap: 4px; }
+.np-title .waveform i { width: 8px; }
 .np-song .like .icon[style*="heart-filled"] { background: var(--accent); }
 .np-seek { display: flex; flex-direction: column; gap: 6px; }
 .np-seek .slider-wrap { width: 100%; }
