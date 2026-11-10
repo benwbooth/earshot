@@ -19,8 +19,9 @@ pub const SONGS_NEEDED: usize = 1;
 /// How much a liked song counts, in plays (a song in a playlist counts one).
 pub const LIKED_WEIGHT: usize = 2;
 /// Which way of making the mixes saved ones came from (4: every source,
-/// Deezer, the Internet Archive and Reddit too, taking turns).
-const MADE_BY: u64 = 4;
+/// Deezer, the Internet Archive and Reddit too, taking turns; 5: no one
+/// game, artist or album taking over).
+const MADE_BY: u64 = 5;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -76,7 +77,46 @@ fn taste(history: &[Value], favourites: &[(Value, usize)], now: u64) -> Taste {
     songs.sort_by(|a, b| b.2.cmp(&a.2));
     let mut artists: Vec<_> = artists.into_values().collect();
     artists.sort_by(|a, b| b.2.cmp(&a.2));
-    Taste { songs, artists, heard }
+    // "Donkey Kong Country 2", "... 2 OST" and "Donkey Kong Country" are one
+    // artist as far as the mixes go: the most played name takes the others in.
+    let mut merged: Vec<(String, Vec<Value>, usize, String)> = Vec::new();
+    for artist in artists {
+        match merged.iter_mut().find(|other| same_name(&other.0, &artist.0)) {
+            Some(other) => {
+                other.2 += artist.2;
+                for song in artist.1 {
+                    if !other.1.iter().any(|t| t["key"] == song["key"]) {
+                        other.1.push(song);
+                    }
+                }
+                if other.3.is_empty() {
+                    other.3 = artist.3;
+                }
+            }
+            None => merged.push(artist),
+        }
+    }
+    merged.sort_by(|a, b| b.2.cmp(&a.2));
+    Taste { songs, artists: merged, heard }
+}
+
+impl Taste {
+    /// Up to `count` favourite songs, by different artists while there are
+    /// any (so one game's channels can't be every seed), then the rest.
+    fn varied(&self, count: usize) -> Vec<&(Value, String, usize)> {
+        let mut picked: Vec<&(Value, String, usize)> = Vec::new();
+        for song in &self.songs {
+            if picked.len() < count && !picked.iter().any(|other| same_name(other.0["artist"].as_str().unwrap_or(""), song.0["artist"].as_str().unwrap_or(""))) {
+                picked.push(song);
+            }
+        }
+        for song in &self.songs {
+            if picked.len() < count && !picked.iter().any(|other| std::ptr::eq(*other, song)) {
+                picked.push(song);
+            }
+        }
+        picked
+    }
 }
 
 /// A clean copy of a played song (without the history's own fields).
@@ -114,6 +154,14 @@ fn name_words(name: &str) -> Vec<String> {
         .filter(|word| !word.is_empty() && !NOISE.contains(word))
         .map(str::to_owned)
         .collect()
+}
+
+/// Whether two names are the same artist, game or series as far as mixes go:
+/// every word of one is in the other ("Donkey Kong Country 2 OST" and
+/// "Donkey Kong Country"; "Lofi Fruits Music" and "Lofi Fruits Music, Chill Fruits Music").
+fn same_name(a: &str, b: &str) -> bool {
+    let (a, b) = (name_words(a), name_words(b));
+    !a.is_empty() && !b.is_empty() && (a.iter().all(|w| b.contains(w)) || b.iter().all(|w| a.contains(w)))
 }
 
 /// Whether a song a search for `artist` found is really to do with them: by
@@ -233,7 +281,16 @@ fn similar(seed: &Value, video: &str) -> Found {
 /// `taken`) from what was found for each favourite, a source at a time in
 /// turn so every source gets an equal say (a source that runs out leaves
 /// its turns to the rest), and each favourite in turn within a source.
-fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
+/// No more than `per_theme` songs to do with any one of `themes` (the
+/// favourites' artists: every source searching for a game's name finds
+/// covers, remixes and podcasts of that game), and only a few by any one
+/// artist or from any one album.
+fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize, themes: &[String], per_theme: usize) -> Vec<Value> {
+    let per_artist = (count / 10).max(2);
+    const PER_ALBUM: usize = 2;
+    let mut by_theme = vec![0usize; themes.len()];
+    let mut by_artist: Vec<(String, usize)> = Vec::new();
+    let mut by_album: HashMap<String, usize> = HashMap::new();
     let mut by_source: Vec<(&str, Vec<Vec<Value>>)> = Vec::new();
     for lists in found {
         for (source, songs) in lists {
@@ -260,14 +317,40 @@ fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>
             for song in queue.by_ref() {
                 let key = song["key"].as_str().unwrap_or("").to_owned();
                 let video = song["youtubeId"].as_str().filter(|v| !v.is_empty()).map(|v| format!("yt:{v}")).unwrap_or_default();
-                if !key.is_empty() && !heard.contains(&key) && !heard.contains(&video) && taken.insert(key) {
-                    if !video.is_empty() {
-                        taken.insert(video);
-                    }
-                    picked.push(song);
-                    going = true;
-                    break;
+                if key.is_empty() || heard.contains(&key) || heard.contains(&video) || taken.contains(&key) {
+                    continue;
                 }
+                let theme_hits: Vec<usize> = themes.iter().enumerate().filter(|(_, theme)| about(&song, theme)).map(|(i, _)| i).collect();
+                if theme_hits.iter().any(|&i| by_theme[i] >= per_theme) {
+                    continue;
+                }
+                let artist = song["artist"].as_str().unwrap_or("").trim().to_owned();
+                let artist_at = by_artist.iter().position(|(name, _)| same_name(name, &artist));
+                if artist_at.is_some_and(|at| by_artist[at].1 >= per_artist) {
+                    continue;
+                }
+                let album = song["album"].as_str().unwrap_or("").trim().to_lowercase();
+                if !album.is_empty() && by_album.get(&album).copied().unwrap_or(0) >= PER_ALBUM {
+                    continue;
+                }
+                for i in theme_hits {
+                    by_theme[i] += 1;
+                }
+                match artist_at {
+                    Some(at) => by_artist[at].1 += 1,
+                    None if !name_words(&artist).is_empty() => by_artist.push((artist, 1)),
+                    None => {}
+                }
+                if !album.is_empty() {
+                    *by_album.entry(album).or_default() += 1;
+                }
+                taken.insert(key);
+                if !video.is_empty() {
+                    taken.insert(video);
+                }
+                picked.push(song);
+                going = true;
+                break;
             }
             if picked.len() >= count {
                 break;
@@ -278,18 +361,30 @@ fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>
 }
 
 /// New songs like `seed`, from all the sources, that haven't been heard.
-fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize) -> Vec<Value> {
-    blend(vec![similar(seed, video)], heard, taken, count)
+/// At most `per_theme` of them to do with the seed's artist.
+fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize, per_theme: usize) -> Vec<Value> {
+    let themes = [seed["artist"].as_str().unwrap_or("").to_owned()];
+    blend(vec![similar(seed, video)], heard, taken, count, &themes, per_theme)
 }
 
 fn discover_weekly(taste: &Taste) -> Value {
     let mut taken = HashSet::new();
-    // About 30 songs, from what's like up to six favourites, every source in turn.
-    let seeds: Vec<_> = taste.songs.iter().take(6).collect();
+    // About 30 songs, from what's like up to six favourites (by different
+    // artists where there are enough), every source in turn.
+    let seeds = taste.varied(6);
     // Every favourite's suggestions are looked up at the same time.
     let found: Vec<Found> =
         std::thread::scope(|scope| seeds.iter().map(|(seed, video, _)| scope.spawn(move || similar(seed, video))).collect::<Vec<_>>().into_iter().map(|job| job.join().unwrap_or_default()).collect());
-    let mut tracks = blend(found, &taste.heard, &mut taken, 30);
+    // No favourite's artist (or game) more than their fair share.
+    let mut themes: Vec<String> = Vec::new();
+    for (seed, _, _) in &seeds {
+        let artist = seed["artist"].as_str().unwrap_or("");
+        if !themes.iter().any(|theme| same_name(theme, artist)) {
+            themes.push(artist.to_owned());
+        }
+    }
+    let per_theme = 30usize.div_ceil(themes.len().max(1)).max(3);
+    let mut tracks = blend(found, &taste.heard, &mut taken, 30, &themes, per_theme);
     random::shuffle(&mut tracks);
     json!({
         "id": "discover-weekly", "title": "Discover Weekly",
@@ -310,8 +405,9 @@ fn daily_mixes(taste: &Taste) -> Vec<Value> {
             for track in &tracks {
                 taken.insert(track["key"].as_str().unwrap_or("").to_owned());
             }
-            let favourite = taste.songs.iter().find(|(song, _, _)| song["artist"].as_str() == Some(name.as_str()))?;
-            tracks.extend(new_like(&favourite.0, &favourite.1, &taste.heard, &mut taken, 17));
+            let favourite = taste.songs.iter().find(|(song, _, _)| same_name(song["artist"].as_str().unwrap_or(""), name))?;
+            // Similar artists, not just more of this one (it already has the songs played).
+            tracks.extend(new_like(&favourite.0, &favourite.1, &taste.heard, &mut taken, 17, 6));
             random::shuffle(&mut tracks);
             Some(json!({
                 "id": format!("daily-mix-{}", index + 1),
@@ -518,7 +614,7 @@ fn albums_for_you(taste: &Taste, artists: &Artists) -> Value {
         // YouTube: the other channels in the mixes of the listener's favourite songs.
         let youtube = scope.spawn(|| {
             let mut found = Vec::new();
-            for (seed, video, _) in taste.songs.iter().take(3) {
+            for (seed, video, _) in taste.varied(3) {
                 let Some(video) = video_for(seed, video) else { continue };
                 for track in youtube::mix(&video).unwrap_or_default().into_iter().take(15) {
                     let channel = track["channel"].as_str().or(track["artist"].as_str()).unwrap_or("").to_owned();
@@ -708,6 +804,48 @@ mod tests {
         // A song that only shares a word doesn't.
         assert!(!about(&song("JK Soul", "Music for the Soul"), "Collosia Music"));
         assert!(!about(&song("Someone", "Donkey Kong 64 - Fungi Forest"), "Donkey Kong Country 2"));
+    }
+
+    #[test]
+    fn one_game_is_one_artist() {
+        assert!(same_name("Donkey Kong Country 2 OST", "Donkey Kong Country 2"));
+        assert!(same_name("Donkey Kong Country", "Donkey Kong Country 2"));
+        assert!(same_name("Lofi Fruits Music", "Lofi Fruits Music, Chill Fruits Music"));
+        assert!(!same_name("Donkey Kong Country 2", "Halo2playa"));
+        assert!(!same_name("Music", "Official Music"));
+        let now = 100 * DAY_MS;
+        let history = vec![
+            play("a", "Donkey Kong Country 2", "v1", now),
+            play("a", "Donkey Kong Country 2", "v1", now),
+            play("a", "Donkey Kong Country 2", "v1", now),
+            play("b", "Donkey Kong Country 2 OST", "v2", now),
+            play("b", "Donkey Kong Country 2 OST", "v2", now),
+            play("c", "Toby Fox", "v3", now),
+        ];
+        let taste = taste(&history, &[], now);
+        assert_eq!(taste.artists.len(), 2);
+        assert_eq!((taste.artists[0].0.as_str(), taste.artists[0].2, taste.artists[0].1.len()), ("Donkey Kong Country 2", 5, 2));
+        let seeds: Vec<&str> = taste.varied(2).iter().map(|s| s.0["key"].as_str().unwrap()).collect();
+        assert_eq!(seeds, ["a", "c"]);
+    }
+
+    #[test]
+    fn no_game_takes_over_a_mix() {
+        let song = |key: &str, artist: &str, title: &str, album: &str| json!({ "key": key, "artist": artist, "title": title, "album": album });
+        let mut dkc: Vec<Value> = (0..20).map(|i| song(&format!("d{i}"), &format!("Fan {i}"), &format!("Donkey Kong Country 2 - Remix {i}"), "")).collect();
+        dkc.extend((0..10).map(|i| song(&format!("s{i}"), "Donkey Kong Country 2 OST", &format!("Track {i}"), "")));
+        let others: Vec<Value> = (0..20).map(|i| song(&format!("o{i}"), &format!("Artist {}", i / 5), &format!("Song {i}"), &format!("Album {}", i / 3))).collect();
+        let found = vec![vec![("youtube", dkc.clone()), ("bandcamp", dkc)], vec![("soundcloud", others)]];
+        let themes = ["Donkey Kong Country 2".to_owned(), "Someone Else".to_owned()];
+        let picked = blend(found, &HashSet::new(), &mut HashSet::new(), 30, &themes, 5);
+        let about_dkc = picked.iter().filter(|t| about(t, "Donkey Kong Country 2")).count();
+        assert_eq!(about_dkc, 5);
+        for artist in 0..4 {
+            assert!(picked.iter().filter(|t| t["artist"] == format!("Artist {artist}")).count() <= 3);
+        }
+        for album in 0..7 {
+            assert!(picked.iter().filter(|t| t["album"] == format!("Album {album}")).count() <= 2);
+        }
     }
 
     #[test]
