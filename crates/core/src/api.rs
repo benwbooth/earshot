@@ -248,6 +248,7 @@ impl Earshot {
             "bandcampFeatured" => bandcamp::featured(),
             "stream" => stream(&args["track"]),
             "elsewhere" => elsewhere(&args["track"]),
+            "soundcloudEncrypted" => soundcloud::encrypted(args["id"].as_u64().ok_or("No SoundCloud id")?).map(Value::from),
             "radioMore" => radio_more(&args["track"], &text("video")),
             "forYou" => {
                 // Liked songs and playlist songs count too, not only plays.

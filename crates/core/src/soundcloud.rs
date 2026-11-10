@@ -91,7 +91,27 @@ fn track(item: &Value) -> Option<Value> {
         "cover": artwork(item, "t300x300"),
         "coverBig": artwork(item, "t500x500"),
         "duration": item["duration"].as_u64().unwrap_or(0) / 1000,
+        "encrypted": only_encrypted(item),
     }))
+}
+
+/// Whether SoundCloud offers a track only as DRM-encrypted streams (labels'
+/// ad-supported releases), which its player can't play without a Widevine
+/// module, as in the app's built-in browser.
+fn only_encrypted(item: &Value) -> bool {
+    let protocols: Vec<&str> = item
+        .pointer("/media/transcodings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.pointer("/format/protocol").and_then(Value::as_str))
+        .collect();
+    !protocols.is_empty() && protocols.iter().all(|p| p.contains("encrypted"))
+}
+
+/// [`only_encrypted`], looked up by id, for songs saved before it was noted.
+pub fn encrypted(track_id: u64) -> Result<bool, String> {
+    Ok(only_encrypted(&api(&format!("/tracks/{track_id}?"))?))
 }
 
 /// SoundCloud's own made-up playlists (trending by genre and the like) have a
@@ -380,6 +400,11 @@ mod tests {
         let mut preview = base.clone();
         preview["policy"] = json!("SNIP");
         assert!(track(&preview).is_none());
+        let mut locked = base.clone();
+        locked["media"] = json!({ "transcodings": [{ "format": { "protocol": "cbc-encrypted-hls" } }, { "format": { "protocol": "ctr-encrypted-hls" } }] });
+        assert_eq!(track(&locked).unwrap()["encrypted"], true);
+        locked["media"]["transcodings"][1]["format"]["protocol"] = json!("hls");
+        assert_eq!(track(&locked).unwrap()["encrypted"], false);
         let mut private = base;
         private["embeddable_by"] = json!("me");
         assert!(track(&private).is_none());

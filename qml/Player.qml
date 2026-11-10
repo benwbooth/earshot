@@ -194,14 +194,7 @@ QtObject {
             // the same song on YouTube instead, as for a catalogue song (and
             // from there, on Bandcamp).
             if (player.current.service === "soundcloud") {
-                const song = Object.assign({}, player.current)
-                delete song.service
-                delete song.soundcloudId
-                delete song.youtubeId
-                const q = player.queue.slice()
-                q[player.index] = song
-                player.queue = q
-                player.resolveCurrent()
+                player.playOffSoundCloud()
                 return
             }
             // Another upload of the same song may be allowed to play here.
@@ -407,9 +400,22 @@ QtObject {
         loading = true
         if (pendingRequest >= 0)
             Api.cancel(pendingRequest)
-        // SoundCloud songs play in SoundCloud's own player.
+        // SoundCloud songs play in SoundCloud's own player, unless SoundCloud
+        // only offers them encrypted, which it can't play here.
         if (track.service === "soundcloud") {
+            if (track.encrypted) {
+                playOffSoundCloud()
+                return
+            }
             engine.loadSoundCloud(track.soundcloudId, trackStart)
+            // Songs saved before that was noted: ask while the player loads.
+            if (track.encrypted === undefined) {
+                const at = index
+                Api.call(Backend.call("soundcloudEncrypted", JSON.stringify({ id: track.soundcloudId })), function (encrypted) {
+                    if (encrypted && !started && current && current.key === track.key && index === at)
+                        playOffSoundCloud()
+                })
+            }
             return
         }
         // Mixcloud shows play in Mixcloud's own player.
@@ -459,6 +465,20 @@ QtObject {
             if (current && current.key === track.key)
                 fail(message)
         })
+    }
+
+    // The song playing, found on YouTube (and from there, Bandcamp) instead of
+    // SoundCloud: kept under its own name and key, so likes and history stay.
+    function playOffSoundCloud() {
+        const song = Object.assign({}, current)
+        delete song.service
+        delete song.soundcloudId
+        delete song.youtubeId
+        delete song.encrypted
+        const q = queue.slice()
+        q[index] = song
+        queue = q
+        resolveCurrent()
     }
 
     function remember(result) {
