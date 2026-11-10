@@ -520,14 +520,26 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
                 <div class="np-song">
                     <div class="np-text">
                         <div class="np-title"><Waveform/><Marquee text=field("title")/></div>
-                        {move || {
-                            let (name, id) = (field("artist").get(), field("artistId").get());
-                            if id.is_empty() {
-                                view! { <div class="np-artist"><Marquee text=name/></div> }.into_any()
-                            } else {
-                                view! { <a class="np-artist" href=crate::state::artist_href(&id) on:click=move |_| close()><Marquee text=name/></a> }.into_any()
-                            }
-                        }}
+                        <div class="np-by">
+                            // The song's source, like on song rows: a click opens its page there.
+                            {move || track.get().map(|t| {
+                                let (name, logo) = crate::components::source(&t);
+                                view! {
+                                    <button class="source" aria-label=format!("Open on {name}") title=format!("Open on {name}")
+                                        on:click=move |e: MouseEvent| { e.stop_propagation(); player.open_song_page(t.clone()); }>
+                                        <Icon name=logo.to_owned() size=16/>
+                                    </button>
+                                }
+                            })}
+                            {move || {
+                                let (name, id) = (field("artist").get(), field("artistId").get());
+                                if id.is_empty() {
+                                    view! { <div class="np-artist"><Marquee text=name/></div> }.into_any()
+                                } else {
+                                    view! { <a class="np-artist" href=crate::state::artist_href(&id) on:click=move |_| close()><Marquee text=name/></a> }.into_any()
+                                }
+                            }}
+                        </div>
                     </div>
                     <IconButton
                         icon=Signal::derive(move || if liked() { "heart-filled".to_owned() } else { "heart".to_owned() })
