@@ -20,8 +20,8 @@ pub const SONGS_NEEDED: usize = 1;
 pub const LIKED_WEIGHT: usize = 2;
 /// Which way of making the mixes saved ones came from (4: every source,
 /// Deezer, the Internet Archive and Reddit too, taking turns; 5: no one
-/// game, artist or album taking over).
-const MADE_BY: u64 = 5;
+/// game, artist or album taking over; 6: branching out to new artists).
+const MADE_BY: u64 = 6;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -148,7 +148,7 @@ fn tracks_of(found: Result<Value, String>) -> Vec<Value> {
 /// The words of a name worth matching on: "Donkey Kong Country 2 OST" ->
 /// donkey, kong, country, 2 (not "OST", "Music" or "- Topic").
 fn name_words(name: &str) -> Vec<String> {
-    const NOISE: [&str; 9] = ["ost", "music", "official", "topic", "vevo", "soundtrack", "records", "the", "and"];
+    const NOISE: [&str; 12] = ["ost", "music", "official", "topic", "vevo", "soundtrack", "records", "the", "and", "youtube", "soundcloud", "bandcamp"];
     name.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|word| !word.is_empty() && !NOISE.contains(word))
@@ -162,6 +162,13 @@ fn name_words(name: &str) -> Vec<String> {
 fn same_name(a: &str, b: &str) -> bool {
     let (a, b) = (name_words(a), name_words(b));
     !a.is_empty() && !b.is_empty() && (a.iter().all(|w| b.contains(w)) || b.iter().all(|w| a.contains(w)))
+}
+
+/// A name without its numbers, for the series it's part of: "Donkey Kong
+/// Country 2" -> "donkey kong country" (a name that's only numbers stays).
+fn series(name: &str) -> String {
+    let words: Vec<String> = name_words(name).into_iter().filter(|w| !w.chars().all(|c| c.is_ascii_digit())).collect();
+    if words.is_empty() { name.to_owned() } else { words.join(" ") }
 }
 
 /// Whether a song a search for `artist` found is really to do with them: by
@@ -238,7 +245,17 @@ fn reddit_like(artist: &str) -> Vec<Value> {
 /// the artist on Bandcamp, SoundCloud, Mixcloud and the Internet Archive (each
 /// but the seed's own site, which already had its say), and Reddit's.
 fn similar(seed: &Value, video: &str) -> Found {
+    similar_by(seed, video, true)
+}
+
+/// Like `similar`, but with `searches` false only what the sites themselves
+/// relate to the seed (YouTube's mix, Deezer's related artists, the seed's own
+/// site's suggestions), not searches for the artist's name: for artists only
+/// just found, whose names may be a common word.
+fn similar_by(seed: &Value, video: &str, searches: bool) -> Found {
     let artist = seed["artist"].as_str().unwrap_or("").trim().to_owned();
+    // An "artist" that's only the site's name ("YouTube") is nobody to search for.
+    let artist = if name_words(&artist).is_empty() { String::new() } else { artist };
     let service = seed["service"].as_str().unwrap_or("");
     let own: Option<(&'static str, Result<Vec<Value>, String>)> = match service {
         "soundcloud" => seed["soundcloudId"].as_u64().map(|id| ("soundcloud", soundcloud::related(id))),
@@ -247,7 +264,7 @@ fn similar(seed: &Value, video: &str) -> Found {
         "archive" => Some(("archive", archive::related(seed))),
         _ => None,
     };
-    let search = |site: &str| !artist.is_empty() && service != site;
+    let search = |site: &str| searches && !artist.is_empty() && service != site;
     let about_artist = |found: Vec<Value>| -> Vec<Value> { found.into_iter().filter(|t| about(t, &artist)).collect() };
     let mut lists: Found = std::thread::scope(|scope| {
         let youtube = scope.spawn(|| video_for(seed, video).and_then(|video| youtube::mix(&video).ok()).unwrap_or_default());
@@ -271,7 +288,7 @@ fn similar(seed: &Value, video: &str) -> Found {
             random::shuffle(songs);
         }
     }
-    if !artist.is_empty() {
+    if searches && !artist.is_empty() {
         lists.push(("reddit", reddit_like(&artist)));
     }
     lists
@@ -288,6 +305,8 @@ fn similar(seed: &Value, video: &str) -> Found {
 fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize, themes: &[String], per_theme: usize) -> Vec<Value> {
     let per_artist = (count / 10).max(2);
     const PER_ALBUM: usize = 2;
+    // Any game of a series counts towards it (Donkey Kong Country 3 for 2's).
+    let themes: Vec<String> = themes.iter().map(|theme| series(theme)).collect();
     let mut by_theme = vec![0usize; themes.len()];
     let mut by_artist: Vec<(String, usize)> = Vec::new();
     let mut by_album: HashMap<String, usize> = HashMap::new();
@@ -367,28 +386,57 @@ fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut Hash
     blend(vec![similar(seed, video)], heard, taken, count, &themes, per_theme)
 }
 
+/// Whether a song is by (or about: covers, remixes, podcasts of) an artist the listener already plays.
+fn familiar(taste: &Taste, song: &Value) -> bool {
+    taste.artists.iter().any(|(name, _, _, _)| about(song, &series(name)))
+}
+
+/// A few songs by artists the listener doesn't play yet, picked from what
+/// was found for their favourites: each a different artist, the next step out.
+fn branches(taste: &Taste, found: &[Found], count: usize) -> Vec<Value> {
+    let mut songs: Vec<&Value> = found
+        .iter()
+        .flatten()
+        .flat_map(|(_, songs)| songs)
+        .filter(|song| {
+            let key = song["key"].as_str().unwrap_or("");
+            !key.is_empty() && !taste.heard.contains(key) && !name_words(song["artist"].as_str().unwrap_or("")).is_empty() && !familiar(taste, song)
+        })
+        .collect();
+    random::shuffle(&mut songs);
+    let mut picked: Vec<Value> = Vec::new();
+    for song in songs {
+        if picked.len() < count && !picked.iter().any(|other| same_name(other["artist"].as_str().unwrap_or(""), song["artist"].as_str().unwrap_or(""))) {
+            picked.push(song.clone());
+        }
+    }
+    picked
+}
+
 fn discover_weekly(taste: &Taste) -> Value {
     let mut taken = HashSet::new();
     // About 30 songs, from what's like up to six favourites (by different
     // artists where there are enough), every source in turn.
     let seeds = taste.varied(6);
     // Every favourite's suggestions are looked up at the same time.
-    let found: Vec<Found> =
+    let mut found: Vec<Found> =
         std::thread::scope(|scope| seeds.iter().map(|(seed, video, _)| scope.spawn(move || similar(seed, video))).collect::<Vec<_>>().into_iter().map(|job| job.join().unwrap_or_default()).collect());
-    // No favourite's artist (or game) more than their fair share.
-    let mut themes: Vec<String> = Vec::new();
-    for (seed, _, _) in &seeds {
-        let artist = seed["artist"].as_str().unwrap_or("");
-        if !themes.iter().any(|theme| same_name(theme, artist)) {
-            themes.push(artist.to_owned());
-        }
-    }
-    let per_theme = 30usize.div_ceil(themes.len().max(1)).max(3);
-    let mut tracks = blend(found, &taste.heard, &mut taken, 30, &themes, per_theme);
+    // Then a step further out: what's like a few of the new artists found,
+    // so the mix explores rather than circling the same favourites.
+    let further = branches(taste, &found, 4);
+    let more: Vec<Found> = std::thread::scope(|scope| {
+        let video = |song: &Value| song["youtubeId"].as_str().unwrap_or("").to_owned();
+        further.iter().map(|song| scope.spawn(move || similar_by(song, &video(song), false))).collect::<Vec<_>>().into_iter().map(|job| job.join().unwrap_or_default()).collect()
+    });
+    found.extend(more);
+    // Mostly artists the listener doesn't play yet: only a couple of songs
+    // by or about (covers, remixes) any artist they already do.
+    let themes: Vec<String> = taste.artists.iter().take(20).map(|(name, _, _, _)| name.clone()).collect();
+    let mut tracks = blend(found, &taste.heard, &mut taken, 30, &themes, 2);
     random::shuffle(&mut tracks);
     json!({
         "id": "discover-weekly", "title": "Discover Weekly",
-        "subtitle": "Songs you haven't heard, like the ones you've been playing, from every source. New every Monday.",
+        "subtitle": "Songs and artists you haven't heard, branching out from the ones you've been playing, from every source. New every Monday.",
         "tracks": tracks,
     })
 }
@@ -407,7 +455,7 @@ fn daily_mixes(taste: &Taste) -> Vec<Value> {
             }
             let favourite = taste.songs.iter().find(|(song, _, _)| same_name(song["artist"].as_str().unwrap_or(""), name))?;
             // Similar artists, not just more of this one (it already has the songs played).
-            tracks.extend(new_like(&favourite.0, &favourite.1, &taste.heard, &mut taken, 17, 6));
+            tracks.extend(new_like(&favourite.0, &favourite.1, &taste.heard, &mut taken, 17, 4));
             random::shuffle(&mut tracks);
             Some(json!({
                 "id": format!("daily-mix-{}", index + 1),
@@ -855,3 +903,4 @@ mod tests {
         assert_eq!(days("nope"), None);
     }
 }
+
