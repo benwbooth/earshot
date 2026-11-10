@@ -32,8 +32,9 @@ Rectangle {
     }
     TapHandler {
         acceptedButtons: Qt.LeftButton
-        // The song that's on pauses or carries on; any other starts.
-        onDoubleTapped: row.isCurrent ? Player.toggle() : row.activated()
+        // A click anywhere on the song (but its own buttons and links): the
+        // song that's on pauses or carries on; any other starts.
+        onTapped: row.isCurrent ? Player.toggle() : row.activated()
     }
     TapHandler {
         acceptedButtons: Qt.RightButton

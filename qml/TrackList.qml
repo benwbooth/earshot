@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Earshot
 
-// A list of songs. Double-click (or the play button) plays from that song on.
+// A list of songs. A click on a song plays (or pauses) it, from that song on.
 ColumnLayout {
     id: list
     property var tracks: []
