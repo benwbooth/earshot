@@ -189,6 +189,21 @@ QtObject {
                 player.resolveCurrent()
                 return
             }
+            // A SoundCloud song that won't play (encrypted, which this app's
+            // browser can't decode, or SoundCloud's player refused it): find
+            // the same song on YouTube instead, as for a catalogue song (and
+            // from there, on Bandcamp).
+            if (player.current.service === "soundcloud") {
+                const song = Object.assign({}, player.current)
+                delete song.service
+                delete song.soundcloudId
+                delete song.youtubeId
+                const q = player.queue.slice()
+                q[player.index] = song
+                player.queue = q
+                player.resolveCurrent()
+                return
+            }
             // Another upload of the same song may be allowed to play here.
             if (!player.current.service && player.candidate + 1 < player.candidates.length) {
                 player.candidate += 1

@@ -529,7 +529,7 @@ impl Engine {
         let document = window().document().expect("document");
         let f: HtmlIFrameElement = document.create_element("iframe").expect("iframe").unchecked_into();
         f.set_id("engine-sc");
-        let _ = f.set_attribute("allow", "autoplay");
+        let _ = f.set_attribute("allow", "autoplay; encrypted-media");
         f.set_src(&format!(
             "https://w.soundcloud.com/player/?url={}&auto_play=true&visual=false",
             encode(&format!("https://api.soundcloud.com/tracks/{track_id}"))

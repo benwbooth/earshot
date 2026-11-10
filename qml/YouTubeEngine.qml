@@ -167,7 +167,7 @@ Item {
         + 'var scLoaded=0;'
         + 'function earshotLoadSoundCloud(id,start){quiet("sc");scState=-1;scPos=(start||0)*1000;scDur=0;scStart=start||0;scLoaded=Date.now();'
         + '  if(typeof SC==="undefined"){lastError=1002;return;}'
-        + '  if(!sc){var f=document.createElement("iframe");f.allow="autoplay";f.style.cssText="position:fixed;left:0;top:0;width:160px;height:90px;border:0";'
+        + '  if(!sc){var f=document.createElement("iframe");f.allow="autoplay; encrypted-media";f.style.cssText="position:fixed;left:0;top:0;width:160px;height:90px;border:0";'
         + '    f.src="https://w.soundcloud.com/player/?url="+encodeURIComponent(scUrl(id))+"&auto_play=true&visual=false";'
         + '    document.body.appendChild(f);sc=SC.Widget(f);var E=SC.Widget.Events;'
         + '    sc.bind(E.READY,scBegin);'
