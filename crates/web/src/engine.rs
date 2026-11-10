@@ -159,6 +159,11 @@ impl Engine {
     }
 
     /// Whether the song plays through Earshot's server from youtube.com's own page.
+    /// The song plays from an audio file in the page (not a site's own player).
+    pub fn plays_file(&self) -> bool {
+        self.mode.get_value() == Mode::Audio
+    }
+
     pub fn relaying(&self) -> bool {
         self.mode.get_value() == Mode::Audio && self.relay.with_value(Option::is_some)
     }

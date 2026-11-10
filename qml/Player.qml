@@ -88,6 +88,7 @@ QtObject {
         property int repeat: 0
         property real volume: 0.8
         property bool radio: false
+        property bool leveling: false
         // The queue, the song in it and how far it had played, so the next
         // launch carries on where this one left off.
         property string session: ""
@@ -223,7 +224,76 @@ QtObject {
 
     function applyVolume() {
         if (engine)
-            engine.setVolume(muted ? 0 : Math.pow(volume, 2) * 100)
+            engine.setVolume(muted ? 0 : Math.min(100, Math.pow(volume, 2) * 100 * Math.pow(10, levelGain / 20)))
+    }
+
+    // Volume leveling (Settings): each song is turned up or down (in decibels,
+    // as Backend's "loudness" works out from how loud it is) so songs sound
+    // about as loud as each other. Quiet songs can only be turned up as far
+    // as the volume slider leaves room.
+    property bool leveling: settings.leveling
+    property real levelGain: 0      // what the player is given now
+    property real levelTarget: 0    // what the song playing should have
+    property string levelFor: ""    // the video or stream it's for
+    onLevelingChanged: {
+        settings.leveling = leveling
+        updateLevel()
+    }
+    onLevelGainChanged: applyVolume()
+    function updateLevel() {
+        const id = engine ? engine.videoId : ""
+        if (!leveling || !id) {
+            levelFor = ""
+            levelTarget = 0
+            if (!leveling)
+                levelRamp.start()
+            return
+        }
+        if (id === levelFor)
+            return
+        levelFor = id
+        const track = current
+        Api.call(Backend.call("loudness", JSON.stringify({ id: id, track: track })), function (result) {
+            if (!leveling || !engine || engine.videoId !== id)
+                return
+            console.info("Volume leveling:", id, result.lufs === null ? "loudness unknown" : result.lufs + " LUFS (" + result.how + ")", "->", result.gain, "dB")
+            levelTarget = result.gain
+            // Not heard yet: straight away; otherwise eased in.
+            if (!started || position < 1.5)
+                levelGain = levelTarget
+            else
+                levelRamp.start()
+        }, function () {})
+    }
+    property Timer levelRamp: Timer {
+        interval: 50
+        repeat: true
+        onTriggered: {
+            const step = 0.4
+            const gap = player.levelTarget - player.levelGain
+            if (Math.abs(gap) <= step) {
+                player.levelGain = player.levelTarget
+                stop()
+            } else {
+                player.levelGain += gap > 0 ? step : -step
+            }
+        }
+    }
+    // Measures songs coming up ahead of time, so they start at the right volume.
+    function warmLevel(track) {
+        if (!leveling || !track)
+            return
+        let id = ""
+        if (track.service === "soundcloud" && track.soundcloudId)
+            id = "soundcloud:" + track.soundcloudId
+        else if (track.service === "bandcamp" && streams[track.key])
+            id = "audio:" + streams[track.key].url
+        else if (track.streamUrl)
+            id = "audio:" + track.streamUrl
+        else if (!track.service)
+            id = track.youtubeId || (found[track.key] && found[track.key][0]) || ""
+        if (id)
+            Api.call(Backend.call("loudness", JSON.stringify({ id: id, track: track })), function () {}, function () {})
     }
 
     property Connections engineEvents: Connections {
@@ -247,6 +317,7 @@ QtObject {
             }
         }
         // A chapter ends before the video does: move on at its end time.
+        function onVideoIdChanged() { player.updateLevel() }
         function onPositionChanged() {
             player.recordIfListened()
             if (player.trackEnd > 0 && player.started && player.engine.position >= player.trackEnd - 0.2)
@@ -572,6 +643,8 @@ QtObject {
     function prefetch() {
         for (let i = index + 1; i <= index + 2 && i < queue.length; ++i)
             lookAhead(queue[i])
+        if (index + 1 < queue.length)
+            warmLevel(queue[index + 1])
         // Random radio: fetch more songs before the queue runs out.
         if (radio && index >= queue.length - 2)
             extendRadio()

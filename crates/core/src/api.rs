@@ -248,6 +248,8 @@ impl Earshot {
             "bandcampFeatured" => bandcamp::featured(),
             "stream" => stream(&args["track"]),
             "elsewhere" => elsewhere(&args["track"]),
+            // Volume leveling: how much to turn this song up or down.
+            "loudness" => Ok(crate::loudness::level(&text("id"), &args["track"])),
             "soundcloudEncrypted" => soundcloud::encrypted(args["id"].as_u64().ok_or("No SoundCloud id")?).map(Value::from),
             "radioMore" => radio_more(&args["track"], &text("video")),
             "forYou" => {

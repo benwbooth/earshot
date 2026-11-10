@@ -138,6 +138,14 @@ pub fn TopBar() -> impl IntoView {
                             </button>
                         }).collect_view()}
                         <div class="menu-separator"></div>
+                        // Turns loud songs down and quiet ones up, so they all sound about as loud.
+                        <button class="menu-item" on:click=move |_| {
+                            app.player.leveling.update(|on| *on = !*on);
+                            settings_open.set(false);
+                        }>
+                            <Icon name="check" size=14 class=if app.player.leveling.get_untracked() { "check on" } else { "check" }/>
+                            "Level the volume between songs"
+                        </button>
                         // Leaves songs marked explicit out of song lists, the queue and radio.
                         <button class="menu-item" on:click=move |_| {
                             app.player.hide_explicit.update(|on| *on = !*on);

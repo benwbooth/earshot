@@ -177,9 +177,9 @@ pub const MIXCLOUD: &str = "Mixcloud keeps its shows' audio to its own player (i
 
 /// The song's audio as one stream of bytes, what kind it is, the site it's
 /// from, and where that is when it isn't the song's own player's.
-type Opened = (Parts, &'static str, String, Option<String>);
+pub(crate) type Opened = (Parts, &'static str, String, Option<String>);
 
-fn open(id: &str, song: &serde_json::Value) -> Result<Opened, String> {
+pub(crate) fn open(id: &str, song: &serde_json::Value) -> Result<Opened, String> {
     if let Some(track) = id.strip_prefix("soundcloud:") {
         let track: u64 = track.parse().map_err(|_| "Not a SoundCloud track.")?;
         let (parts, kind) = soundcloud::audio(track)?;
@@ -256,7 +256,7 @@ fn agent() -> &'static ureq::Agent {
 
 /// Several files read one after another as one (an HLS stream's segments,
 /// or a YouTube file's pieces).
-struct Parts {
+pub(crate) struct Parts {
     urls: VecDeque<String>,
     current: Option<Box<dyn Read + Send + Sync>>,
 }

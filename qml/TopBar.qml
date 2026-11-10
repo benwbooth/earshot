@@ -355,6 +355,8 @@ Rectangle {
             // Off: "Added to playlist" and the like show inside the window instead.
             MenuItem { text: "Notices as desktop notifications"; checkable: true; checked: Api.desktopNotices; onTriggered: Api.desktopNotices = !Api.desktopNotices }
             MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
+            // Turns loud songs down and quiet ones up, so they all sound about as loud.
+            MenuItem { text: "Level the volume between songs"; checkable: true; checked: Player.leveling; onTriggered: Player.leveling = !Player.leveling }
             // Leaves songs marked explicit out of song lists, the queue and radio.
             MenuItem { text: "Hide explicit songs"; checkable: true; checked: Api.hideExplicit; onTriggered: Api.hideExplicit = !Api.hideExplicit }
             // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).

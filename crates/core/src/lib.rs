@@ -10,6 +10,7 @@ pub mod envelope;
 pub mod featured;
 pub mod foryou;
 pub mod library;
+pub mod loudness;
 pub mod mixcloud;
 pub mod musicbrainz;
 pub mod net;

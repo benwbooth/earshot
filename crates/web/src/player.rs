@@ -67,6 +67,14 @@ pub struct Player {
     pub levels_note: RwSignal<String>,
     /// "Hide explicit songs": they're left out of song lists and never played.
     pub hide_explicit: RwSignal<bool>,
+    /// Volume leveling (Settings): each song turned up or down by
+    /// `level_gain` decibels so songs sound about as loud as each other.
+    pub leveling: RwSignal<bool>,
+    level_gain: RwSignal<f64>,
+    level_target: StoredValue<f64>,
+    /// The video or stream `level_target` is for.
+    level_for: StoredValue<String>,
+    level_ramping: StoredValue<bool>,
     /// Where the app's shared state lives, for notices sent after an answer
     /// arrives (outside any component, where it can't otherwise be found).
     owner: StoredValue<Option<Owner>>,
@@ -129,6 +137,11 @@ impl Player {
             levels: RwSignal::new([0.0; crate::levels::BANDS]),
             levels_note: RwSignal::new(String::new()),
             hide_explicit: persisted("hideExplicit", false),
+            leveling: persisted("leveling", false),
+            level_gain: RwSignal::new(0.0),
+            level_target: StoredValue::new(0.0),
+            level_for: StoredValue::new(String::new()),
+            level_ramping: StoredValue::new(false),
             owner: StoredValue::new(Owner::current()),
         };
         player.restore_session();
@@ -314,7 +327,14 @@ impl Player {
         Effect::new(move |_| {
             let volume = self.volume.get();
             let muted = self.muted.get();
-            engine.set_volume(if muted { 0.0 } else { volume * volume * 100.0 });
+            let gain = 10f64.powf(self.level_gain.get() / 20.0);
+            engine.set_volume(if muted { 0.0 } else { (volume * volume * 100.0 * gain).min(100.0) });
+        });
+        // Volume leveling: how loud the song now loaded is, asked of the server.
+        Effect::new(move |_| {
+            let id = engine.video_id.get();
+            let on = self.leveling.get();
+            self.update_level(id, on);
         });
         Effect::new(move |_| {
             if engine.state.get() == 1 && !self.started.get_untracked() {
@@ -811,9 +831,86 @@ impl Player {
     }
 
     /// Looks up the next songs' videos while this one plays, so they start at once.
+    fn update_level(self, id: String, on: bool) {
+        if !on || id.is_empty() {
+            self.level_for.set_value(String::new());
+            self.level_target.set_value(0.0);
+            if !on {
+                self.ramp_level();
+            }
+            return;
+        }
+        if self.level_for.get_value() == id {
+            return;
+        }
+        self.level_for.set_value(id.clone());
+        let track = self.current_untracked().unwrap_or(Value::Null);
+        spawn_local(async move {
+            let Ok(result) = api::call("loudness", json!({ "id": id, "track": track })).await else { return };
+            if !self.leveling.get_untracked() || self.engine.video_id.get_untracked() != id {
+                return;
+            }
+            // A YouTube video played from its audio file isn't leveled by YouTube's player.
+            let youtube = !id.contains(':');
+            let raw = youtube && self.engine.plays_file() && !self.engine.relaying();
+            let gain = result[if raw { "raw" } else { "gain" }].as_f64().unwrap_or(0.0);
+            self.level_target.set_value(gain);
+            // Not heard yet: straight away; otherwise eased in.
+            if !self.started.get_untracked() || self.position_untracked() < 1.5 {
+                self.level_gain.set(gain);
+            } else {
+                self.ramp_level();
+            }
+        });
+    }
+
+    /// Eases the volume to the song's level, a little every 50 ms.
+    fn ramp_level(self) {
+        if self.level_ramping.get_value() {
+            return;
+        }
+        self.level_ramping.set_value(true);
+        fn step(player: Player) {
+            let (now, target) = (player.level_gain.get_untracked(), player.level_target.get_value());
+            if (target - now).abs() <= 0.4 {
+                player.level_gain.set(target);
+                player.level_ramping.set_value(false);
+                return;
+            }
+            player.level_gain.set(now + if target > now { 0.4 } else { -0.4 });
+            set_timeout(move || step(player), std::time::Duration::from_millis(50));
+        }
+        step(self);
+    }
+
+    /// Measures the next song ahead of time, so it starts at the right volume.
+    fn warm_level(&self, track: &Value) {
+        if !self.leveling.get_untracked() {
+            return;
+        }
+        let key = s(track, "key");
+        let id = match track["service"].as_str() {
+            Some("soundcloud") if track["soundcloudId"].as_u64().is_some() => format!("soundcloud:{}", track["soundcloudId"]),
+            Some("bandcamp") => self.streams.with_value(|map| map.get(&key).map(|(url, _)| format!("audio:{url}"))).unwrap_or_default(),
+            Some(_) if track["streamUrl"].is_string() => format!("audio:{}", s(track, "streamUrl")),
+            Some(_) => String::new(),
+            None => track["youtubeId"]
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| self.found.with_untracked(|found| found.get(&key).and_then(|videos| videos.first().cloned())))
+                .unwrap_or_default(),
+        };
+        if !id.is_empty() {
+            api::send("loudness", json!({ "id": id, "track": track }));
+        }
+    }
+
     fn prefetch(&self) {
         let index = self.index.get_untracked();
         let upcoming: Vec<Value> = self.queue.with_untracked(|q| q.iter().skip((index + 1).max(0) as usize).take(2).cloned().collect());
+        if let Some(next) = upcoming.first() {
+            self.warm_level(next);
+        }
         for track in upcoming {
             self.look_ahead(&track);
         }
