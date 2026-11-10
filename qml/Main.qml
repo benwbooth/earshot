@@ -105,6 +105,7 @@ ApplicationWindow {
     // hides to the tray, so mark the quit as real first.
     function quitApp() {
         savePlace()
+        Player.closeSession()
         quitting = true
         miniPlayer.close()
         Qt.quit()
