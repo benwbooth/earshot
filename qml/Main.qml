@@ -17,10 +17,6 @@ ApplicationWindow {
     color: Theme.background
     font.family: Theme.fontFamily
     font.pixelSize: Theme.fontBody
-    // Full hinting keeps round letters (e, o) on the baseline at fractional
-    // scales; Qt otherwise turns hinting off whenever the display is scaled.
-    // Controls and Text inside the window inherit this font.
-    font.hintingPreference: Font.PreferFullHinting
 
     palette {
         window: Theme.background
@@ -275,6 +271,11 @@ ApplicationWindow {
     ColumnLayout {
         id: shell
         anchors.fill: parent
+        // A thousandth of a pixel down. At 130% scaling, text whose position
+        // lands exactly on a half device pixel (any y ending in 5) has its
+        // letters rounded up or down one by one, so round ones like e and o
+        // sit a pixel below the rest. Off the exact half, they all agree.
+        anchors.topMargin: 0.001
         spacing: 0
 
         TopBar {
