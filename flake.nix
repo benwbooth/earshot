@@ -9,8 +9,14 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          # Google's Widevine module, for SoundCloud songs offered only encrypted.
+          config.allowUnfreePredicate = p: (p.pname or "") == "widevine-cdm";
+        };
         lib = pkgs.lib;
+        widevine = lib.optionalString (lib.meta.availableOn pkgs.stdenv.hostPlatform pkgs.widevine-cdm)
+          "${pkgs.widevine-cdm}/share/google/chrome/WidevineCdm/_platform_specific/linux_${if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "x64"}/libwidevinecdm.so";
         qtModules = with pkgs.qt6; [
           qtbase
           qtdeclarative
@@ -146,7 +152,7 @@
           '';
 
           postFixup = ''
-            wrapQtApp $out/bin/earshot
+            wrapQtApp $out/bin/earshot ${lib.optionalString (widevine != "") "--set-default EARSHOT_WIDEVINE ${widevine}"}
           '';
 
           meta = {
@@ -175,6 +181,7 @@
             export QT_VERSION_MAJOR=6
             unset QML2_IMPORT_PATH
             export QT_FORCE_STDERR_LOGGING=1
+            ${lib.optionalString (widevine != "") "export EARSHOT_WIDEVINE=${widevine}"}
             export INTER_TTF=${pkgs.inter}/share/fonts/truetype/InterVariable.ttf
             export LIBCLANG_PATH=${pkgs.llvmPackages.libclang.lib}/lib
             export QT_PLUGIN_PATH=${qtEnv}/${pkgs.qt6.qtbase.qtPluginPrefix}

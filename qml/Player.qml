@@ -60,7 +60,11 @@ QtObject {
     // pause meanwhile (a click stops it), so it doesn't flicker to play.
     readonly property bool busy: playing || loading || skipTimer.running || (engine !== null && engine.playerState === 3)
     readonly property bool seekable: true
-    readonly property real position: engine ? Math.max(0, engine.position - trackStart) : 0
+    // Seconds into the current song to start from when it next loads: where it
+    // was when Earshot last quit, until play is pressed.
+    property real resumeAt: 0
+    readonly property real position: resumeAt > 0 && !started ? resumeAt
+                                     : engine ? Math.max(0, engine.position - trackStart) : 0
     readonly property real length: trackEnd > 0 ? trackEnd - trackStart
                                   : engine && engine.duration > 0 ? engine.duration - trackStart
                                   : (current ? current.duration : 0)
@@ -84,7 +88,79 @@ QtObject {
         property int repeat: 0
         property real volume: 0.8
         property bool radio: false
+        // The queue, the song in it and how far it had played, so the next
+        // launch carries on where this one left off.
+        property string session: ""
     }
+
+    // Saved when the queue or song changes, every few seconds while playing,
+    // and on quit (saveSession()).
+    function saveSession() {
+        if (restoring || closed || !engine)
+            return
+        if (!current) {
+            settings.session = ""
+            return
+        }
+        settings.session = JSON.stringify({
+            queue: queue,
+            originalQueue: originalQueue,
+            index: index,
+            context: context,
+            contextRoute: contextRoute,
+            position: Math.floor(position)
+        })
+    }
+    property bool restoring: false
+    // Saved for the last time as Earshot quits, before its player goes away.
+    property bool closed: false
+    function closeSession() {
+        saveSession()
+        closed = true
+    }
+    property Connections quitting: Connections {
+        target: Qt.application
+        function onAboutToQuit() { player.closeSession() }
+    }
+    property Timer sessionTimer: Timer {
+        interval: 5000
+        repeat: true
+        running: player.playing
+        onTriggered: player.saveSession()
+    }
+    property Timer sessionSoon: Timer {
+        interval: 300
+        onTriggered: player.saveSession()
+    }
+    onQueueChanged: sessionSoon.restart()
+    onIndexChanged: sessionSoon.restart()
+    // Picks the last session back up, paused at the same place: play carries on from there.
+    function restoreSession() {
+        if (!settings.session || current)
+            return
+        let saved
+        try {
+            saved = JSON.parse(settings.session)
+        } catch (e) {
+            return
+        }
+        const list = (saved.queue || []).filter(t => t && t.key)
+        if (list.length === 0 || !(saved.index >= 0 && saved.index < list.length))
+            return
+        restoring = true
+        originalQueue = (saved.originalQueue || list).filter(t => t && t.key)
+        context = saved.context || ""
+        contextRoute = saved.contextRoute || null
+        queue = list
+        index = saved.index
+        started = false
+        loading = false
+        wantPlaying = false
+        resumeAt = Math.max(0, saved.position || 0)
+        restoring = false
+    }
+    // Later, once the settings have been read.
+    Component.onCompleted: Qt.callLater(restoreSession)
 
     function extendRadio() {
         if (!radio || radioLoading || !current)
@@ -124,6 +200,7 @@ QtObject {
     // speakers are playing, refreshed about 30 times a second while music plays.
     property var levels: [0, 0, 0, 0, 0, 0]
     onPlayingChanged: {
+        saveSession()
         Backend.setWaveformActive(playing)
         if (!playing)
             levels = [0, 0, 0, 0, 0, 0]
@@ -159,6 +236,7 @@ QtObject {
                     return
                 }
                 player.started = true
+                player.resumeAt = 0
                 player.loading = false
                 player.failures = 0
                 player.trackStarted(player.current)
@@ -200,7 +278,7 @@ QtObject {
             // Another upload of the same song may be allowed to play here.
             if (!player.current.service && player.candidate + 1 < player.candidates.length) {
                 player.candidate += 1
-                player.engine.load(player.candidates[player.candidate], player.trackStart)
+                player.engine.load(player.candidates[player.candidate], player.trackStart + player.resumeAt)
                 return
             }
             // Only a short message if nothing would play it; the reason goes to the log.
@@ -371,13 +449,14 @@ QtObject {
         if (i < 0 || i >= queue.length)
             return
         index = i
+        resumeAt = 0
         resolveCurrent()
     }
 
     function startVideos(videos) {
         candidates = videos
         candidate = 0
-        engine.load(videos[0], trackStart)
+        engine.load(videos[0], trackStart + resumeAt)
     }
 
     function resolveCurrent() {
@@ -400,16 +479,18 @@ QtObject {
         loading = true
         if (pendingRequest >= 0)
             Api.cancel(pendingRequest)
+        // The song left playing last time starts where it was.
+        const from = trackStart + resumeAt
         // SoundCloud songs play in SoundCloud's own player, unless SoundCloud
-        // only offers them encrypted, which it can't play here.
+        // only offers them encrypted and this computer has no Widevine module.
         if (track.service === "soundcloud") {
-            if (track.encrypted) {
+            if (track.encrypted && !engine.canDecrypt) {
                 playOffSoundCloud()
                 return
             }
-            engine.loadSoundCloud(track.soundcloudId, trackStart)
+            engine.loadSoundCloud(track.soundcloudId, from)
             // Songs saved before that was noted: ask while the player loads.
-            if (track.encrypted === undefined) {
+            if (track.encrypted === undefined && !engine.canDecrypt) {
                 const at = index
                 Api.call(Backend.call("soundcloudEncrypted", JSON.stringify({ id: track.soundcloudId })), function (encrypted) {
                     if (encrypted && !started && current && current.key === track.key && index === at)
@@ -420,18 +501,18 @@ QtObject {
         }
         // Mixcloud shows play in Mixcloud's own player.
         if (track.service === "mixcloud") {
-            engine.loadMixcloud(track.mixcloudKey, trackStart)
+            engine.loadMixcloud(track.mixcloudKey, from)
             return
         }
         // The Internet Archive's files stream straight from archive.org.
         if (track.service === "archive") {
-            engine.loadAudio(track.streamUrl, trackStart)
+            engine.loadAudio(track.streamUrl, from)
             return
         }
         // Bandcamp songs stream from Bandcamp, with a link fetched just before.
         if (track.service === "bandcamp") {
             if (streams[track.key]) {
-                engine.loadAudio(streams[track.key].url, trackStart)
+                engine.loadAudio(streams[track.key].url, from)
                 return
             }
             engine.stop()
@@ -439,7 +520,7 @@ QtObject {
                 pendingRequest = -1
                 rememberStream(result)
                 if (current && result.key === current.key)
-                    engine.loadAudio(result.url, trackStart)
+                    engine.loadAudio(result.url, from)
             }, function (message) {
                 pendingRequest = -1
                 if (current && current.key === track.key)
@@ -615,6 +696,13 @@ QtObject {
 
     // Seconds from the start of the current track (which may be a chapter).
     function seek(seconds) {
+        // Not loaded yet (left from last time): it'll start from there.
+        if (current && !started && !loading) {
+            resumeAt = Math.max(0, seconds)
+            sessionSoon.restart()
+            return
+        }
+        sessionSoon.restart()
         if (engine)
             engine.seek(trackStart + Math.max(0, seconds))
     }

@@ -4,6 +4,8 @@
 #include <vector>
 
 #include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
 #include <QtGui/QIcon>
@@ -26,11 +28,50 @@ void earshotReloadKWinRules()
 #endif
 }
 
+// Google's Widevine module, which SoundCloud's player needs for songs it only
+// offers encrypted (labels' ad-supported releases). Earshot can't ship it, so
+// use one already on this computer: EARSHOT_WIDEVINE (the Nix package sets
+// it), Chrome's, or the one Firefox downloads.
+static QString findWidevine()
+{
+#ifdef Q_OS_LINUX
+    const QString given = qEnvironmentVariable("EARSHOT_WIDEVINE");
+    if (!given.isEmpty() && QFileInfo(given).isFile())
+        return given;
+    const QString home = QDir::homePath();
+    const QString user = qEnvironmentVariable("USER");
+    const QString chrome = QStringLiteral("/share/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so");
+    QStringList candidates = {
+        QStringLiteral("/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"),
+        QStringLiteral("/etc/profiles/per-user/") + user + chrome,
+        home + QStringLiteral("/.nix-profile") + chrome,
+        QStringLiteral("/run/current-system/sw") + chrome,
+        QStringLiteral("/usr/lib/chromium/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"),
+        QStringLiteral("/usr/lib64/chromium-browser/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"),
+    };
+    // Firefox keeps it per profile, one folder per version: newest first.
+    for (const QString& root : { home + QStringLiteral("/.mozilla/firefox"), home + QStringLiteral("/snap/firefox/common/.mozilla/firefox") }) {
+        for (const QFileInfo& profile : QDir(root).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            QDir gmp(profile.filePath() + QStringLiteral("/gmp-widevinecdm"));
+            for (const QString& version : gmp.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed))
+                candidates << gmp.filePath(version + QStringLiteral("/libwidevinecdm.so"));
+        }
+    }
+    for (const QString& candidate : candidates)
+        if (QFileInfo(candidate).isFile())
+            return candidate;
+#endif
+    return {};
+}
+
 void earshotInitWebEngine()
 {
     // Let YouTube's player start music without a click inside the page.
-    qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
-            qgetenv("QTWEBENGINE_CHROMIUM_FLAGS") + " --autoplay-policy=no-user-gesture-required");
+    QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS") + " --autoplay-policy=no-user-gesture-required";
+    const QString widevine = findWidevine();
+    if (!widevine.isEmpty())
+        flags += " --widevine-path=" + QFile::encodeName(widevine);
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
     QtWebEngineQuick::initialize();
 }
 

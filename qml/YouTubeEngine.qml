@@ -15,6 +15,7 @@ Item {
     property real position: 0       // seconds
     property real duration: 0       // seconds
     property string videoId: ""
+    property bool canDecrypt: false // encrypted songs can play (SoundCloud's labels' releases)
     readonly property bool playing: playerState === 1
     readonly property bool buffering: playerState === 3 || playerState === -1
 
@@ -146,6 +147,9 @@ Item {
         + '}'
         // Which player has the current song: "yt" YouTube, "audio" a plain stream (Bandcamp), "sc" SoundCloud.
         + 'var mode="yt";'
+        // Whether encrypted songs can play here (Google's Widevine module was found).
+        + 'var drm=false;try{navigator.requestMediaKeySystemAccess("com.widevine.alpha",[{initDataTypes:["cenc"],'
+        + '  audioCapabilities:[{contentType:"audio/mp4; codecs=\\"mp4a.40.2\\""}]}]).then(function(){drm=true;},function(){});}catch(e){}'
         + 'function quiet(next){'
         + '  if(next!=="yt"&&ready)player.stopVideo();'
         + '  if(next!=="audio"&&audio.src){audio.pause();audio.removeAttribute("src");audio.load();}'
@@ -206,9 +210,9 @@ Item {
         + '    if(scState<1&&Date.now()-scLoaded>30000){scLoaded=Date.now();lastError=1002;}}'
         + '  else if(mode==="mc"){s={ready:true,state:mcState,time:mcPos,duration:mcDur};'
         + '    if(mcState<1&&mcState!==2&&Date.now()-mcLoaded>30000){mcLoaded=Date.now();lastError=1003;}}'
-        + '  else if(!ready)return JSON.stringify({ready:false});'
+        + '  else if(!ready)return JSON.stringify({ready:false,drm:drm});'
         + '  else s={ready:true,state:player.getPlayerState(),time:player.getCurrentTime()||0,duration:player.getDuration()||0};'
-        + '  s.ended=ended;s.error=lastError;ended=false;lastError=0;return JSON.stringify(s);}'
+        + '  s.drm=drm;s.ended=ended;s.error=lastError;ended=false;lastError=0;return JSON.stringify(s);}'
         + '</script>'
         + '<script src="https://www.youtube.com/iframe_api"></script>'
         + '<script src="https://w.soundcloud.com/player/api.js"></script>'
@@ -273,6 +277,7 @@ Item {
                 return
             const status = JSON.parse(result)
             ready = status.ready
+            canDecrypt = status.drm === true
             if (!status.ready)
                 return
             if (videoId !== "") {
