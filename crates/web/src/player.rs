@@ -39,6 +39,9 @@ pub struct Player {
     /// Track key -> videos found earlier, so upcoming songs start instantly.
     pub found: RwSignal<HashMap<String, Vec<String>>>,
     started: RwSignal<bool>,
+    /// Seconds into the current song to start from when it next loads: where
+    /// it was when Earshot was last open, until play is pressed.
+    resume_at: RwSignal<f64>,
     unrecorded: StoredValue<Option<Value>>,
     /// Bandcamp songs' audio links, with when they were fetched.
     streams: StoredValue<HashMap<String, (String, f64)>>,
@@ -111,6 +114,7 @@ impl Player {
             candidate: StoredValue::new(0),
             found: RwSignal::new(HashMap::new()),
             started: RwSignal::new(false),
+            resume_at: RwSignal::new(0.0),
             unrecorded: StoredValue::new(None),
             streams: StoredValue::new(HashMap::new()),
             stream_retried: StoredValue::new(String::new()),
@@ -127,8 +131,56 @@ impl Player {
             hide_explicit: persisted("hideExplicit", false),
             owner: StoredValue::new(Owner::current()),
         };
+        player.restore_session();
         player.wire();
+        player.keep_session();
         player
+    }
+
+    /// Picks up the queue and song from the last visit, paused at the same
+    /// place: play carries on from there.
+    fn restore_session(&self) {
+        let saved: Value = crate::state::stored("session", Value::Null);
+        let queue = copy(list(&saved, "queue"));
+        let index = saved["index"].as_i64().unwrap_or(-1);
+        if index < 0 || index >= queue.len() as i64 {
+            return;
+        }
+        let original = copy(list(&saved, "original"));
+        self.original.set(if original.is_empty() { queue.clone() } else { original });
+        self.context.set(s(&saved, "context"));
+        self.context_route.set(saved["contextRoute"].as_str().map(str::to_owned));
+        self.queue.set(queue);
+        self.index.set(index);
+        self.resume_at.set(num(&saved, "position").max(0.0));
+    }
+
+    /// Saves the queue, the song and how far it has played when any of them
+    /// changes (the position every five seconds), and as the page closes.
+    fn keep_session(self) {
+        let save = move || {
+            let Some(_) = self.current_untracked() else {
+                crate::state::store("session", &Value::Null);
+                return;
+            };
+            crate::state::store("session", &json!({
+                "queue": self.queue.get_untracked(),
+                "original": self.original.get_untracked(),
+                "index": self.index.get_untracked(),
+                "context": self.context.get_untracked(),
+                "contextRoute": self.context_route.get_untracked(),
+                "position": self.position_untracked().floor(),
+            }));
+        };
+        let every_five = Memo::new(move |_| (self.position() / 5.0).floor() as i64);
+        Effect::new(move |_| {
+            self.queue.track();
+            self.index.track();
+            self.engine.state.track();
+            every_five.track();
+            save();
+        });
+        let _ = window_event_listener(leptos::ev::pagehide, move |_| save());
     }
 
     pub fn current(&self) -> Option<Value> {
@@ -216,8 +268,26 @@ impl Player {
 
     /// Seconds into the current track.
     pub fn position(&self) -> f64 {
+        let resume_at = self.resume_at.get();
+        if resume_at > 0.0 && !self.started.get() {
+            return resume_at;
+        }
         let start = self.current().map(|t| num(&t, "start")).unwrap_or(0.0);
         (self.engine.position.get() - start).max(0.0)
+    }
+
+    fn position_untracked(&self) -> f64 {
+        let resume_at = self.resume_at.get_untracked();
+        if resume_at > 0.0 && !self.started.get_untracked() {
+            return resume_at;
+        }
+        (self.engine.position.get_untracked() - self.track_start()).max(0.0)
+    }
+
+    /// Where the current song's audio starts loading: its start, or where it
+    /// was left last time.
+    fn load_start(&self) -> f64 {
+        self.track_start() + self.resume_at.get_untracked()
     }
 
     pub fn length(&self) -> f64 {
@@ -255,6 +325,7 @@ impl Player {
                 }
                 if let Some(track) = self.current_untracked() {
                     self.started.set(true);
+                    self.resume_at.set(0.0);
                     self.loading.set(false);
                     self.failures.set_value(0);
                     self.track_started(&track);
@@ -320,7 +391,7 @@ impl Player {
             if matches!(code, 101 | 150 | 153 | 1004) && track["service"].is_null() && !video.contains(':') && self.direct_tried.get_value() != video {
                 self.direct_tried.set_value(video.clone());
                 self.blocked_message.set_value(message.clone());
-                engine.load_youtube_audio(&video, self.track_start());
+                engine.load_youtube_audio(&video, self.load_start());
                 return;
             }
             // YouTube wouldn't hand its audio over either: Earshot's server plays
@@ -328,7 +399,7 @@ impl Player {
             // (once per video), from where it stopped.
             if code == 1001 && self.direct_tried.get_value() == video && self.relay_tried.get_value() != video && track["service"].is_null() && !video.contains(':') {
                 self.relay_tried.set_value(video.clone());
-                let at = engine.position.get_untracked().max(self.track_start());
+                let at = engine.position.get_untracked().max(self.load_start());
                 let whole = num(&track, "start") == 0.0 && num(&track, "end") == 0.0;
                 engine.load_relay(&video, at, if whole { num(&track, "duration") } else { 0.0 });
                 return;
@@ -604,6 +675,7 @@ impl Player {
             return;
         }
         self.index.set(i);
+        self.resume_at.set(0.0);
         self.resolve_current();
     }
 
@@ -622,9 +694,9 @@ impl Player {
     fn load_video(&self, video: &str) {
         if crate::engine::is_ios() && !video.contains(':') {
             self.direct_tried.set_value(video.to_owned());
-            self.engine.load_youtube_audio(video, self.track_start());
+            self.engine.load_youtube_audio(video, self.load_start());
         } else {
-            self.engine.load(video, self.track_start());
+            self.engine.load(video, self.load_start());
         }
     }
 
@@ -655,6 +727,8 @@ impl Player {
         self.started.set(false);
         self.loading.set(true);
         let request = self.next_request();
+        // The song left playing last time starts where it was.
+        let start = start + self.resume_at.get_untracked();
         match s(&track, "service").as_str() {
             // SoundCloud songs play in SoundCloud's own player, Mixcloud shows in Mixcloud's.
             // iPhones can't start SoundCloud's own player without a tap.
@@ -905,6 +979,11 @@ impl Player {
 
     /// Seconds from the start of the current track (which may be a chapter).
     pub fn seek(&self, seconds: f64) {
+        // Not loaded yet (left from last time): it'll start from there.
+        if self.current_untracked().is_some() && !self.started.get_untracked() && !self.loading.get_untracked() {
+            self.resume_at.set(seconds.max(0.0));
+            return;
+        }
         self.engine.seek(self.track_start() + seconds.max(0.0));
     }
 
