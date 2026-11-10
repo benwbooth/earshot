@@ -502,10 +502,57 @@ fn NowPlaying(open: RwSignal<bool>) -> impl IntoView {
     });
     let seeking = RwSignal::new(None);
     let close = move || open.set(false);
+    // Swiping down closes the page: it follows the finger, and goes once
+    // pulled far enough (or flicked); otherwise it springs back. Only from the
+    // top of the page, and not on the sliders.
+    let sheet = NodeRef::<leptos::html::Div>::new();
+    let swipe = StoredValue::new(None::<(f64, f64)>); // where the finger started, and when
+    let pulled = RwSignal::new(0.0_f64);
+    let on_touch_start = move |event: web_sys::TouchEvent| {
+        let Some(touch) = event.touches().get(0) else { return };
+        let at_top = sheet.get_untracked().is_none_or(|el| el.scroll_top() <= 0);
+        let on_slider = event
+            .target()
+            .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
+            .and_then(|e| e.closest(".slider-wrap, input").ok().flatten())
+            .is_some();
+        swipe.set_value((at_top && !on_slider && event.touches().length() == 1).then(|| (touch.client_y() as f64, js_sys::Date::now())));
+    };
+    let on_touch_move = move |event: web_sys::TouchEvent| {
+        let (Some((from, _)), Some(touch)) = (swipe.get_value(), event.touches().get(0)) else { return };
+        let dy = touch.client_y() as f64 - from;
+        if dy > 0.0 {
+            if event.cancelable() {
+                event.prevent_default();
+            }
+            pulled.set(dy);
+        } else if pulled.get_untracked() == 0.0 {
+            // Moving up first is scrolling the page.
+            swipe.set_value(None);
+        } else {
+            pulled.set(0.0);
+        }
+    };
+    let on_touch_end = move |_: web_sys::TouchEvent| {
+        let Some((_, began)) = swipe.get_value() else { return };
+        swipe.set_value(None);
+        let dy = pulled.get_untracked();
+        let speed = dy / (js_sys::Date::now() - began).max(1.0);
+        pulled.set(0.0);
+        if dy > 120.0 || (dy > 40.0 && speed > 0.6) {
+            close();
+        }
+    };
     let cover = Signal::derive(move || track.with(|t| t.as_ref().map(|t| if s(t, "coverBig").is_empty() { s(t, "cover") } else { s(t, "coverBig") }).unwrap_or_default()));
     view! {
         <Show when=move || open.get()>
-            <div class="now-playing" role="dialog" aria-label="Now playing">
+            <div class="now-playing" role="dialog" aria-label="Now playing" node_ref=sheet
+                // While the finger drags it, no easing.
+                style=move || { let dy = pulled.get(); if dy > 0.0 { format!("transform:translateY({dy}px);transition:none") } else { String::new() } }
+                on:touchstart=on_touch_start
+                on:touchmove=on_touch_move
+                on:touchend=on_touch_end
+                on:touchcancel=on_touch_end>
                 <div class="np-top">
                     <IconButton icon="down" size=22 tip="Close" on_click=move |_| close()/>
                     <button class="np-from" on:click=move |_| { close(); player.open_source(); }>

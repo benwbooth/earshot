@@ -37,6 +37,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Scrolling but no pinch zoom */
+html { touch-action: pan-x pan-y; }
 html, body { margin: 0; height: 100%; background: var(--background); color: var(--text); }
 body {
   font-family: Inter, "Noto Sans", Cantarell, sans-serif;
@@ -473,6 +475,8 @@ a.song-artist:hover { color: var(--text); }
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 30%, var(--background)), var(--background) 65%);
   overflow-y: auto; animation: np-up 180ms ease-out;
 }
+/* Back in place after a swipe that didn't close it */
+.now-playing { transition: transform 200ms ease-out; overscroll-behavior: contain; }
 @keyframes np-up { from { transform: translateY(24px); opacity: 0; } }
 .np-top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
 .np-from { display: flex; flex-direction: column; align-items: stretch; text-align: center; min-width: 0; color: var(--text); font-size: var(--font-small); font-weight: 600; }

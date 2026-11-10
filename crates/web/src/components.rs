@@ -403,8 +403,18 @@ pub fn TrackRow(
         <div
             class="track-row"
             class:current=move || is_current.get()
-            // The song that's on pauses or carries on; any other starts.
-            on:dblclick=move |_| toggle_or_play()
+            // A click (or tap) anywhere on the song plays or pauses it, except
+            // on its own buttons and links.
+            on:click=move |event: MouseEvent| {
+                let on_control = event
+                    .target()
+                    .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
+                    .and_then(|e| e.closest("button, a, input").ok().flatten())
+                    .is_some();
+                if !on_control {
+                    toggle_or_play();
+                }
+            }
             on:contextmenu=move |event: MouseEvent| {
                 event.prevent_default();
                 on_menu.run(opens_menu(vec![context_track.clone()], &event));
@@ -499,7 +509,7 @@ fn played_at(track: &Value) -> String {
     )
 }
 
-/// A list of songs. Double-click (or the play button) plays from that song on.
+/// A list of songs. A click on a song plays (or pauses) it, from that song on.
 #[component]
 pub fn TrackList(
     #[prop(into)] tracks: Signal<Vec<Value>>,

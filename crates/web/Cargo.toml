@@ -27,5 +27,5 @@ web-sys = { version = "0.3", features = [
   "MediaSession", "MediaMetadata", "MediaSessionAction", "Navigator", "MediaSessionPlaybackState", "MediaImage",
   "ScrollToOptions", "ScrollBehavior", "Event", "EventTarget", "AddEventListenerOptions", "VisibilityState",
   "AudioContext", "BaseAudioContext", "AudioContextState", "AnalyserNode", "AudioNode", "AudioDestinationNode",
-  "MediaElementAudioSourceNode",
+  "MediaElementAudioSourceNode", "TouchEvent", "TouchList", "Touch", "CssStyleDeclaration",
 ] }
