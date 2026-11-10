@@ -902,6 +902,7 @@ name = "earshot-core"
 version = "0.1.4"
 dependencies = [
  "directories",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

@@ -21,10 +21,30 @@ pub const LIKED_WEIGHT: usize = 2;
 /// Which way of making the mixes saved ones came from (4: every source,
 /// Deezer, the Internet Archive and Reddit too, taking turns; 5: no one
 /// game, artist or album taking over; 6: branching out to new artists).
+/// Only a note: saved mixes are kept until they're due whichever Earshot
+/// made them, since the app and the web server share them and may not be
+/// the same version.
 const MADE_BY: u64 = 6;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// How far this computer's clock is ahead of UTC, in ms, so days start at
+/// local midnight rather than UTC's (4 or 5 pm in California).
+#[cfg(unix)]
+fn local_offset_ms(now: u64) -> i64 {
+    let secs = (now / 1000) as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return 0;
+    }
+    tm.tm_gmtoff as i64 * 1000
+}
+
+#[cfg(not(unix))]
+fn local_offset_ms(_now: u64) -> i64 {
+    0
 }
 
 /// What the history and the library say about the listener.
@@ -720,11 +740,11 @@ fn saved_path() -> Option<PathBuf> {
 
 /// Made for you, from the listening history and `favourites` (liked songs and
 /// playlist songs, with what each counts as in plays). Weekly picks are kept
-/// for the week (starting Monday) and Daily Mixes for the day, unless
-/// `refresh`, or unless there's more to go on than when they were made.
+/// for the week (starting Monday) and Daily Mixes for the day (local time),
+/// unless `refresh`, or unless there's more to go on than when they were made.
 pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) -> Result<Value, String> {
     let now = now_ms();
-    let today = (now / DAY_MS) as i64;
+    let today = (now as i64 + local_offset_ms(now)).div_euclid(DAY_MS as i64);
     let week = (today + 3) / 7; // weeks starting on Monday (1970-01-01 was a Thursday)
     let taste = taste(history, favourites, now);
     if taste.songs.len() < SONGS_NEEDED {
@@ -737,8 +757,9 @@ pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) ->
         .unwrap_or(Value::Null);
     // Mixes made from only a song or two are made again once there's more to go on.
     let seeds = taste.songs.len().min(6) as u64;
-    // Mixes saved by an Earshot that made them differently are made again too.
-    let grown = saved["seeds"].as_u64().unwrap_or(0) < seeds || saved["made"].as_u64() != Some(MADE_BY);
+    // Not on a new way of making them, though: the app and the web server
+    // share these, and two versions would each throw out the other's mixes.
+    let grown = saved["seeds"].as_u64().unwrap_or(0) < seeds;
     let weekly_fresh = !refresh && !grown && saved["week"].as_i64() == Some(week) && saved["weekly"].is_object();
     let daily_fresh = !refresh && !grown && saved["day"].as_i64() == Some(today) && saved["daily"].is_array();
 
@@ -788,6 +809,14 @@ mod tests {
 
     fn play(key: &str, artist: &str, video: &str, at: u64) -> Value {
         json!({ "key": key, "title": key, "artist": artist, "video": video, "playedAt": at })
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn days_start_at_local_midnight() {
+        // 2026-11-10 12:00 UTC is 04:00 in California (PST, 8 hours behind).
+        unsafe { std::env::set_var("TZ", "America/Los_Angeles") };
+        assert_eq!(local_offset_ms(1_794_312_000_000), -8 * 3_600_000);
     }
 
     #[test]

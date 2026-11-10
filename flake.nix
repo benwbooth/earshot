@@ -102,7 +102,9 @@
         packages.docker = pkgs.dockerTools.buildLayeredImage {
           name = "earshot";
           tag = "latest";
-          contents = [ pkgs.cacert ];
+          # tzdata so TZ (set in docker-compose) gives local time: For You's
+          # days start at local midnight, the same as in the app.
+          contents = [ pkgs.cacert pkgs.tzdata ];
           extraCommands = "mkdir -p data tmp && chmod 1777 tmp";
           config = {
             # tini reaps the helper processes the relay's Chromium leaves behind.
@@ -114,6 +116,7 @@
               "PIPEWIRE_RUNTIME_DIR=/run/pipewire"
               "XDG_RUNTIME_DIR=/run/pipewire"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "TZDIR=${pkgs.tzdata}/share/zoneinfo"
               # For the headless Chromium that plays videos kept on youtube.com.
               "HOME=/tmp"
               "FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }}"
