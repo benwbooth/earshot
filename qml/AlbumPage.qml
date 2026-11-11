@@ -178,7 +178,7 @@ Flickable {
                 iconSize: 22
                 color: page.saved ? Theme.accent : Theme.textMuted
                 hoverColor: page.saved ? Theme.accentHover : Theme.text
-                tip: page.saved ? "Remove from your albums" : "Save to your albums"
+                tip: page.saved ? "In your albums (click to remove)" : "Save to your albums"
                 onClicked: {
                     // page.saved only updates once the library change is
                     // delivered, so say what was just done, not what it reads now.

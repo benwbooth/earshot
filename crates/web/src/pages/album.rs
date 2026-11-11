@@ -186,7 +186,7 @@ pub fn AlbumPage() -> impl IntoView {
                     <span class="save" class:saved=move || saved.get()>
                         <IconButton size=22
                             icon=Signal::derive(move || if saved.get() { "heart-filled".to_owned() } else { "heart".to_owned() })
-                            tip=Signal::derive(move || if saved.get() { "Remove from your albums".to_owned() } else { "Save to your albums".to_owned() })
+                            tip=Signal::derive(move || if saved.get() { "In your albums (click to remove)".to_owned() } else { "Save to your albums".to_owned() })
                             on_click=toggle_saved/>
                     </span>
                     <IconButton icon="more" size=20 tip="Add the whole album to the queue or a playlist" on_click=more/>
