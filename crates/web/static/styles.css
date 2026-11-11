@@ -280,7 +280,9 @@ h1, h2, h3, p { margin: 0; }
 .waveform.small { width: 25px; }
 /* Paused or stopped: the bars fade out and give their space back. */
 .waveform.still { width: 0; opacity: 0; }
-.song-title-row .waveform.still { margin-right: -8px; }
+.song-title-row .waveform { height: 28px; width: 56px; gap: 4px; }
+.song-title-row .waveform i { width: 6px; }
+.song-title-row .waveform.still { width: 0; margin-right: -8px; }
 .np-title .waveform.still { margin-right: -10px; }
 .waveform i { flex: none; width: 3px; height: 15%; min-height: 3px; border-radius: 99px; background: var(--accent); transition: height 60ms ease-out; }
 .waveform.small i { width: 2.5px; }
