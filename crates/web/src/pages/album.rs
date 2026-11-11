@@ -91,7 +91,11 @@ pub fn AlbumPage() -> impl IntoView {
     let tracks = Signal::derive(move || album.with(|a| a.as_ref().map(|a| list(a, "tracks")).unwrap_or_default()));
     let tags = Signal::derive(move || album.with(|a| a.as_ref().map(|a| list(a, "tags")).unwrap_or_default()));
     let web = Signal::derive(move || album.with(|a| a.as_ref().map(album_page).unwrap_or_default()));
-    let saved = Signal::derive(move || app.is_album_saved(&id.get()));
+    // Saved under the album's own id, which can differ from the address's.
+    let saved = Signal::derive(move || {
+        let own = album.with(|a| a.as_ref().map(|a| s(a, "id")).unwrap_or_default());
+        app.is_album_saved(&if own.is_empty() { id.get() } else { own })
+    });
     // Started here or from the album's card (the same address), or its songs
     // played from another page showing this album.
     let playing_this = Memo::new(move |_| {

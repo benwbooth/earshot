@@ -11,7 +11,8 @@ Flickable {
     property var album: null
     property bool loading: false
     property string error: ""
-    readonly property bool saved: (Backend.libraryRevision, Backend.isAlbumSaved(args.id || ""))
+    // Saved under the album's own id, which can differ from the address's.
+    readonly property bool saved: (Backend.libraryRevision, Backend.isAlbumSaved((album && album.id) || args.id || ""))
     // Started here or from the album's card (the same page), or its songs
     // played from another page showing this album.
     readonly property bool playingThis: Player.playingAlbum(args.id || "")
@@ -179,8 +180,11 @@ Flickable {
                 hoverColor: page.saved ? Theme.accentHover : Theme.text
                 tip: page.saved ? "Remove from your albums" : "Save to your albums"
                 onClicked: {
-                    Backend.setAlbumSaved(JSON.stringify(page.album), !page.saved)
-                    Nav.notify(page.saved ? "Saved to your albums" : "Removed from your albums")
+                    // page.saved only updates once the library change is
+                    // delivered, so say what was just done, not what it reads now.
+                    const now = !page.saved
+                    Backend.setAlbumSaved(JSON.stringify(page.album), now)
+                    Nav.notify(now ? "Saved to your albums" : "Removed from your albums")
                 }
             }
             IconButton {
