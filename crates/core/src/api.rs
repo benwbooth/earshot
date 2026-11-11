@@ -54,6 +54,13 @@ pub fn import_playlist(url: &str) -> Result<Value, String> {
 /// suggestions (SoundCloud's related tracks, Mixcloud's similar shows,
 /// Bandcamp's recommended albums, the Internet Archive's other recordings
 /// by the artist), otherwise YouTube's mix for its video.
+/// Leaves out songs that wouldn't play anywhere.
+fn without(tracks: &mut Vec<Value>, unplayable: &std::collections::HashSet<String>) {
+    if !unplayable.is_empty() {
+        tracks.retain(|track| !unplayable.contains(track["key"].as_str().unwrap_or("")));
+    }
+}
+
 pub fn radio_more(track: &Value, video: &str) -> Result<Value, String> {
     let own = match track["service"].as_str() {
         Some("soundcloud") => track["soundcloudId"].as_u64().map(soundcloud::related),
@@ -251,7 +258,12 @@ impl Earshot {
             // Volume leveling: how much to turn this song up or down.
             "loudness" => Ok(crate::loudness::level(&text("id"), &args["track"])),
             "soundcloudEncrypted" => soundcloud::encrypted(args["id"].as_u64().ok_or("No SoundCloud id")?).map(Value::from),
-            "radioMore" => radio_more(&args["track"], &text("video")),
+            "radioMore" => radio_more(&args["track"], &text("video")).map(|mut more| {
+                if let Some(tracks) = more["tracks"].as_array_mut() {
+                    without(tracks, &self.library().unplayable());
+                }
+                more
+            }),
             "forYou" => {
                 // Liked songs and playlist songs count too, not only plays.
                 let (history, favourites) = {
@@ -263,11 +275,28 @@ impl Earshot {
                         .collect();
                     (library.history(), kept)
                 };
-                foryou::build(&history, &favourites, args["refresh"].as_bool().unwrap_or(false))
+                let unplayable = self.library().unplayable();
+                foryou::build(&history, &favourites, &unplayable, args["refresh"].as_bool().unwrap_or(false)).map(|mut made| {
+                    // Mixes made before a song turned out not to play leave it out too.
+                    if let Some(tracks) = made["weekly"]["tracks"].as_array_mut() {
+                        without(tracks, &unplayable);
+                    }
+                    for mix in made["daily"].as_array_mut().into_iter().flatten() {
+                        if let Some(tracks) = mix["tracks"].as_array_mut() {
+                            without(tracks, &unplayable);
+                        }
+                    }
+                    made
+                })
             }
             "album" => album(&text("id")),
             "artist" => catalog::artist_detail(&text("id")),
-            "radio" => radio::station(&text("subreddit")),
+            "radio" => radio::station(&text("subreddit")).map(|mut station| {
+                if let Some(tracks) = station["tracks"].as_array_mut() {
+                    without(tracks, &self.library().unplayable());
+                }
+                station
+            }),
             "radioStations" => Ok(radio::stations()),
             // What the listener typed ("r/name", "name" or a reddit.com link) as a subreddit name.
             "radioStationName" => radio::subreddit_name(&text("text")).map(Value::from),
@@ -303,6 +332,11 @@ impl Earshot {
             }
             "clearHistory" => {
                 self.library().clear_history();
+                changes(Value::Null)
+            }
+            // A song that wouldn't play anywhere ("unplayable": true), or played after all.
+            "setUnplayable" => {
+                self.library().set_unplayable(&text("key"), args["unplayable"].as_bool().unwrap_or(true));
                 changes(Value::Null)
             }
             "rememberVideo" => {

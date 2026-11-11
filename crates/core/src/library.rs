@@ -8,6 +8,7 @@
 //! for writers (write-ahead log). The first time, a library.json from earlier
 //! versions is imported and kept as library.json.imported.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -52,12 +53,23 @@ const SCHEMA: &str = "
         played_at INTEGER NOT NULL,
         entry TEXT NOT NULL
     );
+    -- Songs that wouldn't play anywhere (every upload and every other site
+    -- failed): left out of mixes and playlists until one plays again.
+    CREATE TABLE IF NOT EXISTS unplayable (
+        key TEXT PRIMARY KEY,
+        at INTEGER NOT NULL
+    );
     -- Subreddits the listener added to Reddit radio (\"Your stations\").
     CREATE TABLE IF NOT EXISTS stations (
         subreddit TEXT PRIMARY KEY COLLATE NOCASE,
         added INTEGER NOT NULL
     );
 ";
+
+/// Where the `index`th song shown (unplayable ones hidden) is in the whole `list`.
+fn shown_at(list: &[Value], hidden: &HashSet<String>, index: usize) -> Option<usize> {
+    list.iter().enumerate().filter(|(_, track)| !hidden.contains(track["key"].as_str().unwrap_or(""))).nth(index).map(|(at, _)| at)
+}
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -192,7 +204,13 @@ impl Library {
         self.db.query_row("PRAGMA data_version", [], |row| row.get(0)).unwrap_or(0)
     }
 
+    /// A playlist's songs, but not ones that won't play (see `unplayable`).
     fn tracks(&self, playlist: &str) -> Vec<Value> {
+        let hidden = self.unplayable();
+        self.all_tracks(playlist).into_iter().filter(|track| !hidden.contains(track["key"].as_str().unwrap_or(""))).collect()
+    }
+
+    fn all_tracks(&self, playlist: &str) -> Vec<Value> {
         let Ok(mut query) = self.db.prepare_cached("SELECT track FROM playlist_tracks WHERE playlist = ?1 ORDER BY position") else {
             return Vec::new();
         };
@@ -321,19 +339,45 @@ impl Library {
         .unwrap_or(0)
     }
 
+    /// `index` counts only the songs shown (not unplayable ones).
     pub fn remove(&mut self, id: &str, index: usize) {
+        let hidden = self.unplayable();
         self.change_tracks(id, |list| {
-            if index < list.len() {
+            if let Some(index) = shown_at(list, &hidden, index) {
                 list.remove(index);
             }
         });
     }
 
+    /// `from` and `to` count only the songs shown (not unplayable ones).
     pub fn move_track(&mut self, id: &str, from: usize, to: usize) {
+        let hidden = self.unplayable();
         self.change_tracks(id, |list| {
-            if from < list.len() && to < list.len() && from != to {
-                let track = list.remove(from);
-                list.insert(to, track);
+            if let (Some(from), Some(to)) = (shown_at(list, &hidden, from), shown_at(list, &hidden, to)) {
+                if from != to {
+                    let track = list.remove(from);
+                    list.insert(to, track);
+                }
+            }
+        });
+    }
+
+    /// Songs that wouldn't play anywhere, by key.
+    pub fn unplayable(&self) -> HashSet<String> {
+        let Ok(mut query) = self.db.prepare_cached("SELECT key FROM unplayable") else { return HashSet::new() };
+        query.query_map([], |row| row.get::<_, String>(0)).map(|rows| rows.filter_map(Result::ok).collect()).unwrap_or_default()
+    }
+
+    /// Notes that a song wouldn't play anywhere (or, `false`, that it played after all).
+    pub fn set_unplayable(&mut self, key: &str, unplayable: bool) {
+        if key.is_empty() || self.unplayable().contains(key) == unplayable {
+            return;
+        }
+        self.write(|tx| {
+            if unplayable {
+                tx.execute("INSERT OR REPLACE INTO unplayable (key, at) VALUES (?1, ?2)", params![key, now() as i64])
+            } else {
+                tx.execute("DELETE FROM unplayable WHERE key = ?1", [key])
             }
         });
     }
@@ -394,6 +438,8 @@ impl Library {
     }
 
     pub fn remember_video(&mut self, key: &str, video: &str) {
+        // It played.
+        self.set_unplayable(key, false);
         if key.starts_with("yt:") || video.is_empty() || self.video(key).as_deref() == Some(video) {
             return;
         }
@@ -402,6 +448,7 @@ impl Library {
 
     /// Notes that a song was listened to.
     pub fn record_play(&mut self, track: &Value, video: &str) {
+        self.set_unplayable(track["key"].as_str().unwrap_or(""), false);
         let mut entry = track.clone();
         let played_at = now();
         entry["playedAt"] = json!(played_at);
@@ -532,6 +579,24 @@ mod tests {
         assert!(reopened.albums()[0].get("tracks").is_none());
         assert_eq!(reopened.history()[0]["video"], "v1");
         assert_eq!(reopened.playlists_json()[0]["id"], LIKED, "Liked songs comes first");
+    }
+
+    #[test]
+    fn unplayable_songs_are_hidden_until_they_play() {
+        let mut library = Library::open(Some(temp_dir().join("earshot.db")));
+        let id = library.create("Mix");
+        library.add(&id, vec![track("a"), track("b"), track("c")]);
+        library.set_unplayable("b", true);
+        let keys = |library: &Library| library.playlist_json(&id)["tracks"].as_array().unwrap().iter().map(|t| t["key"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+        assert_eq!(keys(&library), ["a", "c"]);
+        assert_eq!(library.playlists_json()[1]["count"], 2);
+        // Positions count only the songs shown: the second one shown is "c".
+        library.move_track(&id, 1, 0);
+        assert_eq!(keys(&library), ["c", "a"]);
+        library.remove(&id, 1);
+        assert_eq!(keys(&library), ["c"]);
+        library.record_play(&track("b"), "v");
+        assert_eq!(keys(&library), ["c", "b"]);
     }
 
     /// Two Earshots (the app and the web version's server) on one database:

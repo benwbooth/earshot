@@ -979,6 +979,10 @@ impl Player {
 
     fn fail(&self, message: String) {
         self.loading.set(false);
+        // Nothing would play it: it's left out of mixes and playlists until it plays.
+        if let Some(track) = self.current_untracked() {
+            api::send("setUnplayable", json!({ "key": s(&track, "key") }));
+        }
         self.error.set(message.clone());
         self.notify(message);
         self.failures.update_value(|n| *n += 1);

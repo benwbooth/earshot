@@ -742,11 +742,13 @@ fn saved_path() -> Option<PathBuf> {
 /// playlist songs, with what each counts as in plays). Weekly picks are kept
 /// for the week (starting Monday) and Daily Mixes for the day (local time),
 /// unless `refresh`, or unless there's more to go on than when they were made.
-pub fn build(history: &[Value], favourites: &[(Value, usize)], refresh: bool) -> Result<Value, String> {
+/// Songs in `unplayable` (they wouldn't play anywhere) aren't picked.
+pub fn build(history: &[Value], favourites: &[(Value, usize)], unplayable: &HashSet<String>, refresh: bool) -> Result<Value, String> {
     let now = now_ms();
     let today = (now as i64 + local_offset_ms(now)).div_euclid(DAY_MS as i64);
     let week = (today + 3) / 7; // weeks starting on Monday (1970-01-01 was a Thursday)
-    let taste = taste(history, favourites, now);
+    let mut taste = taste(history, favourites, now);
+    taste.heard.extend(unplayable.iter().cloned());
     if taste.songs.len() < SONGS_NEEDED {
         return Ok(json!({ "needMore": true, "songs": taste.songs.len(), "songsNeeded": SONGS_NEEDED }));
     }
@@ -861,7 +863,7 @@ mod tests {
         {
             history.push(json!({ "key": key, "title": key, "artist": artist, "artistId": artist_id, "video": video, "playedAt": now - (i as u64) * 60_000 }));
         }
-        let built = build(&history, &[], true).unwrap();
+        let built = build(&history, &[], &HashSet::new(), true).unwrap();
         let weekly = built["weekly"]["tracks"].as_array().unwrap();
         assert!(weekly.len() >= 10, "Discover Weekly has {} songs", weekly.len());
         assert!(weekly.iter().all(|t| !["yt:jx-kcjc_v00", "yt:WqdpKnx6TfY"].contains(&t["key"].as_str().unwrap())));
