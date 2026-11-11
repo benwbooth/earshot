@@ -399,13 +399,6 @@ fn blend(found: Vec<Found>, heard: &HashSet<String>, taken: &mut HashSet<String>
     picked
 }
 
-/// New songs like `seed`, from all the sources, that haven't been heard.
-/// At most `per_theme` of them to do with the seed's artist.
-fn new_like(seed: &Value, video: &str, heard: &HashSet<String>, taken: &mut HashSet<String>, count: usize, per_theme: usize) -> Vec<Value> {
-    let themes = [seed["artist"].as_str().unwrap_or("").to_owned()];
-    blend(vec![similar(seed, video)], heard, taken, count, &themes, per_theme)
-}
-
 /// Whether a song is by (or about: covers, remixes, podcasts of) an artist the listener already plays.
 fn familiar(taste: &Taste, song: &Value) -> bool {
     taste.artists.iter().any(|(name, _, _, _)| about(song, &series(name)))
@@ -461,6 +454,9 @@ fn discover_weekly(taste: &Taste) -> Value {
     })
 }
 
+/// Songs in a Daily Mix, at least.
+const DAILY_MIX_SONGS: usize = 20;
+
 fn daily_mixes(taste: &Taste) -> Vec<Value> {
     let mut taken = HashSet::new();
     taste
@@ -473,9 +469,36 @@ fn daily_mixes(taste: &Taste) -> Vec<Value> {
             for track in &tracks {
                 taken.insert(track["key"].as_str().unwrap_or("").to_owned());
             }
-            let favourite = taste.songs.iter().find(|(song, _, _)| same_name(song["artist"].as_str().unwrap_or(""), name))?;
+            let theirs: Vec<&(Value, String, usize)> = taste.songs.iter().filter(|(song, _, _)| same_name(song["artist"].as_str().unwrap_or(""), name)).collect();
+            let favourite = theirs.first()?;
+            let themes = [favourite.0["artist"].as_str().unwrap_or("").to_owned()];
+            let short = |tracks: &Vec<Value>| DAILY_MIX_SONGS.saturating_sub(tracks.len());
             // Similar artists, not just more of this one (it already has the songs played).
-            tracks.extend(new_like(&favourite.0, &favourite.1, &taste.heard, &mut taken, 17, 4));
+            let mut found = vec![similar(&favourite.0, &favourite.1)];
+            tracks.extend(blend(found.clone(), &taste.heard, &mut taken, 17, &themes, 4));
+            // Not enough yet: what's like a couple more of their songs too.
+            if short(&tracks) > 0 {
+                let more: Vec<Found> = std::thread::scope(|scope| {
+                    theirs.iter().skip(1).take(2).map(|(song, video, _)| scope.spawn(move || similar(song, video))).collect::<Vec<_>>().into_iter().map(|job| job.join().unwrap_or_default()).collect()
+                });
+                tracks.extend(blend(more.clone(), &taste.heard, &mut taken, short(&tracks), &themes, 4));
+                found.extend(more);
+            }
+            // Still not enough: more of this artist (and covers of them) is fine.
+            if short(&tracks) > 0 {
+                tracks.extend(blend(found, &taste.heard, &mut taken, short(&tracks), &themes, usize::MAX));
+            }
+            // Then songs of theirs already played, then other favourites.
+            let known = played.iter().skip(8).chain(taste.songs.iter().map(|(song, _, _)| song));
+            for song in known {
+                if short(&tracks) == 0 {
+                    break;
+                }
+                let key = song["key"].as_str().unwrap_or("").to_owned();
+                if !key.is_empty() && taken.insert(key) {
+                    tracks.push(clean(song));
+                }
+            }
             random::shuffle(&mut tracks);
             Some(json!({
                 "id": format!("daily-mix-{}", index + 1),
