@@ -352,6 +352,7 @@ pub fn source(track: &Value) -> (&'static str, &'static str) {
         Some("soundcloud") => ("SoundCloud", "source-soundcloud"),
         Some("mixcloud") => ("Mixcloud", "source-mixcloud"),
         Some("archive") => ("Internet Archive", "source-archive"),
+        Some("reddit") => ("Reddit", "source-reddit"),
         _ => ("YouTube", "source-youtube"),
     }
 }
@@ -384,7 +385,11 @@ pub fn TrackRow(
         let key = key.clone();
         Signal::derive(move || app.is_liked(&key))
     };
-    let toggle_or_play = move || if is_current.get_untracked() { player.toggle() } else { on_play.run(()) };
+    // The same song from a newer list (now playing from another site, like a
+    // Reddit video that played from YouTube before) starts over from there.
+    let service = StoredValue::new(track["service"].clone());
+    let same_copy = move || player.current_untracked().is_some_and(|current| service.with_value(|service| current["service"] == *service));
+    let toggle_or_play = move || if is_current.get_untracked() && same_copy() { player.toggle() } else { on_play.run(()) };
     let artist_id = s(&track, "artistId");
     let album_id = s(&track, "albumId");
     let mut by = s(&track, "artist");

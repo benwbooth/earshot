@@ -190,10 +190,17 @@ pub(crate) fn open(id: &str, song: &serde_json::Value) -> Result<Opened, String>
     }
     if let Some(url) = id.strip_prefix("audio:") {
         if !file_allowed(url) {
-            return Err("Earshot only measures Bandcamp and Internet Archive audio files.".to_owned());
+            return Err("Earshot only measures Bandcamp, Internet Archive and Reddit audio files.".to_owned());
         }
-        let kind = if url.split('?').next().unwrap_or("").to_ascii_lowercase().ends_with(".m4a") { "mp4" } else { "mp3" };
-        let site = if url.contains("archive.org") { "The Internet Archive" } else { "Bandcamp" };
+        let file = url.split('?').next().unwrap_or("").to_ascii_lowercase();
+        let kind = if file.ends_with(".m4a") || file.ends_with(".mp4") { "mp4" } else { "mp3" };
+        let site = if url.contains("archive.org") {
+            "The Internet Archive"
+        } else if url.contains("v.redd.it") {
+            "Reddit"
+        } else {
+            "Bandcamp"
+        };
         return Ok((Parts::new(vec![url.to_owned()]), kind, site.to_owned(), None));
     }
     if id.len() != 11 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
@@ -239,7 +246,7 @@ pub(crate) fn open(id: &str, song: &serde_json::Value) -> Result<Opened, String>
 pub fn file_allowed(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else { return false };
     let host = rest.split(['/', '?', ':']).next().unwrap_or("");
-    host.ends_with(".bcbits.com") || host == "archive.org" || host.ends_with(".archive.org")
+    host.ends_with(".bcbits.com") || host == "archive.org" || host.ends_with(".archive.org") || host == "v.redd.it"
 }
 
 fn agent() -> &'static ureq::Agent {

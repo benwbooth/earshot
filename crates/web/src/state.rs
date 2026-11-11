@@ -122,6 +122,7 @@ pub fn site_name(url: &str) -> &'static str {
         ("mixcloud.com", "Mixcloud"),
         ("archive.org", "the Internet Archive"),
         ("deezer.com", "Deezer"),
+        ("reddit.com", "Reddit"),
     ] {
         if url.contains(host) {
             return name;

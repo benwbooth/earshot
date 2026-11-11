@@ -188,7 +188,8 @@ pub fn station(subreddit: &str) -> Result<Value, String> {
             if head.contains("/subreddits/search") {
                 return Err(format!("Reddit has no subreddit called r/{subreddit}."));
             }
-            let tracks = parse_feed(&feed, subreddit);
+            let mut tracks = parse_feed(&feed, subreddit);
+            find_reddit_audio(&mut tracks);
             if tracks.is_empty() {
                 return Err(format!("r/{subreddit} has no links to songs right now."));
             }
@@ -237,6 +238,91 @@ pub fn youtube_id(text: &str) -> Option<String> {
     None
 }
 
+/// The id of a video uploaded to Reddit ("v.redd.it/<id>").
+pub fn reddit_video(text: &str) -> Option<String> {
+    let at = text.find("v.redd.it/")? + "v.redd.it/".len();
+    let id: String = text[at..].chars().take_while(char::is_ascii_alphanumeric).collect();
+    (id.len() >= 5).then_some(id)
+}
+
+/// A Reddit video's sound: its best audio file (an MP4 anything can play)
+/// and its length in seconds, from the video's DASH manifest. None for a
+/// silent video.
+pub fn reddit_audio(id: &str) -> Result<Option<(String, u64)>, String> {
+    let manifest = crate::net::get_text(&format!("https://v.redd.it/{id}/DASHPlaylist.mpd"))?;
+    let seconds = between(&manifest, "mediaPresentationDuration=\"", "\"").map(iso_seconds).unwrap_or(0);
+    let mut best: Option<(u64, String)> = None;
+    for set in manifest.split("<AdaptationSet").skip(1) {
+        let set = set.split("</AdaptationSet>").next().unwrap_or("");
+        let head = set.split('>').next().unwrap_or("");
+        let audio_set = head.contains("contentType=\"audio\"");
+        for representation in set.split("<Representation").skip(1) {
+            let attributes = representation.split('>').next().unwrap_or("");
+            if !(audio_set || attributes.contains("mimeType=\"audio/")) {
+                continue;
+            }
+            let Some(file) = between(representation, "<BaseURL>", "</BaseURL>") else { continue };
+            let bandwidth = between(attributes, "bandwidth=\"", "\"").and_then(|b| b.parse().ok()).unwrap_or(0);
+            if best.as_ref().is_none_or(|(most, _)| bandwidth > *most) {
+                best = Some((bandwidth, file.trim().to_owned()));
+            }
+        }
+    }
+    Ok(best.map(|(_, file)| {
+        let url = if file.starts_with("https://") { file } else { format!("https://v.redd.it/{id}/{file}") };
+        (url, seconds)
+    }))
+}
+
+/// "PT1H2M3.5S" in whole seconds.
+fn iso_seconds(text: &str) -> u64 {
+    let (mut total, mut number) = (0.0, String::new());
+    for ch in text.trim_start_matches("PT").chars() {
+        match ch {
+            'H' => total += number.parse::<f64>().unwrap_or(0.0) * 3600.0,
+            'M' => total += number.parse::<f64>().unwrap_or(0.0) * 60.0,
+            'S' => total += number.parse::<f64>().unwrap_or(0.0),
+            _ => {
+                number.push(ch);
+                continue;
+            }
+        }
+        number.clear();
+    }
+    total.round() as u64
+}
+
+/// Finds the sound of each Reddit video among `tracks`, all at once. A video
+/// whose sound can't be had is looked up on YouTube instead, like a link to
+/// somewhere else.
+fn find_reddit_audio(tracks: &mut [Value]) {
+    std::thread::scope(|scope| {
+        let jobs: Vec<_> = tracks
+            .iter_mut()
+            .filter(|track| track["service"] == "reddit")
+            .map(|track| {
+                let id = track["redditVideo"].as_str().unwrap_or("").to_owned();
+                (track, scope.spawn(move || reddit_audio(&id)))
+            })
+            .collect();
+        for (track, job) in jobs {
+            match job.join().ok().and_then(Result::ok).flatten() {
+                Some((url, seconds)) => {
+                    track["streamUrl"] = json!(url);
+                    track["duration"] = json!(seconds);
+                }
+                None => {
+                    if let Some(map) = track.as_object_mut() {
+                        for field in ["service", "redditVideo", "pageUrl"] {
+                            map.remove(field);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Strips the "[Genre] (Year)" tags people add to post titles.
 fn strip_tags(text: &str) -> (String, String) {
     let mut out = String::new();
@@ -277,6 +363,8 @@ pub fn parse_feed(feed: &str, subreddit: &str) -> Vec<Value> {
         let title = unescape_html(&unescape_html(raw_title));
         let content = unescape_html(between(entry, "<content type=\"html\">", "</content>").unwrap_or(""));
         let video = youtube_id(&content);
+        // A video uploaded to Reddit itself plays from Reddit (its sound only).
+        let reddit = if video.is_none() { reddit_video(&content) } else { None };
         let (cleaned, tags) = strip_tags(&title);
         let has_separator = [" -- ", " - ", " – ", " — "].iter().any(|sep| cleaned.contains(sep));
         if video.is_none() && !has_separator {
@@ -294,6 +382,28 @@ pub fn parse_feed(feed: &str, subreddit: &str) -> Vec<Value> {
             continue;
         }
         let permalink = between(entry, "<link href=\"", "\"").unwrap_or("").to_owned();
+        if let Some(id) = reddit {
+            let cover = between(entry, "<media:thumbnail url=\"", "\"").map(unescape_html).unwrap_or_default();
+            tracks.push(json!({
+                "key": key,
+                "service": "reddit",
+                "redditVideo": id,
+                "youtubeId": "",
+                "title": song,
+                "artist": artist,
+                "album": "",
+                "albumId": "",
+                "artistId": "",
+                "cover": cover,
+                "coverBig": cover,
+                "duration": 0,
+                "tags": tags,
+                "source": format!("r/{subreddit}"),
+                "link": permalink,
+                "pageUrl": permalink,
+            }));
+            continue;
+        }
         tracks.push(json!({
             "key": key,
             "youtubeId": video.clone().unwrap_or_default(),
@@ -330,6 +440,28 @@ mod tests {
         assert_eq!(tracks[0]["tags"], "psych/funk");
         assert_eq!(tracks[1]["title"], "Not");
         assert_eq!(tracks[1]["youtubeId"], "");
+    }
+
+    #[test]
+    fn reddit_videos_play_from_reddit() {
+        let feed = r#"<feed><entry><content type="html">&lt;span&gt;&lt;a href=&quot;https://v.redd.it/rey6vgq63xth1&quot;&gt;[link]&lt;/a&gt;&lt;/span&gt;</content>
+<media:thumbnail url="https://external-preview.redd.it/x.png?width=640&amp;crop=smart" /><link href="https://www.reddit.com/r/synthwave/comments/1wzfa0r/x/" />
+<title>Carrellee - 'Mirror' Live in Denver (2026)</title></entry></feed>"#;
+        let tracks = parse_feed(feed, "synthwave");
+        assert_eq!(tracks[0]["service"], "reddit");
+        assert_eq!(tracks[0]["redditVideo"], "rey6vgq63xth1");
+        assert_eq!(tracks[0]["key"], "rd:carrellee:'mirror' live in denver");
+        assert_eq!(tracks[0]["cover"], "https://external-preview.redd.it/x.png?width=640&crop=smart");
+        assert_eq!(iso_seconds("PT3M5.6S"), 186);
+        assert_eq!(iso_seconds("PT1H0M0S"), 3600);
+    }
+
+    #[test]
+    #[ignore]
+    fn live_reddit_audio() {
+        let (url, seconds) = reddit_audio("rey6vgq63xth1").unwrap().unwrap();
+        assert_eq!(url, "https://v.redd.it/rey6vgq63xth1/CMAF_AUDIO_128.mp4");
+        assert!(seconds > 60, "{seconds}");
     }
 
     #[test]

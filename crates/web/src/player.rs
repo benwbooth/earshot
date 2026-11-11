@@ -762,8 +762,9 @@ impl Player {
                 engine.load_relay(&show, start, num(&track, "duration"));
             }
             "mixcloud" => engine.load_mixcloud(&s(&track, "mixcloudKey"), start),
-            // The Internet Archive's files stream straight from archive.org.
-            "archive" => engine.load_audio(&s(&track, "streamUrl"), start),
+            // The Internet Archive's files stream straight from archive.org,
+            // and a video uploaded to Reddit plays its sound from Reddit.
+            "archive" | "reddit" => engine.load_audio(&s(&track, "streamUrl"), start),
             // Bandcamp songs stream from Bandcamp, with a link fetched just before.
             "bandcamp" => {
                 if let Some(url) = self.stream_for(&key) {
@@ -932,7 +933,7 @@ impl Player {
             warm_soundcloud(&s(track, "soundcloudId"));
             return;
         }
-        if ["mixcloud", "archive"].contains(&service.as_str()) {
+        if ["mixcloud", "archive", "reddit"].contains(&service.as_str()) {
             return;
         }
         let key = s(track, "key");

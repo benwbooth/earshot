@@ -14,6 +14,9 @@ Rectangle {
     // The History page: when the song last played, as 2026-11-08 21:35.
     property bool showPlayed: false
     readonly property bool isCurrent: Player.current !== null && track !== undefined && Player.current.key === track.key
+    // The same song from a newer list (now playing from another site, like a
+    // Reddit video that played from YouTube before) starts over from there.
+    readonly property bool sameCopy: isCurrent && (Player.current.service || "") === (track.service || "")
     readonly property bool liked: (Backend.libraryRevision, Backend.isLiked(track.key))
 
     signal activated()
@@ -34,7 +37,7 @@ Rectangle {
         acceptedButtons: Qt.LeftButton
         // A click anywhere on the song (but its own buttons and links): the
         // song that's on pauses or carries on; any other starts.
-        onTapped: row.isCurrent ? Player.toggle() : row.activated()
+        onTapped: row.sameCopy ? Player.toggle() : row.activated()
     }
     TapHandler {
         acceptedButtons: Qt.RightButton
@@ -77,7 +80,7 @@ Rectangle {
             MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: row.isCurrent ? Player.toggle() : row.activated()
+                onClicked: row.sameCopy ? Player.toggle() : row.activated()
             }
         }
 
@@ -92,7 +95,7 @@ Rectangle {
                 anchors.fill: parent
                 enabled: !row.showNumber
                 cursorShape: Qt.PointingHandCursor
-                onClicked: row.isCurrent ? Player.toggle() : row.activated()
+                onClicked: row.sameCopy ? Player.toggle() : row.activated()
             }
             Rectangle {
                 anchors.fill: parent

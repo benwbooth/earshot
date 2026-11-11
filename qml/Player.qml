@@ -575,8 +575,9 @@ QtObject {
             engine.loadMixcloud(track.mixcloudKey, from)
             return
         }
-        // The Internet Archive's files stream straight from archive.org.
-        if (track.service === "archive") {
+        // The Internet Archive's files stream straight from archive.org,
+        // and a video uploaded to Reddit plays its sound from Reddit.
+        if (track.service === "archive" || track.service === "reddit") {
             engine.loadAudio(track.streamUrl, from)
             return
         }
@@ -652,7 +653,7 @@ QtObject {
 
     // Find a track's video ahead of time (songs you hover, the first song of an album).
     function lookAhead(track) {
-        if (!track || track.youtubeId || ["soundcloud", "mixcloud", "archive"].indexOf(track.service) >= 0)
+        if (!track || track.youtubeId || ["soundcloud", "mixcloud", "archive", "reddit"].indexOf(track.service) >= 0)
             return
         if (track.service === "bandcamp") {
             if (!streams[track.key])

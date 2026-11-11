@@ -103,7 +103,8 @@ QtObject {
             bandcamp: { name: "Bandcamp", logo: "source-bandcamp" },
             soundcloud: { name: "SoundCloud", logo: "source-soundcloud" },
             mixcloud: { name: "Mixcloud", logo: "source-mixcloud" },
-            archive: { name: "Internet Archive", logo: "source-archive" }
+            archive: { name: "Internet Archive", logo: "source-archive" },
+            reddit: { name: "Reddit", logo: "source-reddit" }
         }
         return (track && services[track.service]) || { name: "YouTube", logo: "source-youtube" }
     }
@@ -111,7 +112,7 @@ QtObject {
     // "YouTube", "Bandcamp"… for "Open on …".
     function siteName(url) {
         const sites = [["youtube.com", "YouTube"], ["soundcloud.com", "SoundCloud"], ["bandcamp.com", "Bandcamp"],
-                       ["mixcloud.com", "Mixcloud"], ["archive.org", "the Internet Archive"], ["deezer.com", "Deezer"]]
+                       ["mixcloud.com", "Mixcloud"], ["archive.org", "the Internet Archive"], ["deezer.com", "Deezer"], ["reddit.com", "Reddit"]]
         for (const [host, name] of sites)
             if (url.indexOf(host) >= 0)
                 return name

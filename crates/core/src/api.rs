@@ -277,13 +277,30 @@ impl Earshot {
                 };
                 let unplayable = self.library().unplayable();
                 foryou::build(&history, &favourites, &unplayable, args["refresh"].as_bool().unwrap_or(false)).map(|mut made| {
-                    // Mixes made before a song turned out not to play leave it out too.
-                    if let Some(tracks) = made["weekly"]["tracks"].as_array_mut() {
+                    // Reddit songs saved in a mix before Earshot played Reddit's own
+                    // videos take what the station knows now.
+                    let reddit: std::collections::HashMap<String, Value> = radio::saved_songs()
+                        .into_iter()
+                        .filter(|song| song["service"] == "reddit")
+                        .map(|song| (song["key"].as_str().unwrap_or("").to_owned(), song))
+                        .collect();
+                    let fix = |tracks: &mut Vec<Value>| {
+                        // Mixes made before a song turned out not to play leave it out too.
                         without(tracks, &unplayable);
+                        for track in tracks.iter_mut() {
+                            if track["service"].is_null()
+                                && let Some(newer) = track["key"].as_str().and_then(|key| reddit.get(key))
+                            {
+                                *track = newer.clone();
+                            }
+                        }
+                    };
+                    if let Some(tracks) = made["weekly"]["tracks"].as_array_mut() {
+                        fix(tracks);
                     }
                     for mix in made["daily"].as_array_mut().into_iter().flatten() {
                         if let Some(tracks) = mix["tracks"].as_array_mut() {
-                            without(tracks, &unplayable);
+                            fix(tracks);
                         }
                     }
                     made
