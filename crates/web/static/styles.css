@@ -302,11 +302,17 @@ h1, h2, h3, p { margin: 0; }
 .track-row:hover { background: var(--surface-hover); }
 .track-row .number, .track-header .number { width: 26px; flex: none; display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .track-row .number .play-icon { display: none; color: var(--text); }
-.track-row:hover .number .n, .track-row.current .number .n { display: none; }
-.track-row:hover .number .play-icon { display: inline-block; }
+.track-row.current .number .n { display: none; }
 .track-row.current .number .play-icon { color: var(--accent); }
 .track-row.current:not(:hover) .number .waveform + .play-icon, .track-row.current .number:has(.waveform) .play-icon { display: none; }
-.track-row:hover .number .waveform { display: none; }
+/* Pointing at a row swaps its number or waveform for a play button. Only
+   with a mouse: a phone keeps the last tapped row "hovered" until the next
+   tap elsewhere, which hid the playing song's waveform all that time. */
+@media (hover: hover) {
+  .track-row:hover .number .n { display: none; }
+  .track-row:hover .number .play-icon { display: inline-block; }
+  .track-row:hover .number .waveform { display: none; }
+}
 .track-row.current .number:not(:has(.waveform)) .play-icon { display: inline-block; }
 .row-cover { position: relative; width: 40px; height: 40px; flex: none; }
 .row-cover .cover { width: 40px; height: 40px; }
