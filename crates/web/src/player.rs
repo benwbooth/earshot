@@ -675,7 +675,9 @@ impl Player {
     /// Opens the album, playlist or page the music is playing from.
     pub fn open_source(&self) {
         let app = app();
-        if let Some(route) = self.context_route.get_untracked() {
+        let route = self.context_route.get_untracked();
+        let mix = route.as_deref().filter(|r| *r == "/").and_then(|_| crate::pages::foryou::mix_route_titled(&self.context.get_untracked()));
+        if let Some(route) = mix.or(route) {
             app.go(route);
         } else if let Some(album) = self.current_untracked().map(|t| s(&t, "albumId")).filter(|a| !a.is_empty()) {
             app.go(crate::state::album_href(&album));

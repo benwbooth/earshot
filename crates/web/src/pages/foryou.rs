@@ -29,6 +29,16 @@ thread_local! {
     static CACHE: RefCell<Option<Value>> = const { RefCell::new(None) };
 }
 
+/// The address of the mix with this title among the mixes made this visit,
+/// for music started from a mix before Home kept the mix in its address.
+pub fn mix_route_titled(title: &str) -> Option<String> {
+    CACHE.with(|c| {
+        let cache = c.borrow();
+        let made = cache.as_ref()?;
+        std::iter::once(made["weekly"].clone()).chain(list(made, "daily")).find(|m| !title.is_empty() && s(m, "title") == title).map(|m| mix_route(&s(&m, "id")))
+    })
+}
+
 /// Not enough listening history yet.
 fn needs_more(made: &Value) -> bool {
     made["needMore"].as_bool().unwrap_or(false)

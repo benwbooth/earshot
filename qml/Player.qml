@@ -390,8 +390,13 @@ QtObject {
         return current !== null && context === contextName && (tracks || []).some(t => t.key === current.key)
     }
     function playOrToggle(tracks, contextName, route) {
-        if (playingFrom(contextName, tracks))
+        if (playingFrom(contextName, tracks)) {
+            // Carrying on counts as coming from this page too (a song started before
+            // the page knew its own address still gets the right one).
+            if (route)
+                contextRoute = route
             toggle()
+        }
         else
             playTracks(tracks, 0, contextName, route)
     }
@@ -503,9 +508,24 @@ QtObject {
         playTracks(list, Math.floor(Math.random() * list.length), contextName, route)
     }
 
+    // A mix on Home started without its own address (before Home remembered which
+    // mix was open): found again by its title among the mixes made today.
+    function mixRoute() {
+        if (!contextRoute || (contextRoute.page !== "home" && contextRoute.page !== "foryou")
+                || (contextRoute.args && contextRoute.args.mix) || context === "")
+            return null
+        const made = Api.forYouCache
+        const mixes = made ? [made.weekly].concat(made.daily || []) : []
+        const mix = mixes.find(m => m && m.id && m.title === context)
+        return mix ? { page: "home", args: { mix: mix.id } } : null
+    }
+
     // Open the album, playlist or page the music is playing from.
     function openSource() {
-        if (contextRoute && contextRoute.page)
+        const mix = mixRoute()
+        if (mix)
+            Nav.open(mix.page, mix.args)
+        else if (contextRoute && contextRoute.page)
             Nav.open(contextRoute.page, contextRoute.args)
         else if (current && current.albumId)
             Nav.album(current.albumId)
