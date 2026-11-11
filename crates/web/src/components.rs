@@ -443,7 +443,7 @@ pub fn TrackRow(
                 let cover = s(&track, "cover");
                 let seed = key.clone();
                 view! {
-                    <button class="row-cover" class:clickable=!show_number on:click=move |_| if !show_number { toggle_or_play() }>
+                    <button class="row-cover clickable" on:click=move |_| toggle_or_play()>
                         <Cover src=cover seed=seed radius=6/>
                         {(!show_number).then(|| view! {
                             <span class="cover-play"><Icon name=Signal::derive(move || if is_current.get() && player.playing() { "pause".to_owned() } else { "play".to_owned() }) size=16/></span>
