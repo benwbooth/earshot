@@ -45,6 +45,13 @@ Rectangle {
             Layout.maximumWidth: 480
             Layout.fillHeight: true
             spacing: 14
+            // Stands beside the title, artist and source lines, as tall as all three.
+            Waveform {
+                shown: bar.track !== null && Player.playing
+                Layout.preferredHeight: 56
+                barWidth: 6
+                gap: 4
+            }
             ColumnLayout {
                 id: songColumn
                 Layout.fillWidth: true
@@ -52,12 +59,6 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
-                    Waveform {
-                        shown: bar.track !== null && Player.playing
-                        Layout.preferredHeight: 28
-                        barWidth: 6
-                        gap: 4
-                    }
                     // Click the song to open the album, playlist or page it's playing from.
                     // Long titles glide sideways rather than making the bar taller.
                     Marquee {

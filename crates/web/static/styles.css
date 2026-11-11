@@ -280,9 +280,10 @@ h1, h2, h3, p { margin: 0; }
 .waveform.small { width: 25px; }
 /* Paused or stopped: the bars fade out and give their space back. */
 .waveform.still { width: 0; opacity: 0; }
-.song-title-row .waveform { height: 28px; width: 56px; gap: 4px; }
-.song-title-row .waveform i { width: 6px; }
-.song-title-row .waveform.still { width: 0; margin-right: -8px; }
+/* The player bar's stands beside the title, artist and source lines. */
+.song .waveform { height: 56px; width: 56px; gap: 4px; }
+.song .waveform i { width: 6px; }
+.song .waveform.still { width: 0; margin-right: -14px; }
 .np-title .waveform.still { margin-right: -10px; }
 .waveform i { flex: none; width: 3px; height: 15%; min-height: 3px; border-radius: 99px; background: var(--accent); transition: height 60ms ease-out; }
 .waveform.small i { width: 2.5px; }
@@ -453,6 +454,7 @@ a.song-artist:hover { color: var(--text); }
   .playerbar { --bar-cover: 63px; }
   .song { margin: -8px 0 -10px; }
   .song { gap: 10px; }
+  .song .waveform.still { margin-right: -10px; }
   .song-context { display: none; }
   .controls { flex-direction: row; }
   .buttons { gap: 2px; }

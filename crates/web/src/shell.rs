@@ -373,12 +373,12 @@ pub fn PlayerBar() -> impl IntoView {
                             seed=Signal::derive(move || track.with(|t| t.as_ref().map(|t| s(t, "key")).unwrap_or_default())) radius=0/>
                     </button>
                 </Show>
+                <Show when=has><Waveform/></Show>
                 <div class="song-text" on:click=move |event: MouseEvent| if has() && is_phone() {
                     event.prevent_default();
                     sheet.set(true);
                 }>
                     <div class="song-title-row">
-                        <Show when=has><Waveform/></Show>
                         <button class="song-title" on:click=move |event: MouseEvent| if has() && !is_phone() {
                             event.stop_propagation();
                             player.open_source();
