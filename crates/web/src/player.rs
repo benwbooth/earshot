@@ -350,7 +350,7 @@ impl Player {
                     self.failures.set_value(0);
                     self.track_started(&track);
                     let video = engine.video_id.get_untracked();
-                    if track["youtubeId"].is_null() && track["service"].is_null() {
+                    if s(&track, "youtubeId").is_empty() && track["service"].is_null() {
                         api::send("rememberVideo", json!({ "key": s(&track, "key"), "video": video }));
                     }
                     self.prefetch();
@@ -556,7 +556,7 @@ impl Player {
         let Some(seed) = self.current_untracked() else { return };
         let playing = self.engine.video_id.get_untracked();
         let found = self.found.with_untracked(|f| f.get(&s(&seed, "key")).and_then(|v| v.first().cloned()));
-        let video = seed["youtubeId"].as_str().map(str::to_owned).or(found).unwrap_or_else(|| {
+        let video = seed["youtubeId"].as_str().filter(|v| !v.is_empty()).map(str::to_owned).or(found).unwrap_or_else(|| {
             if seed["service"].is_null() && !playing.contains(':') { playing } else { String::new() }
         });
         self.radio_loading.set(true);
@@ -570,7 +570,7 @@ impl Player {
                     player.queue.with_untracked(|q| {
                         for track in q {
                             seen.insert(s(track, "key"));
-                            if let Some(id) = track["youtubeId"].as_str() {
+                            if let Some(id) = track["youtubeId"].as_str().filter(|v| !v.is_empty()) {
                                 seen.insert(format!("yt:{id}"));
                             }
                         }
@@ -733,7 +733,7 @@ impl Player {
         let start = num(&track, "start");
         let key = s(&track, "key");
         // Another chapter of the video that's already playing: just move there.
-        if let Some(video) = track["youtubeId"].as_str() {
+        if let Some(video) = track["youtubeId"].as_str().filter(|v| !v.is_empty()) {
             if video == engine.video_id.get_untracked() && self.started.get_untracked() {
                 if (engine.position.get_untracked() - start).abs() > 1.5 {
                     engine.seek(start);
@@ -788,7 +788,7 @@ impl Player {
             }
             // YouTube tracks already know their video; others were often looked up ahead of time.
             _ => {
-                let known = track["youtubeId"].as_str().map(|v| vec![v.to_owned()]).or_else(|| self.found.with_untracked(|f| f.get(&key).cloned()));
+                let known = track["youtubeId"].as_str().filter(|v| !v.is_empty()).map(|v| vec![v.to_owned()]).or_else(|| self.found.with_untracked(|f| f.get(&key).cloned()));
                 if let Some(videos) = known.filter(|v| !v.is_empty()) {
                     self.start_videos(videos);
                     return;
@@ -896,6 +896,7 @@ impl Player {
             Some(_) => String::new(),
             None => track["youtubeId"]
                 .as_str()
+                .filter(|v| !v.is_empty())
                 .map(str::to_owned)
                 .or_else(|| self.found.with_untracked(|found| found.get(&key).and_then(|videos| videos.first().cloned())))
                 .unwrap_or_default(),
@@ -923,7 +924,7 @@ impl Player {
     /// Finds a track's video ahead of time (songs you point at, the next songs).
     pub fn look_ahead(&self, track: &Value) {
         let service = s(track, "service");
-        if let Some(video) = track["youtubeId"].as_str() {
+        if let Some(video) = track["youtubeId"].as_str().filter(|v| !v.is_empty()) {
             warm(video);
             return;
         }

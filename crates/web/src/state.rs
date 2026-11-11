@@ -83,7 +83,7 @@ pub fn song_page(track: &Value, found: Option<&String>) -> String {
     if !page.is_empty() {
         return page;
     }
-    let video = track["youtubeId"].as_str().map(str::to_owned).or_else(|| found.cloned());
+    let video = track["youtubeId"].as_str().filter(|v| !v.is_empty()).map(str::to_owned).or_else(|| found.cloned());
     if let Some(video) = video {
         let start = num(track, "start");
         return format!("https://www.youtube.com/watch?v={video}{}", if start > 0.0 { format!("&t={}s", start.floor()) } else { String::new() });
