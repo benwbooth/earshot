@@ -16,13 +16,16 @@ Flickable {
     }
     property bool loading: false
     property string error: ""
-    property string selected: "discover-weekly"
+    // The mix shown; the player bar's "go to" link opens home with { mix: id }.
+    property string selected: args && args.mix ? args.mix : "discover-weekly"
 
     readonly property var mixes: made && !made.needMore ? [made.weekly].concat(made.daily || []).filter(m => m && m.tracks && m.tracks.length > 0) : []
     readonly property var mix: mixes.find(m => m.id === selected) || (mixes.length > 0 ? mixes[0] : null)
     readonly property var tints: ["#7a5cff", "#ff5f7e", "#3db8ff", "#3ddc97"]
 
     function firstTracks() { return mix ? mix.tracks : [] }
+    // Where the player bar takes you back to for this mix.
+    function mixRoute() { return { page: "home", args: { mix: page.mix ? page.mix.id : "" } } }
 
     function load(refresh) {
         loading = true
@@ -38,7 +41,17 @@ Flickable {
     }
 
     // Until there's enough history, look again on every visit and after each song counted.
-    Component.onCompleted: if (!made || made.needMore) load(false)
+    Component.onCompleted: {
+        if (!made || made.needMore)
+            load(false)
+        else if (args && args.mix)
+            Qt.callLater(showSongs)
+    }
+    // Opened from the player bar: bring the mix's songs into view.
+    function showSongs() {
+        if (mixSongs.visible)
+            contentY = Math.max(0, Math.min(mixSongs.mapToItem(page.contentItem, 0, 0).y - 24, contentHeight - height))
+    }
     Connections {
         target: Backend
         function onLibraryRevisionChanged() {
@@ -145,12 +158,18 @@ Flickable {
                     tint: page.tints[index % page.tints.length]
                     border.width: page.mix && page.mix.id === modelData.id ? 2 : 0
                     border.color: Theme.text
-                    onClicked: page.selected = modelData.id
+                    onClicked: {
+                        page.selected = modelData.id
+                        // Kept in the page's address, so going back to another mix from the player bar switches to it.
+                        page.args = { mix: modelData.id }
+                        Nav.currentArgs = page.args
+                    }
                 }
             }
         }
 
         ColumnLayout {
+            id: mixSongs
             visible: !!page.mix
             Layout.fillWidth: true
             spacing: 12
@@ -170,9 +189,9 @@ Flickable {
                     iconName: pause ? "pause" : "play"
                     iconSize: 22
                     tip: pause ? "Pause" : "Play"
-                    onClicked: Player.playOrToggle(page.mix.tracks, page.mix.title, { page: "home", args: {} })
+                    onClicked: Player.playOrToggle(page.mix.tracks, page.mix.title, page.mixRoute())
                 }
-                PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.mix.tracks, page.mix.title, { page: "home", args: {} }) }
+                PillButton { text: "Shuffle"; iconName: "shuffle"; onClicked: Player.shuffleTracks(page.mix.tracks, page.mix.title, page.mixRoute()) }
                 PillButton {
                     text: "Save as playlist"
                     iconName: "plus"
@@ -187,6 +206,7 @@ Flickable {
                 tracks: page.mix ? page.mix.tracks : []
                 showAlbum: false
                 context: page.mix ? page.mix.title : ""
+                route: page.mixRoute()
             }
         }
 

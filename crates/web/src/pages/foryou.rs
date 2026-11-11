@@ -5,17 +5,24 @@ use std::cell::RefCell;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::NavigateOptions;
+use leptos_router::hooks::{use_navigate, use_query_map};
 use serde_json::{Value, json};
 use web_sys::MouseEvent;
 
 use crate::api;
 use crate::components::{AlbumCard, PillButton, PlayButton, SectionHeader, Shelf, StatusView, TileCard, TrackList};
 use crate::pages::home::BrowseSections;
-use crate::state::{album_href, app, list, s};
+use crate::state::{album_href, app, encode, list, s};
 
 const TINTS: [&str; 4] = ["#7a5cff", "#ff5f7e", "#3db8ff", "#3ddc97"];
 /// Made for you is the home page.
 const ROUTE: &str = "/";
+
+/// The home page showing one mix, where the player bar goes back to.
+fn mix_route(id: &str) -> String {
+    format!("/?mix={}", encode(id))
+}
 
 thread_local! {
     // Kept for the visit, like the Qt app's Api.forYouCache.
@@ -69,7 +76,16 @@ pub fn ForYouPage() -> impl IntoView {
     let made = RwSignal::new(CACHE.with(|c| c.borrow().clone()));
     let loading = RwSignal::new(false);
     let error = RwSignal::new(String::new());
+    let query = use_query_map();
+    let navigate = StoredValue::new_local(use_navigate());
     let selected = RwSignal::new("discover-weekly".to_owned());
+    // Opened from the player bar (/?mix=daily-2): show that mix and its songs.
+    Effect::new(move |_| {
+        if let Some(wanted) = query.with(|q| q.get("mix")).filter(|m| !m.is_empty()) {
+            selected.set(wanted);
+            request_animation_frame(show_songs);
+        }
+    });
 
     let load = move |refresh: bool| {
         loading.set(true);
@@ -114,6 +130,7 @@ pub fn ForYouPage() -> impl IntoView {
     });
     let mix_tracks = Signal::derive(move || mix.with(|m| m.as_ref().map(|m| list(m, "tracks")).unwrap_or_default()));
     let mix_title = Signal::derive(move || mix.with(|m| m.as_ref().map(|m| s(m, "title")).unwrap_or_default()));
+    let route = Signal::derive(move || mix.with(|m| m.as_ref().map(|m| mix_route(&s(m, "id")))));
     let shelves = Memo::new(move |_| {
         made.with(|m| match m {
             Some(m) if !needs_more(m) => [m["radar"].clone(), m["albums"].clone()].into_iter().filter(|s| s["albums"].is_array()).collect(),
@@ -168,6 +185,8 @@ pub fn ForYouPage() -> impl IntoView {
                             <div class="mix" class:selected=move || is_selected.get() on:click=move |event: MouseEvent| {
                                 event.prevent_default();
                                 selected.set(pick.clone());
+                                // Kept in the address, so the player bar can go back to whichever mix is playing.
+                                navigate.with_value(|go| go(&mix_route(&pick), NavigateOptions { replace: true, scroll: false, ..Default::default() }));
                                 request_animation_frame(show_songs);
                             }>
                                 <TileCard title=s(&m, "title") subtitle=format!("{} songs", tracks.len()) image=image
@@ -184,9 +203,9 @@ pub fn ForYouPage() -> impl IntoView {
                     <p class="note">{move || mix.with(|m| m.as_ref().map(|m| s(m, "subtitle")).unwrap_or_default())}</p>
                     <div class="actions">
                         <PlayButton size=22 tip="Play" ours=Signal::derive(move || mix_tracks.with(|tracks| player.playing_from(&mix_title.get(), tracks)))
-                            on_play=move |_| player.play_tracks(mix_tracks.get_untracked(), 0, mix_title.get_untracked(), Some(ROUTE.into()))/>
+                            on_play=move |_| player.play_tracks(mix_tracks.get_untracked(), 0, mix_title.get_untracked(), route.get_untracked())/>
                         <PillButton text="Shuffle" icon="shuffle"
-                            on_click=move |_| player.shuffle_tracks(mix_tracks.get_untracked(), mix_title.get_untracked(), Some(ROUTE.into()))/>
+                            on_click=move |_| player.shuffle_tracks(mix_tracks.get_untracked(), mix_title.get_untracked(), route.get_untracked())/>
                         <PillButton text="Save as playlist" icon="plus" on_click=move |_| {
                             let tracks = mix_tracks.get_untracked();
                             let name = format!("{} · {}", mix_title.get_untracked(), short_date());
@@ -202,7 +221,7 @@ pub fn ForYouPage() -> impl IntoView {
                             });
                         }/>
                     </div>
-                    <TrackList tracks=mix_tracks show_album=false context=mix_title route=ROUTE.to_owned()/>
+                    <TrackList tracks=mix_tracks show_album=false context=mix_title route=route/>
                 </div>
             </Show>
 

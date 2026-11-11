@@ -527,7 +527,7 @@ pub fn TrackList(
     #[prop(optional)] limit: Option<usize>,
     #[prop(optional)] queue_mode: bool,
     /// The page to come back to from the player bar (the current page by default).
-    #[prop(optional, into)] route: Option<String>,
+    #[prop(optional, into)] route: MaybeProp<String>,
     /// Songs from the History page: their menu can forget them.
     #[prop(optional)] history_mode: bool,
     /// A "Played" column; clicking its heading asks for the other order.
@@ -538,7 +538,6 @@ pub fn TrackList(
     let app = app();
     let player = app.player;
     let playlist_id = StoredValue::new(playlist_id);
-    let route = StoredValue::new(route);
     // The songs shown (explicit ones are left out while they're hidden).
     let shown = Memo::new(move |_| tracks.get().into_iter().filter(|t| player.allowed(t)).collect::<Vec<Value>>());
     let rows = move || {
@@ -555,7 +554,7 @@ pub fn TrackList(
                     if queue_mode {
                         player.jump(at as i64);
                     } else {
-                        player.play_tracks(shown.get_untracked(), index, context.get_untracked(), route.get_value());
+                        player.play_tracks(shown.get_untracked(), index, context.get_untracked(), route.get_untracked());
                     }
                 });
                 let on_menu = Callback::new(move |mut request: MenuRequest| {
