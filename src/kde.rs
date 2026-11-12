@@ -16,16 +16,17 @@ fn rules_file() -> Option<PathBuf> {
 
 /// The rule's group: Earshot's main window (its title is "Earshot" or
 /// "song · artist — Earshot", unlike the mini player's), with its position
-/// and size remembered.
+/// and whether it was maximised remembered. (Not its size: KWin doesn't give
+/// a remembered size back to a Wayland window and fights the one Earshot
+/// sets itself, as Almanac found.)
 fn rule_group(app_id: &str) -> String {
     format!(
         "[{RULE_ID}]\n\
          Description=Earshot: remember where its window was\n\
          Enabled=true\n\
-         position=0,0\n\
+         maximizehorizrule=4\n\
+         maximizevertrule=4\n\
          positionrule=4\n\
-         size=1320,860\n\
-         sizerule=4\n\
          title=^(.+ — )?Earshot$\n\
          titlematch=3\n\
          types=1\n\
@@ -50,9 +51,11 @@ pub fn add_window_rule(app_id: &str) -> Result<bool, String> {
 }
 
 /// The rules file with Earshot's rule added, or None if it already has it.
+/// The first version's rule (which remembered the size too, but not whether
+/// the window was maximised) is brought up to date.
 fn with_rule(text: &str, app_id: &str) -> Option<String> {
     if text.lines().any(|line| line.trim() == format!("[{RULE_ID}]")) {
-        return None;
+        return updated_rule(text);
     }
     let mut out = String::new();
     let mut in_general = false;
@@ -123,6 +126,38 @@ fn with_rule(text: &str, app_id: &str) -> Option<String> {
     Some(out)
 }
 
+/// Earshot's rule without a size and with maximised remembered, or None if
+/// it's like that already.
+fn updated_rule(text: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut in_rule = false;
+    let mut changed = false;
+    // (Whether Earshot's own rule has it: other apps' rules may.)
+    let has_maximize = text
+        .split(&format!("[{RULE_ID}]"))
+        .nth(1)
+        .map(|rest| rest.lines().skip(1).take_while(|l| !l.trim().starts_with('[')).any(|l| l.trim().starts_with("maximizehorizrule=")))
+        .unwrap_or(false);
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_rule = trimmed == format!("[{RULE_ID}]");
+        } else if in_rule {
+            if trimmed.starts_with("size=") || trimmed.starts_with("sizerule=") {
+                changed = true;
+                continue;
+            }
+            if trimmed.starts_with("positionrule=") && !has_maximize {
+                out.push_str("maximizehorizrule=4\nmaximizevertrule=4\n");
+                changed = true;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    changed.then_some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +178,14 @@ mod tests {
         assert!(text.contains("[General]\ncount=2\nrules=abc,earshot-remember-window\n"));
         assert!(text.contains("[abc]\nDescription=Firefox\nwmclass=firefox\n"));
         assert!(with_rule(&text, "earshot").is_none(), "only added once");
+    }
+
+    #[test]
+    fn updates_the_first_versions_rule() {
+        let first = "[General]\ncount=2\nrules=almanac-main-window,earshot-remember-window\n\n[almanac-main-window]\nmaximizehorizrule=4\n\n[earshot-remember-window]\nDescription=Earshot\nEnabled=true\nposition=2954,0\npositionrule=4\nsize=1320,860\nsizerule=4\nwmclass=earshot\n";
+        let text = with_rule(first, "earshot").unwrap();
+        assert!(text.contains("position=2954,0\nmaximizehorizrule=4\nmaximizevertrule=4\npositionrule=4\nwmclass=earshot\n"), "{text}");
+        assert!(!text.contains("size"));
+        assert!(with_rule(&text, "earshot").is_none(), "updated once");
     }
 }

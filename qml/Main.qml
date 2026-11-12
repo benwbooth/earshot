@@ -41,8 +41,9 @@ ApplicationWindow {
     Settings {
         id: windowSettings
         category: "window"
-        property alias width: window.width
-        property alias height: window.height
+        // The normal (not maximised) size, noted while the window is a normal one.
+        property int width: 1320
+        property int height: 860
         property alias sidebarWidth: sidebar.width
         property int x: -100000
         property int y: -100000
@@ -55,12 +56,16 @@ ApplicationWindow {
     // rule, which Earshot adds once.
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     function restorePlace() {
+        if (windowSettings.width >= minimumWidth && windowSettings.height >= minimumHeight) {
+            window.width = windowSettings.width
+            window.height = windowSettings.height
+        }
         if (wayland) {
-            if (!windowSettings.askedKde && Backend.desktop() === "kde") {
-                windowSettings.askedKde = true
-                if (Backend.rememberWindowWithKde())
-                    Nav.notify("KDE will now remember where Earshot's window is (System Settings › Window Rules)")
-            }
+            // (Every start: it also brings an earlier version's rule up to date.
+            // KWin puts the window back where it was and maximises it if it was.)
+            if (Backend.desktop() === "kde" && Backend.rememberWindowWithKde() && !windowSettings.askedKde)
+                Nav.notify("KDE will now remember where Earshot's window is (System Settings › Window Rules)")
+            windowSettings.askedKde = true
             return
         }
         const x = windowSettings.x, y = windowSettings.y
@@ -75,16 +80,25 @@ ApplicationWindow {
             window.showMaximized()
     }
     function savePlace() {
-        if (wayland || !window.visible)
+        if (!window.visible || window.visibility === Window.Minimized || window.visibility === Window.Hidden)
             return
         windowSettings.maximized = window.visibility === Window.Maximized
         if (window.visibility === Window.Windowed) {
-            windowSettings.x = window.x
-            windowSettings.y = window.y
+            // (While maximising or leaving full screen the size passes through
+            // the screen's; by now it has settled.)
+            windowSettings.width = window.width
+            windowSettings.height = window.height
+            if (!wayland) {
+                windowSettings.x = window.x
+                windowSettings.y = window.y
+            }
         }
+        windowSettings.sync()
     }
     onXChanged: placeTimer.restart()
     onYChanged: placeTimer.restart()
+    onWidthChanged: placeTimer.restart()
+    onHeightChanged: placeTimer.restart()
     onVisibilityChanged: placeTimer.restart()
     Timer { id: placeTimer; interval: 400; onTriggered: window.savePlace() }
 
