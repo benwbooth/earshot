@@ -137,6 +137,19 @@ Item {
             watchView.runJavaScript("(function(){var p=document.getElementById('movie_player');if(p&&p.playVideo){" + script + "}})()")
     }
 
+    // Mixcloud's player waits for the page to draw a frame before it starts,
+    // and this view draws none while Earshot's window is covered or minimised
+    // (Wayland stops asking a hidden window for frames): in Mixcloud's player,
+    // a frame callback also comes after 50 ms if no frame does.
+    readonly property string frameScript: "(function(){"
+        + "if(!/(^|\\.)mixcloud\\.com$/.test(location.hostname))return;"
+        + "var raf=window.requestAnimationFrame.bind(window),caf=window.cancelAnimationFrame.bind(window),next=1,waiting=new Map();"
+        + "window.requestAnimationFrame=function(cb){var id=next++,r=0,timer=0;"
+        + "  var run=function(t){if(!waiting.has(id))return;waiting.delete(id);caf(r);clearTimeout(timer);cb(t);};"
+        + "  waiting.set(id,1);r=raf(run);timer=setTimeout(function(){run(performance.now());},50);return id;};"
+        + "window.cancelAnimationFrame=function(id){waiting.delete(id);};"
+        + "})();"
+
     // Some Mixcloud shows' audio is a plain http link to another site, which
     // the player can't fetch from inside a secure page: ask for it over https.
     readonly property string html: '<!doctype html><html><head><meta charset="utf-8">'
@@ -243,23 +256,38 @@ Item {
         anchors.fill: parent
         settings.playbackRequiresUserGesture: false
         settings.showScrollBars: false
-        // YouTube's embedded player needs to know which site it's on.
-        Component.onCompleted: loadHtml(engine.html, "https://earshot.app/")
-        // A Mixcloud show whose audio is kept on another site that won't send
-        // it can never start: say so at once instead of waiting 30 seconds.
+        Component.onCompleted: {
+            userScripts.collection = [{ name: "frames", sourceCode: engine.frameScript, runsOnSubFrames: true,
+                                        injectionPoint: WebEngineScript.DocumentCreation, worldId: WebEngineScript.MainWorld }]
+            // YouTube's embedded player needs to know which site it's on.
+            loadHtml(engine.html, "https://earshot.app/")
+        }
+        // Some Mixcloud shows' audio is kept on another site (the Internet
+        // Archive, say), which won't send it to Mixcloud's player (archive.org's
+        // old addresses answer other sites' players "not found" instead of
+        // sending them on). Played straight from that site it works: switch to
+        // it at once instead of waiting 30 seconds for Mixcloud's player.
         // (Handling this signal stops Qt logging the page's messages itself.)
         onJavaScriptConsoleMessage: (level, message, line, source) => {
             console.log("js:", message)
             // (The first moment may still bring messages about the show before.)
-            if (engine.videoId.startsWith("mixcloud:") && engine.videoId !== engine.unreachable
-                    && Date.now() - engine.loadedAt > 1000
-                    && engine.playerState !== 1 && engine.playerState !== 2
-                    && /requested an insecure resource|blocked by CORS policy/.test(message)) {
-                engine.unreachable = engine.videoId
-                // Mixcloud's player keeps retrying: start a fresh one for the next show.
-                engine.call("earshotStop();mcLoaded=Infinity;if(mcFrame){mcFrame.remove();mcFrame=null;mc=null;}")
+            if (!engine.videoId.startsWith("mixcloud:") || engine.videoId === engine.unreachable
+                    || Date.now() - engine.loadedAt < 1000 || engine.playerState === 1 || engine.playerState === 2)
+                return
+            const blocked = /(?:requested an insecure resource|Access to fetch at) '([^']+)'/.exec(message)
+            if (!blocked)
+                return
+            const show = engine.videoId
+            engine.unreachable = show
+            // Mixcloud's player keeps retrying: start a fresh one for the next show.
+            engine.call("earshotStop();mcLoaded=Infinity;if(mcFrame){mcFrame.remove();mcFrame=null;mc=null;}")
+            const url = blocked[1].replace(/^http:/, "https:")
+            if (/^https:\/\/([^\/]*\.)?mixcloud\.com\//.test(url)) {
                 engine.failed(1004, engine.describe(1004))
+                return
             }
+            console.info("Playing", show, "from", url, "where Mixcloud keeps its audio")
+            engine.loadAudio(url, engine.position)
         }
         onLoadingChanged: request => {
             if (request.status === WebEngineView.LoadSucceededStatus) {
@@ -375,7 +403,7 @@ Item {
         case 1001: return "Bandcamp's audio stopped loading."
         case 1002: return "SoundCloud's player couldn't play this song."
         case 1003: return "Mixcloud's player couldn't play this show."
-        case 1004: return "Mixcloud's player can't load this show: its audio is kept on another site, which won't send it."
+        case 1004: return "Mixcloud's player can't load this show's audio."
         default: return "YouTube's player stopped (error " + code + ")."
         }
     }
