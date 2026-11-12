@@ -54,7 +54,7 @@ Environment variables:
 - `EARSHOT_WEB_DIR`: the web interface's files, for the server.
 - `EARSHOT_CHROMIUM`: the Chromium the server uses for videos kept on youtube.com.
 
-Testing aids: `--page=album:123`, `--search=text`, `--play-track=JSON`, `--test-notification` and
+Testing aids: `--page=album:123`, `--search=text`, `--play-track=JSON`, `--test-notification`, `--keep-view` and
 `--screenshot=file.png` (see the end of `qml/Main.qml`).
 
 ## How it works

@@ -105,6 +105,7 @@ ApplicationWindow {
     // hides to the tray, so mark the quit as real first.
     function quitApp() {
         savePlace()
+        saveView()
         Player.closeSession()
         quitting = true
         miniPlayer.close()
@@ -216,9 +217,13 @@ ApplicationWindow {
         const top = stack.currentItem
         if (top && top.pageName === page && JSON.stringify(top.args) === JSON.stringify(args))
             return
+        // What was saved for the pages being replaced or covered no longer applies.
+        pendingViews = pendingViews.slice(0, stack.depth)
         if (page === "home" || page === "search" || page === "radio" || page === "bandcamp" || page === "service" || page === "foryou" || page === "trending" || page === "albums" || page === "queue" || page === "history" || (page === "playlist" && top && top.pageName === "playlist"))
+        {
+            pendingViews = []
             stack.replace(null, component, { args: args })
-        else
+        } else
             stack.push(component, { args: args })
     }
 
@@ -227,7 +232,121 @@ ApplicationWindow {
         if (top) {
             Nav.currentArgs = top.args || {}
             Nav.current = top.pageName
+            window.restoreView(top)
         }
+        placeSave.restart()
+    }
+
+    // ---------------------------------------- where you were, from one run to the next
+    // The pages open (the one shown and the ones Back returns to), each with its
+    // tab, sort or mix and how far down it was scrolled. Saved a moment after
+    // you go somewhere or scroll, every half minute and on quitting, so even a
+    // forced quit (or dev.sh restarting the app) keeps it. Not kept when the
+    // testing aids open a page or take a picture.
+    Settings { id: viewSettings; category: "location" }
+    property bool keepView: true
+    // A page's own choices worth keeping, where it has them.
+    readonly property var viewProperties: ["tab", "sort", "discography", "slice", "selected", "newestFirst", "openSection"]
+    // Scroll and choices still to put back, by place in the stack (pages under the
+    // top one are only made when Back reaches them).
+    property var pendingViews: []
+    property bool viewRestored: false
+
+    function pageState(item) {
+        const args = Object.assign({}, item.args || {})
+        if (item.pageName === "search" && item.query !== undefined)
+            args.query = item.query
+        const state = {}
+        for (const name of viewProperties)
+            if (item[name] !== undefined && typeof item[name] !== "function")
+                state[name] = item[name]
+        return { page: item.pageName, args: args, state: state, y: Math.round(item.contentY - item.originY) }
+    }
+
+    function saveView() {
+        if (!keepView || !viewRestored)
+            return
+        const pages = []
+        for (let i = 0; i < stack.depth; ++i) {
+            const item = stack.get(i, StackView.DontLoad)
+            // A page Back hasn't reached yet still has what was saved for it.
+            pages.push(item ? pageState(item) : (pendingViews[i] || null))
+        }
+        viewSettings.setValue("pages", JSON.stringify(pages.filter(p => p)))
+        viewSettings.sync()
+    }
+
+    function restoreSavedView() {
+        let pages = []
+        try { pages = JSON.parse(viewSettings.value("pages", "[]")) } catch (e) { pages = [] }
+        pages = (pages || []).filter(p => p && window.pages[p.page])
+        if (pages.length === 0 || (pages.length === 1 && pages[0].page === "home" && !pages[0].y && !pages[0].args.mix)) {
+            viewRestored = true
+            return
+        }
+        pendingViews = pages
+        const items = []
+        for (const p of pages)
+            items.push(window.pages[p.page], { args: p.args || {} })
+        stack.replace(null, items)
+        viewRestored = true
+    }
+
+    // Puts back a page's choices, then its scroll once there's that much to
+    // scroll through (its songs and pictures arrive a moment later).
+    function restoreView(item) {
+        const index = item.StackView.index
+        const saved = pendingViews[index]
+        if (!saved || saved.page !== item.pageName)
+            return
+        pendingViews[index] = null
+        for (const name in saved.state || {})
+            if (item[name] !== undefined && item[name] !== saved.state[name])
+                item[name] = saved.state[name]
+        if (saved.y > 0)
+            scrollRestore.begin(item, saved.y)
+    }
+
+    Timer {
+        id: scrollRestore
+        property var item: null
+        property real y: 0
+        property int tries: 0
+        property real lastY: 0
+        interval: 100
+        repeat: true
+        function begin(target, to) {
+            item = target
+            y = to
+            tries = 0
+            lastY = target.contentY
+            restart()
+        }
+        onTriggered: {
+            // Stop when the page is gone, after ten seconds, or once you scroll yourself.
+            if (!item || stack.currentItem !== item || ++tries > 100 || Math.abs(item.contentY - lastY) > 1) {
+                stop()
+                return
+            }
+            const most = item.contentHeight - item.height
+            item.contentY = item.originY + Math.max(0, Math.min(y, most))
+            lastY = item.contentY
+            if (most >= y)
+                stop()
+        }
+    }
+
+    Connections { target: Qt.application; function onAboutToQuit() { window.saveView() } }
+    Timer { id: placeSave; interval: 1000; onTriggered: window.saveView() }
+    Timer { interval: 30000; repeat: true; running: window.keepView; onTriggered: window.saveView() }
+    Connections {
+        target: stack.currentItem
+        ignoreUnknownSignals: true
+        function onContentYChanged() { if (!scrollRestore.running) placeSave.restart() }
+        function onTabChanged() { placeSave.restart() }
+        function onSortChanged() { placeSave.restart() }
+        function onSelectedChanged() { placeSave.restart() }
+        function onQueryChanged() { placeSave.restart() }
     }
 
     Connections {
@@ -464,10 +583,14 @@ ApplicationWindow {
 
     // Testing aids: --page=album:123 opens a page; --search=text [--search-tab=youtube] searches;
     // --play-video=ID plays one YouTube video; --play-track=JSON plays one song;
-    // --screenshot=file.png saves the window and quits.
+    // --screenshot=file.png saves the window and quits (--keep-view: from the saved page, and saving it).
     Component.onCompleted: {
         restorePlace()
         const args = Qt.application.arguments
+        // The testing aids choose the page themselves (and leave the saved one alone).
+        window.keepView = args.includes("--keep-view") || !args.some(a => /^--(page|search|screenshot|play-first)/.test(a))
+        if (window.keepView)
+            restoreSavedView()
         for (let i = 0; i < args.length; ++i) {
             const arg = args[i]
             if (arg.startsWith("--page=")) {
