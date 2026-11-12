@@ -884,7 +884,7 @@ checksum = "669a445ee724c5c69b1b06fe0b63e70a1c84bc9bb7d9696cd4f4e3ec45050408"
 
 [[package]]
 name = "earshot"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cxx",
  "cxx-qt",
@@ -899,7 +899,7 @@ dependencies = [
 
 [[package]]
 name = "earshot-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "directories",
  "libc",
@@ -912,7 +912,7 @@ dependencies = [
 
 [[package]]
 name = "earshot-server"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -930,14 +930,14 @@ dependencies = [
 
 [[package]]
 name = "earshot-speakers"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cpal",
 ]
 
 [[package]]
 name = "earshot-web"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "console_error_panic_hook",
  "gloo-net",

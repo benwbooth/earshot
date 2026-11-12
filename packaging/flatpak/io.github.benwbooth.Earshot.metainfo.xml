@@ -53,6 +53,21 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.5" date="2026-11-12">
+      <description>
+        <ul>
+          <li>History in the sidebar: the songs you've listened to, newest first, with when you played them.</li>
+          <li>For You mixes draw from every source (Deezer, Bandcamp, Mixcloud, SoundCloud, the Internet Archive and Reddit), branch out to new artists, and no one artist or game takes over a mix; Daily Mixes have at least 20 songs.</li>
+          <li>Earshot carries on where it left off: the queue, song and position come back paused on the next launch or visit.</li>
+          <li>"Level the volume between songs" in Settings evens out loud and quiet songs.</li>
+          <li>Encrypted SoundCloud songs play with Widevine in the app, or from YouTube when they can't.</li>
+          <li>A click anywhere on a song plays or pauses it; the source badge opens the song's own page.</li>
+          <li>Reddit videos play their own sound from Reddit, and songs that won't play anywhere are left out of mixes.</li>
+          <li>A bigger waveform beside the song in the player bar, and clicking the song opens the mix it's playing from.</li>
+          <li>Sharper text in the app at fractional scaling.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-11-09">
       <description>
         <ul>
