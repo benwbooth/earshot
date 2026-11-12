@@ -162,6 +162,7 @@ pub fn ForYouPage() -> impl IntoView {
                     <PillButton
                         text=Signal::derive(move || if loading.get() { "Making…".to_owned() } else { "Make new mixes".to_owned() })
                         icon="dice"
+                        rolling=loading
                         disabled=loading
                         on_click=move |_| load(true)/>
                 </Show>

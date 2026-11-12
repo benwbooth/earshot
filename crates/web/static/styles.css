@@ -111,6 +111,13 @@ h1, h2, h3, p { margin: 0; }
 .pill:hover:not(:disabled) { background: var(--surface-hover); }
 .pill:active:not(:disabled) { transform: scale(0.97); }
 .pill:disabled { opacity: 0.5; }
+/* A die rolling: a quarter turn with a hop, over and over. */
+.pill.rolling .icon { animation: roll 300ms ease-in-out infinite; }
+@keyframes roll {
+  0% { transform: translateY(0) rotate(0deg); }
+  43% { transform: translateY(-4px) rotate(45deg); }
+  87%, 100% { transform: translateY(0) rotate(90deg); }
+}
 .pill.primary { height: 44px; padding: 0 22px; border-radius: 22px; background: var(--accent); border-color: transparent; color: #fff; font-size: 15px; }
 .pill.primary:hover:not(:disabled) { background: var(--accent-hover); }
 .pill.checked { background: var(--text); border-color: transparent; color: var(--background); }

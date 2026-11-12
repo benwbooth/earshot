@@ -8,6 +8,8 @@ AbstractButton {
     property string iconName: ""
     property bool primary: false
     property bool checkedStyle: false
+    // Rolls the icon like a die while something is under way.
+    property bool rolling: false
 
     implicitHeight: primary ? 44 : 36
     implicitWidth: row.implicitWidth + (primary ? 44 : 32)
@@ -30,10 +32,30 @@ AbstractButton {
             anchors.centerIn: parent
             spacing: 8
             Icon {
+                id: icon
                 visible: root.iconName !== ""
                 name: root.iconName
                 size: root.primary ? 18 : 16
                 color: root.checkedStyle ? Theme.background : "#ffffff"
+
+                // A roll: a quarter turn with a hop, over and over; it settles upright when done.
+                transform: [
+                    Rotation { id: turn; origin.x: icon.width / 2; origin.y: icon.height / 2 },
+                    Translate { id: hop }
+                ]
+                SequentialAnimation {
+                    running: root.rolling
+                    loops: Animation.Infinite
+                    onRunningChanged: if (!running) { turn.angle = 0; hop.y = 0 }
+                    ParallelAnimation {
+                        NumberAnimation { target: turn; property: "angle"; from: 0; to: 90; duration: 260; easing.type: Easing.InOutQuad }
+                        SequentialAnimation {
+                            NumberAnimation { target: hop; property: "y"; from: 0; to: -4; duration: 130; easing.type: Easing.OutQuad }
+                            NumberAnimation { target: hop; property: "y"; from: -4; to: 0; duration: 130; easing.type: Easing.InQuad }
+                        }
+                    }
+                    PauseAnimation { duration: 40 }
+                }
             }
             Text {
                 text: root.text

@@ -116,6 +116,7 @@ Flickable {
                 visible: !!page.made && !page.made.needMore
                 text: page.loading ? "Making…" : "Make new mixes"
                 iconName: "dice"
+                rolling: page.loading
                 enabled: !page.loading
                 Layout.alignment: Qt.AlignBottom
                 onClicked: page.load(true)

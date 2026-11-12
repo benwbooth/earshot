@@ -85,6 +85,8 @@ pub fn PillButton(
     #[prop(optional)] primary: bool,
     #[prop(optional, into)] checked: Signal<bool>,
     #[prop(optional, into)] disabled: Signal<bool>,
+    /// Rolls the icon like a die while something is under way.
+    #[prop(optional, into)] rolling: Signal<bool>,
     #[prop(into)] on_click: Callback<MouseEvent>,
 ) -> impl IntoView {
     let has_icon = move || !icon.with(String::is_empty);
@@ -94,6 +96,7 @@ pub fn PillButton(
             class="pill"
             class:primary=primary
             class:checked=move || checked.get()
+            class:rolling=move || rolling.get()
             disabled=move || disabled.get()
             on:click=move |event| on_click.run(event)
         >
