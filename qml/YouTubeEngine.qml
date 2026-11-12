@@ -47,7 +47,13 @@ Item {
         memory.watchOnly = JSON.stringify(list.slice(0, 500))
     }
 
+    // The Mixcloud show found unable to load its audio, and when the current one was loaded.
+    property string unreachable: ""
+    property double loadedAt: 0
+
     function reset(id, start) {
+        unreachable = ""
+        loadedAt = Date.now()
         videoId = id
         position = start || 0
         duration = 0
@@ -131,7 +137,10 @@ Item {
             watchView.runJavaScript("(function(){var p=document.getElementById('movie_player');if(p&&p.playVideo){" + script + "}})()")
     }
 
+    // Some Mixcloud shows' audio is a plain http link to another site, which
+    // the player can't fetch from inside a secure page: ask for it over https.
     readonly property string html: '<!doctype html><html><head><meta charset="utf-8">'
+        + '<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">'
         + '<style>html,body{margin:0;background:#000;overflow:hidden}</style></head><body>'
         + '<div id="player"></div>'
         + '<script>'
@@ -236,6 +245,22 @@ Item {
         settings.showScrollBars: false
         // YouTube's embedded player needs to know which site it's on.
         Component.onCompleted: loadHtml(engine.html, "https://earshot.app/")
+        // A Mixcloud show whose audio is kept on another site that won't send
+        // it can never start: say so at once instead of waiting 30 seconds.
+        // (Handling this signal stops Qt logging the page's messages itself.)
+        onJavaScriptConsoleMessage: (level, message, line, source) => {
+            console.log("js:", message)
+            // (The first moment may still bring messages about the show before.)
+            if (engine.videoId.startsWith("mixcloud:") && engine.videoId !== engine.unreachable
+                    && Date.now() - engine.loadedAt > 1000
+                    && engine.playerState !== 1 && engine.playerState !== 2
+                    && /requested an insecure resource|blocked by CORS policy/.test(message)) {
+                engine.unreachable = engine.videoId
+                // Mixcloud's player keeps retrying: start a fresh one for the next show.
+                engine.call("earshotStop();mcLoaded=Infinity;if(mcFrame){mcFrame.remove();mcFrame=null;mc=null;}")
+                engine.failed(1004, engine.describe(1004))
+            }
+        }
         onLoadingChanged: request => {
             if (request.status === WebEngineView.LoadSucceededStatus) {
                 const scripts = engine.pendingScripts
@@ -350,6 +375,7 @@ Item {
         case 1001: return "Bandcamp's audio stopped loading."
         case 1002: return "SoundCloud's player couldn't play this song."
         case 1003: return "Mixcloud's player couldn't play this show."
+        case 1004: return "Mixcloud's player can't load this show: its audio is kept on another site, which won't send it."
         default: return "YouTube's player stopped (error " + code + ")."
         }
     }

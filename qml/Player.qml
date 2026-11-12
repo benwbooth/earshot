@@ -714,8 +714,10 @@ QtObject {
         loading = false
         error = message
         // Nothing would play it: it's left out of mixes and playlists until it plays.
-        if (current && current.key)
+        if (current && current.key) {
             Api.call(Backend.call("setUnplayable", JSON.stringify({ key: current.key })), function () {})
+            Api.dropFromMixes(current.key)
+        }
         Nav.notify(message)
         failures += 1
         if (failures < 3 && index + 1 < queue.length)

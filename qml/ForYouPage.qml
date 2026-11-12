@@ -32,7 +32,6 @@ Flickable {
         error = ""
         Api.call(Backend.forYou(refresh), function (result) {
             Api.forYouCache = result
-            page.made = result
             page.loading = false
         }, function (message) {
             page.loading = false

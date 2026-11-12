@@ -14,6 +14,15 @@ QtObject {
     property string lastStation: "listentothis"
     property var bandcampTags: null
     property var forYouCache: null
+    // A song that wouldn't play leaves the mixes on Home at once (the next mixes leave it out too).
+    function dropFromMixes(key) {
+        const made = forYouCache
+        if (!made || !key)
+            return
+        const without = mix => mix && mix.tracks && mix.tracks.some(t => t.key === key)
+            ? Object.assign({}, mix, { tracks: mix.tracks.filter(t => t.key !== key) }) : mix
+        forYouCache = Object.assign({}, made, { weekly: without(made.weekly), daily: (made.daily || []).map(without) })
+    }
     // Tags seen on Bandcamp albums opened this session, for the tag filter.
     property var seenBandcampTags: []
     function rememberBandcampTags(list) {
