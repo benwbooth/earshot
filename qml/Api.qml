@@ -14,6 +14,8 @@ QtObject {
     property string lastStation: "listentothis"
     property var bandcampTags: null
     property var forYouCache: null
+    // The day forYouCache was fetched on (ForYouPage asks again on a new day).
+    property int forYouDay: 0
     // A song that wouldn't play leaves the mixes on Home at once (the next mixes leave it out too).
     function dropFromMixes(key) {
         const made = forYouCache

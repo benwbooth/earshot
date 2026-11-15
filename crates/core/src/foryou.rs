@@ -874,7 +874,8 @@ pub fn build(history: &[Value], favourites: &[(Value, usize)], unplayable: &Hash
     // Not on a new way of making them, though: the app and the web server
     // share these, and two versions would each throw out the other's mixes.
     let grown = saved["seeds"].as_u64().unwrap_or(0) < seeds;
-    let weekly_fresh = !refresh && !grown && saved["week"].as_i64() == Some(week) && saved["weekly"].is_object();
+    // An empty Discover Weekly (made while offline, say) is made again on the next visit, not kept all week.
+    let weekly_fresh = !refresh && !grown && saved["week"].as_i64() == Some(week) && saved["weekly"]["tracks"].as_array().is_some_and(|tracks| !tracks.is_empty());
     let daily_fresh = !refresh && !grown && saved["day"].as_i64() == Some(today) && saved["daily"].is_array();
 
     // The slow parts (dozens of requests) run side by side.

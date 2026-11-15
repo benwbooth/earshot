@@ -32,6 +32,7 @@ Flickable {
         error = ""
         Api.call(Backend.forYou(refresh), function (result) {
             Api.forYouCache = result
+            Api.forYouDay = page.today()
             page.loading = false
         }, function (message) {
             page.loading = false
@@ -39,9 +40,18 @@ Flickable {
         })
     }
 
+    // Days since 1970 on this computer's clock, as the mixes count them.
+    function today() {
+        const now = new Date()
+        return Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / 86400000)
+    }
+    // Mixes fetched on an earlier day (the app left open past midnight):
+    // ask again for today's Daily Mixes (and Monday's Discover Weekly).
+    function stale() { return !!made && !made.needMore && Api.forYouDay !== today() }
+
     // Until there's enough history, look again on every visit and after each song counted.
     Component.onCompleted: {
-        if (!made || made.needMore)
+        if (!made || made.needMore || stale())
             load(false)
         else if (args && args.mix)
             Qt.callLater(showSongs)
@@ -50,6 +60,13 @@ Flickable {
     function showSongs() {
         if (mixSongs.visible)
             contentY = Math.max(0, Math.min(mixSongs.mapToItem(page.contentItem, 0, 0).y - 24, contentHeight - height))
+    }
+    // Home left open overnight: new mixes once the day turns over.
+    Timer {
+        interval: 60000
+        repeat: true
+        running: page.visible
+        onTriggered: if (page.stale() && !page.loading) page.load(false)
     }
     Connections {
         target: Backend

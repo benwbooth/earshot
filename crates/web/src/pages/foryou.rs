@@ -27,6 +27,20 @@ fn mix_route(id: &str) -> String {
 thread_local! {
     // Kept for the visit, like the Qt app's Api.forYouCache.
     static CACHE: RefCell<Option<Value>> = const { RefCell::new(None) };
+    // The day CACHE was fetched on.
+    static FETCHED: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// Days since 1970 on this device's clock, as the mixes count them.
+fn today() -> i64 {
+    let now = js_sys::Date::new_0();
+    ((now.get_time() - now.get_timezone_offset() * 60_000.0) / 86_400_000.0).floor() as i64
+}
+
+/// Mixes fetched on an earlier day (the page left open past midnight): ask
+/// again for today's Daily Mixes (and Monday's Discover Weekly).
+fn stale(made: &Option<Value>) -> bool {
+    made.as_ref().is_some_and(|m| !needs_more(m)) && FETCHED.with(|f| f.get()) != today()
 }
 
 /// The address of the mix with this title among the mixes made this visit,
@@ -104,6 +118,7 @@ pub fn ForYouPage() -> impl IntoView {
             let result = api::call("forYou", json!({ "refresh": refresh })).await;
             if let Ok(value) = &result {
                 CACHE.with(|c| *c.borrow_mut() = Some(value.clone()));
+                FETCHED.with(|f| f.set(today()));
             }
             match result {
                 Ok(value) => _ = made.try_set(Some(value)),
@@ -113,9 +128,17 @@ pub fn ForYouPage() -> impl IntoView {
         });
     };
     // Until there's enough history, look again on every visit and after each song counted.
-    if made.with_untracked(|m| m.is_none() || need_more(m)) {
+    if made.with_untracked(|m| m.is_none() || need_more(m) || stale(m)) {
         load(false);
     }
+    // Home left open overnight (or a phone waking up the next day): new mixes
+    // once the day turns over. Stops when the page goes.
+    let ticker = StoredValue::new_local(Some(gloo_timers::callback::Interval::new(60_000, move || {
+        if made.try_with_untracked(stale).unwrap_or(false) && !loading.try_get_untracked().unwrap_or(true) {
+            load(false);
+        }
+    })));
+    on_cleanup(move || ticker.update_value(|t| drop(t.take())));
     Effect::new(move |previous: Option<u32>| {
         let revision = app.revision.get();
         if previous.is_some_and(|p| p != revision) && made.with_untracked(need_more) && !loading.get_untracked() {
