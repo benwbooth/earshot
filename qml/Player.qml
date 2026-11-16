@@ -326,10 +326,29 @@ QtObject {
         function onEnded() {
             player.next(true)
         }
+        // The hidden player page was started afresh: load the song again,
+        // where it had reached (paused, it waits for play to load it again).
+        function onPageRestarted(position) {
+            if (!player.current || (!player.loading && !player.started))
+                return
+            if (player.started)
+                player.resumeAt = Math.max(0, position - player.trackStart)
+            player.started = false
+            if (player.wantPlaying)
+                player.resolveCurrent()
+            else
+                player.loading = false
+        }
         function onFailed(code, message) {
             console.warn("Player error", code, player.engine.videoId, message)
             if (!player.current)
                 return
+            // The player page itself kept failing: the song isn't to blame.
+            if (code === 1005) {
+                console.warn("Couldn't play " + player.current.title + ": " + message)
+                player.fail("Couldn't play \"" + player.current.title + "\".", true)
+                return
+            }
             // A Bandcamp link may have expired: fetch a fresh one once.
             if (player.current.service === "bandcamp" && player.streams[player.current.key]
                     && player.streamRetried !== player.current.key) {
@@ -710,11 +729,11 @@ QtObject {
         }
     }
 
-    function fail(message) {
+    function fail(message, notTheSong) {
         loading = false
         error = message
         // Nothing would play it: it's left out of mixes and playlists until it plays.
-        if (current && current.key) {
+        if (current && current.key && !notTheSong) {
             Api.call(Backend.call("setUnplayable", JSON.stringify({ key: current.key })), function () {})
             Api.dropFromMixes(current.key)
         }

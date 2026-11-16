@@ -28,6 +28,9 @@ Item {
 
     signal ended()
     signal failed(int code, string message)
+    // The hidden page was started afresh (its browser process had died or
+    // stopped answering) while a song was loaded, which had reached `position`.
+    signal pageRestarted(real position)
 
     // A small real view (not hidden), since browsers pause media in hidden pages.
     width: 160
@@ -50,10 +53,24 @@ Item {
     // The Mixcloud show found unable to load its audio, and when the current one was loaded.
     property string unreachable: ""
     property double loadedAt: 0
+    // When the page last answered a status question, whether the current song
+    // has started, and the song the page was last started afresh for.
+    property double lastAnswer: 0
+    property bool begun: false
+    property string restartedFor: ""
+    property bool reloading: false
+    property bool held: false       // paused (perhaps before it started)
+    onPlayerStateChanged: if (playerState === 1) {
+        begun = true
+        restartedFor = ""
+    }
 
     function reset(id, start) {
         unreachable = ""
         loadedAt = Date.now()
+        lastAnswer = Date.now()
+        begun = false
+        held = false
         videoId = id
         position = start || 0
         duration = 0
@@ -86,8 +103,14 @@ Item {
         leaveWatchPage()
         call("earshotLoadMixcloud(" + JSON.stringify(key) + "," + (start || 0) + ")")
     }
-    function play() { watchMode ? watchCall("p.playVideo()") : call("earshotPlay()") }
-    function pause() { watchMode ? watchCall("p.pauseVideo()") : call("earshotPause()") }
+    function play() {
+        held = false
+        watchMode ? watchCall("p.playVideo()") : call("earshotPlay()")
+    }
+    function pause() {
+        held = true
+        watchMode ? watchCall("p.pauseVideo()") : call("earshotPause()")
+    }
     function stop() {
         videoId = ""
         leaveWatchPage()
@@ -108,7 +131,7 @@ Item {
     }
 
     function call(script) {
-        if (view.loadProgress === 100)
+        if (view.loadProgress === 100 && !reloading)
             view.runJavaScript(script)
         else
             pendingScripts.push(script)
@@ -204,15 +227,18 @@ Item {
         + '    sc.bind(E.ERROR,function(){if(mode==="sc")lastError=1002;});'
         + '  }else{sc.load(scUrl(id),{auto_play:true,visual:false,callback:scBegin});}}'
         // Mixcloud's widget, made the first time a Mixcloud show plays
-        + 'var mc=null,mcFrame=null,mcKey="",mcState=-1,mcPos=0,mcDur=0,mcStart=0,mcLoaded=0;'
-        + 'function mcBegin(){if(mode!=="mc"||!mc)return;if(mcStart>0)mc.seek(mcStart);mc.play();try{if(mc.setVolume)mc.setVolume(volume/100);}catch(e){}}'
-        + 'function earshotLoadMixcloud(key,start){quiet("mc");mcState=-1;mcPos=start||0;mcDur=0;mcStart=start||0;mcLoaded=Date.now();mcKey=key;'
+        // (Its seek is ignored until the show's audio has loaded, though it may
+        // report the new place for a moment: a show resumed part way through
+        // keeps asking, as it reports progress, until it stays there.)
+        + 'var mc=null,mcFrame=null,mcKey="",mcState=-1,mcPos=0,mcDur=0,mcStart=0,mcLoaded=0,mcPlayed=false,mcSeekAt=0;'
+        + 'function mcBegin(){if(mode!=="mc"||!mc)return;if(mcStart>0){mcSeekAt=Date.now();mc.seek(mcStart);}mc.play();try{if(mc.setVolume)mc.setVolume(volume/100);}catch(e){}}'
+        + 'function earshotLoadMixcloud(key,start){quiet("mc");mcState=-1;mcPos=start||0;mcDur=0;mcStart=start||0;mcLoaded=Date.now();mcKey=key;mcPlayed=false;'
         + '  if(typeof Mixcloud==="undefined"){lastError=1003;return;}'
         + '  if(!mcFrame){var first=key;mcFrame=document.createElement("iframe");mcFrame.allow="autoplay; encrypted-media";mcFrame.style.cssText="position:fixed;left:0;top:0;width:160px;height:90px;border:0";'
         + '    mcFrame.src="https://player-widget.mixcloud.com/?hide_cover=1&mini=1&autoplay=1&feed="+encodeURIComponent(key);'
         + '    mcFrame.onload=function(){mcFrame.onload=null;var w=Mixcloud.PlayerWidget(mcFrame);'
         + '    w.ready.then(function(){mc=w;var E=w.events;'
-        + '      E.progress.on(function(p,d){mcPos=p;if(d)mcDur=d;if(mode==="mc"&&mcState!==2&&mcState!==0)mcState=1;});'
+        + '      E.progress.on(function(p,d){mcPos=p;mcPlayed=true;if(mode==="mc"&&mcStart>0){var t=Date.now();if(t-mcLoaded>30000||(p>=mcStart-2&&t-mcSeekAt>3000))mcStart=0;else if(p<mcStart-2&&t-mcSeekAt>1500){mcSeekAt=t;mc.seek(mcStart);}}if(d)mcDur=d;if(mode==="mc"&&mcState!==2&&mcState!==0)mcState=1;});'
         + '      E.play.on(function(){mcState=1;});'
         + '      E.pause.on(function(){if(mcState!==0)mcState=2;});'
         + '      E.buffering.on(function(){if(mcState!==2)mcState=3;});'
@@ -223,7 +249,7 @@ Item {
         // The same controls for whichever player is in use
         + 'function earshotPlay(){if(mode==="audio")audio.play().catch(function(){});else if(mode==="sc"){if(sc)sc.play();}else if(mode==="mc"){if(mc)mc.play();}else if(ready)player.playVideo();}'
         + 'function earshotPause(){if(mode==="audio")audio.pause();else if(mode==="sc"){if(sc)sc.pause();}else if(mode==="mc"){if(mc)mc.pause();}else if(ready)player.pauseVideo();}'
-        + 'function earshotSeek(s){if(mode==="audio")audio.currentTime=s;else if(mode==="sc"){if(sc){sc.seekTo(s*1000);scPos=s*1000;}}else if(mode==="mc"){if(mc){mc.seek(s);mcPos=s;}}else if(ready)player.seekTo(s,true);}'
+        + 'function earshotSeek(s){if(mode==="audio")audio.currentTime=s;else if(mode==="sc"){if(sc){sc.seekTo(s*1000);scPos=s*1000;}}else if(mode==="mc"){mcStart=0;if(mc){mc.seek(s);mcPos=s;}}else if(ready)player.seekTo(s,true);}'
         + 'function earshotStop(){var was=mode;quiet("none");mode=was;}'
         + 'function earshotVolume(v){volume=v;if(ready)player.setVolume(v);audio.volume=v/100;if(sc)sc.setVolume(v);try{if(mc&&mc.setVolume)mc.setVolume(v/100);}catch(e){}}'
         + 'function earshotStatus(){var s;'
@@ -231,7 +257,7 @@ Item {
         + '  else if(mode==="sc"){s={ready:true,state:scState,time:scPos/1000,duration:scDur/1000};'
         + '    if(scState<1&&Date.now()-scLoaded>30000){scLoaded=Date.now();lastError=1002;}}'
         + '  else if(mode==="mc"){s={ready:true,state:mcState,time:mcPos,duration:mcDur};'
-        + '    if(mcState<1&&mcState!==2&&Date.now()-mcLoaded>30000){mcLoaded=Date.now();lastError=1003;}}'
+        + '    if(!mcPlayed&&mcState!==2&&Date.now()-mcLoaded>30000){mcLoaded=Date.now();lastError=1003;}}'
         + '  else if(!ready)return JSON.stringify({ready:false,drm:drm});'
         + '  else s={ready:true,state:player.getPlayerState(),time:player.getCurrentTime()||0,duration:player.getDuration()||0};'
         + '  s.drm=drm;s.ended=ended;s.error=lastError;ended=false;lastError=0;return JSON.stringify(s);}'
@@ -289,8 +315,12 @@ Item {
             console.info("Playing", show, "from", url, "where Mixcloud keeps its audio")
             engine.loadAudio(url, engine.position)
         }
+        // Its browser process died (crashed, or was killed for memory): start
+        // the page afresh, or nothing would ever play (or say why) again.
+        onRenderProcessTerminated: (status, exitCode) => engine.restartPage("its browser process ended (status " + status + ", code " + exitCode + ")")
         onLoadingChanged: request => {
             if (request.status === WebEngineView.LoadSucceededStatus) {
+                engine.reloading = false
                 const scripts = engine.pendingScripts
                 engine.pendingScripts = []
                 for (const script of scripts)
@@ -314,6 +344,10 @@ Item {
             Component.onCompleted: httpUserAgent = httpUserAgent.replace(/ QtWebEngine\/\S+/, "")
         }
         url: "about:blank"
+        onRenderProcessTerminated: (status, exitCode) => {
+            if (engine.watchMode)
+                engine.restartPage("youtube.com's page's browser process ended (status " + status + ", code " + exitCode + ")")
+        }
     }
 
     // YouTube's player reports nothing on its own, so ask it a few times a second.
@@ -324,8 +358,55 @@ Item {
         onTriggered: engine.watchMode ? engine.pollWatchPage() : engine.pollEmbedded()
     }
 
+    // A song that never starts, or a page that stopped answering, mustn't
+    // leave the player stuck loading forever.
+    Timer {
+        interval: 1000
+        repeat: true
+        running: engine.videoId !== ""
+        onTriggered: engine.checkStalled()
+    }
+    function checkStalled() {
+        const now = Date.now()
+        if (now - lastAnswer > 20000) {
+            restartPage("its page stopped answering")
+            return
+        }
+        // (youtube.com's page has its own limit, and may show long ads first.)
+        if (!begun && !held && !watchMode && playerState !== 2 && now - loadedAt > 45000) {
+            loadedAt = Infinity
+            failed(1006, describe(1006))
+        }
+    }
+
+    // Starts the hidden page afresh. A song that was loaded is asked for again
+    // (pageRestarted); if the page fails again for the same song, it fails.
+    function restartPage(reason) {
+        const id = videoId
+        const at = position
+        console.warn("Restarting the player page:", reason, id ? "(playing " + id + ")" : "")
+        leaveWatchPage()
+        ready = false
+        reloading = true
+        pendingScripts = []
+        videoId = ""
+        playerState = -1
+        lastAnswer = Date.now()
+        view.loadHtml(engine.html, "https://earshot.app/")
+        if (!id)
+            return
+        if (restartedFor === id) {
+            failed(1005, describe(1005))
+            return
+        }
+        restartedFor = id
+        pageRestarted(at)
+    }
+
     function pollEmbedded() {
         view.runJavaScript("earshotStatus()", function (result) {
+            if (result)
+                lastAnswer = Date.now()
             if (!result || watchMode)
                 return
             const status = JSON.parse(result)
@@ -355,6 +436,8 @@ Item {
     function pollWatchPage() {
         const id = videoId
         watchView.runJavaScript(watchStatusScript, function (result) {
+            if (result)
+                lastAnswer = Date.now()
             if (!watchMode || id !== videoId || !result)
                 return
             const status = JSON.parse(result)
@@ -404,6 +487,8 @@ Item {
         case 1002: return "SoundCloud's player couldn't play this song."
         case 1003: return "Mixcloud's player couldn't play this show."
         case 1004: return "Mixcloud's player can't load this show's audio."
+        case 1005: return "The player page stopped working twice."
+        case 1006: return "The player didn't start it within 45 seconds."
         default: return "YouTube's player stopped (error " + code + ")."
         }
     }
