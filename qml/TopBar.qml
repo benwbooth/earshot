@@ -12,7 +12,13 @@ Rectangle {
     required property var window
     property bool canGoBack: false
     property alias searchField: search
+    property alias menuButton: menuButton
+    // Whether the window's menu is open, and when it last closed (a second
+    // click on the button closes it).
+    property bool menuShown: false
+    property real menuClosedAt: 0
     signal backClicked()
+    signal menuClicked()
 
     implicitHeight: 56
     color: Theme.sidebar
@@ -59,10 +65,6 @@ Rectangle {
         Nav.search(query)
         addHistory(query)
         search.focus = false
-    }
-
-    function openSettings() {
-        settingsMenu.popup(settingsButton, settingsButton.width - settingsMenu.width, settingsButton.height)
     }
 
     function toggleMaximized() {
@@ -313,62 +315,22 @@ Rectangle {
             onClicked: Api.albumList = !Api.albumList
         }
 
-        // Settings: when the now-playing card appears.
+        // The menu (the same menus as the desktop's global menu bar, settings
+        // included): Main.qml's AppMenu, opened below this button.
         IconButton {
-            id: settingsButton
-            iconName: "settings"
+            id: menuButton
+            iconName: "menu"
             iconSize: 18
-            tip: "Settings"
-            onClicked: bar.openSettings()
+            tip: "Menu"
             Layout.rightMargin: 8
-        }
-        Menu {
-            id: settingsMenu
-            implicitWidth: 300
-            topPadding: 6
-            bottomPadding: 6
-            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
-            delegate: MenuItem {
-                id: settingItem
-                implicitHeight: 34
-                contentItem: RowLayout {
-                    spacing: 8
-                    Icon {
-                        name: "check"
-                        size: 14
-                        color: Theme.accent
-                        opacity: settingItem.checked ? 1 : 0
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: settingItem.text
-                        color: settingItem.enabled ? Theme.text : Theme.textMuted
-                        font.pixelSize: Theme.fontBody
-                    }
-                }
-                background: Rectangle { color: settingItem.highlighted && settingItem.enabled ? Theme.surfaceHover : "transparent"; radius: 6; anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6 }
-            }
-            MenuItem { text: "Now-playing card when a song starts:"; enabled: false }
-            MenuItem { text: "Always"; checkable: true; checked: Api.nowPlayingCard === "always"; onTriggered: Api.nowPlayingCard = "always" }
-            MenuItem { text: "Only when Earshot isn't in front"; checkable: true; checked: Api.nowPlayingCard === "background"; onTriggered: Api.nowPlayingCard = "background" }
-            MenuItem { text: "Never"; checkable: true; checked: Api.nowPlayingCard === "never"; onTriggered: Api.nowPlayingCard = "never" }
-            // Off: "Added to playlist" and the like show inside the window instead.
-            MenuItem { text: "Notices as desktop notifications"; checkable: true; checked: Api.desktopNotices; onTriggered: Api.desktopNotices = !Api.desktopNotices }
-            MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
-            // Turns loud songs down and quiet ones up, so they all sound about as loud.
-            MenuItem { text: "Level the volume between songs"; checkable: true; checked: Player.leveling; onTriggered: Player.leveling = !Player.leveling }
-            // Leaves songs marked explicit out of song lists, the queue and radio.
-            MenuItem { text: "Hide explicit songs"; checkable: true; checked: Api.hideExplicit; onTriggered: Api.hideExplicit = !Api.hideExplicit }
-            // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).
-            MenuItem { text: "Prefer music in YouTube results"; checkable: true; checked: Api.preferMusic; onTriggered: Api.preferMusic = !Api.preferMusic }
-            MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
-            // The same Earshot in a browser on this computer, sharing this window's playlists.
-            MenuItem {
-                text: "Open the web version"
-                onTriggered: Api.call(Backend.openWebUi(), function (result) {
-                    Api.openWeb(result.url)
-                    Nav.notify("The web version is open in your browser at " + result.url)
-                }, function (message) { Nav.notify(message) })
+            // Was the menu open when you pressed? Then this click only closes
+            // it (it may close before or after the click).
+            property bool wasOpen: false
+            onPressed: wasOpen = bar.menuShown || Date.now() - bar.menuClosedAt < 400
+            onClicked: {
+                if (!wasOpen)
+                    bar.menuClicked()
+                wasOpen = false
             }
         }
 

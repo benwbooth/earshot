@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtCore
 import Qt.labs.platform as Platform
 import Earshot
+import GlobalMenu
 
 ApplicationWindow {
     id: window
@@ -100,6 +101,9 @@ ApplicationWindow {
     onWidthChanged: placeTimer.restart()
     onHeightChanged: placeTimer.restart()
     onVisibilityChanged: placeTimer.restart()
+    // The menu's address goes on the window's surface, which exists only while
+    // the window is shown.
+    onVisibleChanged: if (visible) Qt.callLater(globalMenu.attach)
     Timer { id: placeTimer; interval: 400; onTriggered: window.savePlace() }
 
     // Closing the window keeps the music playing in the tray; quit from the tray menu.
@@ -418,6 +422,8 @@ ApplicationWindow {
             window: window
             canGoBack: stack.depth > 1
             onBackClicked: stack.pop()
+            menuShown: appMenu.visible || settingsMenu.visible
+            onMenuClicked: appMenu.openBelow(topBar.menuButton)
         }
 
         RowLayout {
@@ -574,9 +580,303 @@ ApplicationWindow {
         }
     }
 
+    // ---------------------------------------- menus
+    // Defined once: exported to the desktop's global menu bar (GlobalMenuBar:
+    // hearth's top bar, Plasma's Global Menu) for this window and the mini
+    // player, and shown by the title bar's menu button (AppMenu). Shortcuts
+    // are only shown there: the Shortcuts below do the work.
+    readonly property bool liked: Player.current ? (Backend.libraryRevision, Backend.isLiked(Player.current.key)) : false
+    readonly property string songPage: Player.current ? Api.songPage(Player.current) : ""
+    // Whether this page is the one shown (as the side pane marks it).
+    function showing(page, id) {
+        return Nav.current === page && ((page !== "playlist" && page !== "service") || Nav.currentArgs.id === id)
+    }
+    // The settings (Ctrl+, opens just these, below the menu button).
+    readonly property var settingsItems: [
+        { id: "card-heading", text: "Now-Playing Card When a Song Starts:", enabled: false },
+        { id: "card-always", text: "Always", checkable: true, checked: Api.nowPlayingCard === "always" },
+        { id: "card-background", text: "Only When Earshot Isn't in Front", checkable: true, checked: Api.nowPlayingCard === "background" },
+        { id: "card-never", text: "Never", checkable: true, checked: Api.nowPlayingCard === "never" },
+        // Off: "Added to playlist" and the like show inside the window instead.
+        { id: "desktop-notices", text: "Notices as Desktop Notifications", checkable: true, checked: Api.desktopNotices },
+        { separator: true },
+        // Turns loud songs down and quiet ones up, so they all sound about as loud.
+        { id: "leveling", text: "Level the Volume Between Songs", checkable: true, checked: Player.leveling },
+        // Leaves songs marked explicit out of song lists, the queue and radio.
+        { id: "hide-explicit", text: "Hide Explicit Songs", checkable: true, checked: Api.hideExplicit },
+        // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).
+        { id: "prefer-music", text: "Prefer Music in YouTube Results", checkable: true, checked: Api.preferMusic },
+        { separator: true },
+        // The same Earshot in a browser on this computer, sharing this window's playlists.
+        { id: "web-version", text: "Open the Web Version" }
+    ]
+    readonly property var userPlaylists: sidebar.playlists.filter(p => !p.special)
+    readonly property var menuModel: [
+        { title: "Earshot", items: [
+            { id: "about", text: "About Earshot" },
+            { id: "settings", text: "Settings…", shortcut: "Ctrl+," },
+            { separator: true }
+        ].concat(window.settingsItems, [
+            { separator: true },
+            { id: "hide", text: "Hide Earshot", enabled: tray.available && window.visible },
+            { id: "quit", text: "Quit Earshot", shortcut: "Ctrl+Q" } ]) },
+        { title: "File", items: [
+            { id: "new-playlist", text: "New Playlist…", shortcut: "Ctrl+N" },
+            { id: "import-playlist", text: "Import a Playlist…" },
+            { separator: true },
+            { id: "close", text: "Close Window", enabled: window.visible } ] },
+        { title: "Edit", items: [
+            { id: "find", text: "Search…", shortcut: "Ctrl+F" },
+            { id: "clear-search", text: "Clear Search", enabled: topBar.searchField.text !== "" },
+            { id: "clear-history", text: "Clear Recent Searches", enabled: topBar.historyItems.length > 0 } ] },
+        { title: "View", items: [
+            { id: "back", text: "Back", shortcut: "Alt+Left", enabled: stack.depth > 1 },
+            { separator: true },
+            { id: "go-home", text: "Home", checkable: true, checked: window.showing("home") },
+            { id: "go-search", text: "Search", checkable: true, checked: window.showing("search") },
+            { id: "go-trending", text: "Trending", checkable: true, checked: window.showing("trending") },
+            { id: "go-youtube", text: "YouTube", checkable: true, checked: window.showing("service", "youtube") },
+            { id: "go-radio", text: "Reddit Radio", checkable: true, checked: window.showing("radio") },
+            { id: "go-bandcamp", text: "Bandcamp", checkable: true, checked: window.showing("bandcamp") },
+            { id: "go-soundcloud", text: "SoundCloud", checkable: true, checked: window.showing("service", "soundcloud") },
+            { id: "go-mixcloud", text: "Mixcloud", checkable: true, checked: window.showing("service", "mixcloud") },
+            { id: "go-archive", text: "Internet Archive", checkable: true, checked: window.showing("service", "archive") },
+            { id: "go-queue", text: "Queue", checkable: true, checked: window.showing("queue") },
+            { separator: true },
+            { id: "go-albums", text: "Albums", checkable: true, checked: window.showing("albums") },
+            { id: "go-liked", text: "Liked Songs", checkable: true, checked: window.showing("playlist", "liked") },
+            { id: "go-history", text: "History", checkable: true, checked: window.showing("history") },
+            { id: "playlists", text: "Playlists", enabled: window.userPlaylists.length > 0, items: window.userPlaylists.length > 0
+                ? window.userPlaylists.map(p => ({ id: "playlist-" + p.id, text: p.name, checkable: true, checked: window.showing("playlist", p.id) }))
+                : [{ id: "playlist-none", text: "No Playlists", enabled: false }] },
+            { separator: true },
+            { id: "album-list", text: "Show Albums as a List", checkable: true, checked: Api.albumList } ] },
+        { title: "Controls", items: [
+            { id: "play", text: Player.playing ? "Pause" : "Play", shortcut: "Space", enabled: Player.current !== null },
+            { id: "next", text: "Next", shortcut: "Ctrl+Right", enabled: Player.hasNext },
+            { id: "previous", text: "Previous", shortcut: "Ctrl+Left", enabled: Player.current !== null },
+            { separator: true },
+            { id: "shuffle", text: "Shuffle", shortcut: "Ctrl+S", checkable: true, checked: Player.shuffle },
+            { id: "repeat", text: "Repeat", items: [
+                { id: "repeat-0", text: "Off", checkable: true, checked: Player.repeat === 0 },
+                { id: "repeat-1", text: "All", checkable: true, checked: Player.repeat === 1 },
+                { id: "repeat-2", text: "This Song", checkable: true, checked: Player.repeat === 2 } ] },
+            { id: "next-repeat", text: "Change Repeat", shortcut: "Ctrl+R" },
+            // Keep playing songs like these when the queue runs out.
+            { id: "radio", text: "Random Radio", checkable: true, checked: Player.radio },
+            { separator: true },
+            { id: "mute", text: "Mute", checkable: true, checked: Player.muted },
+            { separator: true },
+            { id: "like", text: window.liked ? "Remove from Liked Songs" : "Add to Liked Songs", enabled: Player.current !== null },
+            { id: "source", text: Player.context !== "" ? "Go to " + Player.context : "Go to the Song's Album", enabled: Player.current !== null },
+            { id: "artist", text: "Go to Artist", enabled: Player.current !== null && !!Player.current.artistId },
+            { id: "open-on", text: window.songPage !== "" ? "Open on " + Api.siteName(window.songPage) : "Open on the Web", enabled: window.songPage !== "" } ] },
+        { title: "Window", items: [
+            { id: "minimize", text: "Minimize", enabled: window.visible },
+            { id: "zoom", text: "Zoom", enabled: window.visible },
+            { separator: true },
+            { id: "mini", text: "Mini Player", shortcut: "Ctrl+M", checkable: true, checked: miniPlayer.visible } ] },
+        { title: "Help", items: [
+            { id: "website", text: "Earshot on GitHub" } ] }
+    ]
+
+    // The full window in front (for menu items chosen from the mini player).
+    function front() {
+        if (!window.visible || miniPlayer.visible)
+            window.showWindow()
+    }
+    function openSettings() {
+        front()
+        settingsMenu.openBelow(topBar.menuButton)
+    }
+    function menuAction(id) {
+        if (id.startsWith("playlist-")) { front(); Nav.playlist(id.slice(9)); return }
+        if (id.startsWith("repeat-")) {
+            // Repeat goes round off → all → this song.
+            for (let i = 0; i < 3 && Player.repeat !== Number(id.slice(7)); ++i)
+                Player.cycleRepeat()
+            return
+        }
+        if (id.startsWith("go-")) {
+            const page = id.slice(3)
+            const services = ["youtube", "soundcloud", "mixcloud", "archive"]
+            front()
+            if (services.indexOf(page) >= 0) Nav.open("service", { id: page })
+            else if (page === "liked") Nav.playlist("liked")
+            else Nav.open(page)
+            return
+        }
+        switch (id) {
+        case "about": front(); aboutDialog.open(); break
+        case "settings": openSettings(); break
+        case "card-always": Api.nowPlayingCard = "always"; break
+        case "card-background": Api.nowPlayingCard = "background"; break
+        case "card-never": Api.nowPlayingCard = "never"; break
+        case "desktop-notices": Api.desktopNotices = !Api.desktopNotices; break
+        case "leveling": Player.leveling = !Player.leveling; break
+        case "hide-explicit": Api.hideExplicit = !Api.hideExplicit; break
+        case "prefer-music": Api.preferMusic = !Api.preferMusic; break
+        case "web-version":
+            Api.call(Backend.openWebUi(), function (result) {
+                Api.openWeb(result.url)
+                Nav.notify("The web version is open in your browser at " + result.url)
+            }, function (message) { Nav.notify(message) })
+            break
+        case "hide": window.hide(); break
+        case "quit": window.quitApp(); break
+        case "new-playlist": front(); Nav.askNewPlaylist([]); break
+        case "import-playlist": front(); Nav.askImportPlaylist(); break
+        case "close": window.close(); break
+        case "find": front(); topBar.searchField.forceActiveFocus(); break
+        case "clear-search": topBar.searchField.text = ""; Nav.search(""); break
+        case "clear-history": topBar.clearHistory(); break
+        case "back": front(); if (stack.depth > 1) stack.pop(); break
+        case "album-list": Api.albumList = !Api.albumList; break
+        case "play": Player.toggle(); break
+        case "next": Player.next(false); break
+        case "previous": Player.previous(); break
+        case "shuffle": Player.setShuffle(!Player.shuffle); break
+        case "next-repeat": Player.cycleRepeat(); break
+        case "radio": Player.radio = !Player.radio; break
+        case "mute": Player.muted = !Player.muted; break
+        case "like": if (Player.current) Backend.setLiked(JSON.stringify(Player.current), !window.liked); break
+        case "source": front(); Player.openSource(); break
+        case "artist": if (Player.current && Player.current.artistId) { front(); Nav.artist(Player.current.artistId) } break
+        case "open-on": if (window.songPage !== "") Api.openWeb(window.songPage); break
+        case "minimize": window.showMinimized(); break
+        case "zoom": topBar.toggleMaximized(); break
+        case "mini": Nav.toggleMini(); break
+        case "website": Qt.openUrlExternally("https://github.com/benwbooth/earshot"); break
+        }
+    }
+
+    GlobalMenuBar {
+        id: globalMenu
+        window: window
+        model: window.menuModel
+        onTriggered: id => window.menuAction(id)
+    }
+    // The mini player is a window of its own: the same menus there.
+    GlobalMenuBar {
+        id: miniMenu
+        window: miniPlayer
+        model: window.menuModel
+        onTriggered: id => window.menuAction(id)
+    }
+    Connections {
+        target: miniPlayer
+        function onVisibleChanged() { if (miniPlayer.visible) Qt.callLater(miniMenu.attach) }
+    }
+
+    // Earshot's look for menu items: a check for toggles, the key on the right.
+    Component {
+        id: earshotMenuItem
+        MenuItem {
+            id: menuItem
+            property string shortcutText
+            implicitHeight: 34
+            // The check is drawn below, in Earshot's colour.
+            indicator: Item {}
+            contentItem: RowLayout {
+                spacing: 8
+                Icon {
+                    name: "check"
+                    size: 14
+                    color: Theme.accent
+                    opacity: menuItem.checked ? 1 : 0
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: menuItem.text
+                    color: menuItem.enabled ? Theme.text : Theme.textMuted
+                    font.pixelSize: Theme.fontBody
+                }
+                Text {
+                    visible: menuItem.shortcutText !== ""
+                    Layout.leftMargin: 16
+                    text: menuItem.shortcutText
+                    color: Theme.textFaint
+                    font.pixelSize: Theme.fontSmall + 1
+                }
+            }
+            background: Rectangle { color: menuItem.highlighted && menuItem.enabled ? Theme.surfaceHover : "transparent"; radius: 6; anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6 }
+        }
+    }
+    AppMenu {
+        id: appMenu
+        model: window.menuModel
+        onTriggered: id => window.menuAction(id)
+        itemDelegate: earshotMenuItem
+        topPadding: 6
+        bottomPadding: 6
+        background: Rectangle { implicitWidth: 180; color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
+        onClosed: topBar.menuClosedAt = Date.now()
+    }
+    // Ctrl+,: the settings alone, as the Earshot menu has them.
+    AppMenu {
+        id: settingsMenu
+        flat: true
+        model: [{ title: "Settings", items: window.settingsItems }]
+        onTriggered: id => window.menuAction(id)
+        itemDelegate: earshotMenuItem
+        implicitWidth: 300
+        topPadding: 6
+        bottomPadding: 6
+        background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
+        onClosed: topBar.menuClosedAt = Date.now()
+    }
+
+    Popup {
+        id: aboutDialog
+        modal: true
+        focus: true
+        anchors.centerIn: Overlay.overlay
+        padding: 28
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.55) }
+        background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusLarge; border.color: Theme.border }
+        contentItem: ColumnLayout {
+            spacing: 10
+            Image {
+                Layout.alignment: Qt.AlignHCenter
+                source: Theme.icon("earshot-app")
+                sourceSize: Qt.size(128, 128)
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 64
+            }
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: "Earshot " + Qt.application.version
+                color: Theme.text
+                font.pixelSize: Theme.fontTitle - 2
+                font.weight: Font.Bold
+            }
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: "A music player for YouTube, Bandcamp, SoundCloud, Mixcloud and more."
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontBody
+            }
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: "<a href='https://github.com/benwbooth/earshot' style='color:" + Theme.accent + "'>github.com/benwbooth/earshot</a>"
+                textFormat: Text.RichText
+                font.pixelSize: Theme.fontBody
+                onLinkActivated: link => Qt.openUrlExternally(link)
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            PillButton {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: 8
+                text: "Close"
+                onClicked: aboutDialog.close()
+            }
+        }
+    }
+
     Shortcut { sequences: ["Ctrl+F", "Ctrl+L"]; onActivated: topBar.searchField.forceActiveFocus() }
     Shortcut { sequence: "Ctrl+Q"; context: Qt.ApplicationShortcut; onActivated: window.quitApp() }
-    Shortcut { sequence: "Ctrl+,"; onActivated: topBar.openSettings() }
+    Shortcut { sequence: "Ctrl+,"; onActivated: window.openSettings() }
     Shortcut { sequence: "Ctrl+M"; context: Qt.ApplicationShortcut; onActivated: Nav.toggleMini() }
     Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (stack.depth > 1) stack.pop() }
     Shortcut { sequence: "Ctrl+Right"; onActivated: Player.next(false) }
@@ -597,6 +897,7 @@ ApplicationWindow {
 
     // Testing aids: --page=album:123 opens a page; --search=text [--search-tab=youtube] searches;
     // --play-video=ID plays one YouTube video; --play-track=JSON plays one song;
+    // --settings-menu / --app-menu open those menus;
     // --screenshot=file.png saves the window and quits (--keep-view: from the saved page, and saving it).
     Component.onCompleted: {
         restorePlace()
@@ -626,7 +927,9 @@ ApplicationWindow {
             } else if (arg.startsWith("--web-version")) {
                 Api.call(Backend.openWebUi(), result => console.info("Web version at", result.url), message => console.warn(message))
             } else if (arg.startsWith("--settings-menu")) {
-                Qt.callLater(() => topBar.openSettings())
+                Qt.callLater(() => window.openSettings())
+            } else if (arg.startsWith("--app-menu")) {
+                Qt.callLater(() => appMenu.openBelow(topBar.menuButton))
             } else if (arg.startsWith("--test-notification")) {
                 testNotification.start()
             } else if (arg.startsWith("--play-first")) {

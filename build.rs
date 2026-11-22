@@ -54,6 +54,7 @@ fn main() {
         QmlFile::from("qml/ServicePage.qml"),
         QmlFile::from("qml/Marquee.qml"),
         QmlFile::from("qml/ForYouPage.qml"),
+        QmlFile::from("qml/AppMenu.qml"),
     ]);
 
     let icons: Vec<String> = std::fs::read_dir("qml/icons")
@@ -72,6 +73,9 @@ fn main() {
         .files(["src/backend.rs", "src/native.rs"])
         .crate_include_root(Some("native".to_owned()))
         .cpp_file("native/native.cpp")
+        // The menus in the desktop's global menu bar (needs Qt's private QPA headers).
+        .cpp_file("native/global_menu.h")
+        .cpp_file("native/global_menu.cpp")
         .qrc_resources(icons)
         .qt_module("Network")
         .qt_module("Quick")
@@ -81,6 +85,15 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         builder = builder.qt_module("DBus");
     }
+    let private_headers = qt_private_headers();
+    // SAFETY: only adds include folders and a define for Earshot's own C++.
+    let builder = unsafe {
+        builder.cc_builder(|cc| {
+            cc.includes(&private_headers);
+            // Shown in About Earshot.
+            cc.define("EARSHOT_VERSION", Some(format!("{:?}", env!("CARGO_PKG_VERSION")).as_str()));
+        })
+    };
     builder.build();
 
     // The icon Windows shows for earshot.exe in Explorer and the taskbar.
@@ -89,4 +102,43 @@ fn main() {
         .set_icon("packaging/earshot.ico")
         .compile()
         .expect("Windows icon resource");
+}
+
+// Qt's private QtGui/QtCore headers (qpa/qplatformmenu.h and the like), which
+// native/global_menu.cpp builds the desktop's global menu bar with: in the
+// include folder, or inside the frameworks on macOS.
+fn qt_private_headers() -> Vec<std::path::PathBuf> {
+    let qmakes = match std::env::var("QMAKE") {
+        Ok(qmake) => vec![qmake],
+        Err(_) => vec!["qmake6".to_owned(), "qmake".to_owned()],
+    };
+    for qmake in qmakes {
+        let query = |key: &str| {
+            std::process::Command::new(&qmake)
+                .args(["-query", key])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        };
+        let Some(version) = query("QT_VERSION") else { continue };
+        let mut roots = Vec::new();
+        if let Some(headers) = query("QT_INSTALL_HEADERS") {
+            let headers = std::path::PathBuf::from(headers);
+            roots.push((headers.join("QtGui"), headers.join("QtCore")));
+        }
+        if let Some(libs) = query("QT_INSTALL_LIBS") {
+            let libs = std::path::PathBuf::from(libs);
+            roots.push((libs.join("QtGui.framework/Headers"), libs.join("QtCore.framework/Headers")));
+        }
+        for (gui, core) in roots {
+            let gui = gui.join(&version);
+            let core = core.join(&version);
+            if gui.join("QtGui/qpa/qplatformmenu.h").is_file() {
+                return vec![gui.join("QtGui"), gui, core.join("QtCore"), core];
+            }
+        }
+    }
+    println!("cargo:warning=Qt's private headers (qpa/qplatformmenu.h) weren't found; the global menu bar won't build");
+    Vec::new()
 }

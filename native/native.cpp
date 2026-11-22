@@ -1,4 +1,5 @@
 #include "earshot/native.h"
+#include "earshot/global_menu.h"
 
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 #include <QtQml/QQmlApplicationEngine>
+#include <QtQml/qqml.h>
 #include <QtQuick/QQuickWindow>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QtWidgets/QApplication>
@@ -122,6 +124,7 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     QApplication app(argc, argv.data());
     QApplication::setApplicationName(QStringLiteral("Earshot"));
     QApplication::setOrganizationName(QStringLiteral("Earshot"));
+    QApplication::setApplicationVersion(QStringLiteral(EARSHOT_VERSION));
     QGuiApplication::setDesktopFileName(desktopId);
     QGuiApplication::setWindowIcon(QIcon(icon));
     // Draw text with the platform's own rasterizer (FreeType hinting and
@@ -151,6 +154,8 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
         server.listen(address);
     }
 
+    // The window's menus in the desktop's global menu bar.
+    qmlRegisterType<GlobalMenuBar>("GlobalMenu", 1, 0, "GlobalMenuBar");
     // Declared after the application, so it's torn down first.
     QQmlApplicationEngine engine;
     engine.load(QUrl(qml));
