@@ -25,7 +25,15 @@
           qtwebengine
           qtwebchannel
           qtpositioning
-        ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.qt6.qtwayland pkgs.kdePackages.layer-shell-qt ];
+        ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+          pkgs.qt6.qtwayland
+          pkgs.kdePackages.layer-shell-qt
+          # Named icons (the tray menu's play, next, quit…) need a platform
+          # theme and an icon theme: without them Qt finds no theme icons and
+          # the tray menu goes out with none (Kog bundles the same two).
+          pkgs.kdePackages.plasma-integration
+          pkgs.kdePackages.breeze-icons
+        ];
         qtEnv = pkgs.symlinkJoin { name = "earshot-qt-env"; paths = qtModules; };
         # cxx-qt asks qmake where Qt lives; answer with the merged module tree
         # so QtQml/QtQuick headers and tools from every module are found.
