@@ -18,6 +18,12 @@ Menu {
     // app's own look, e.g. with icons); the default shows the shortcut at
     // the right.
     property Component itemDelegate: defaultItem
+    // The submenus' type (a Menu in the app's own look: background,
+    // padding, and `delegate` for its rows that open further submenus) and
+    // the separators'. Without them, the style's plain ones. Set the root's
+    // own `delegate` too, for its rows (each opens a submenu).
+    property Component submenuDelegate: plainSubmenu
+    property Component separatorDelegate: plainSeparator
     // Flat: every menu's items inline, a separator between menus (submenus
     // kept), as nixos-update-checker's hamburger does. For apps with short
     // menus; otherwise one submenu per menu.
@@ -41,14 +47,14 @@ Menu {
         for (var m = 0; m < menus.length; m++) {
             if (flat) {
                 if (m > 0) {
-                    var sep = separatorComponent.createObject(null)
+                    var sep = separatorDelegate.createObject(null)
                     _objects.push(sep)
                     addItem(sep)
                 }
                 fill(root, menus[m].items || [])
                 continue
             }
-            var sub = submenuComponent.createObject(null, { title: menus[m].title })
+            var sub = submenuDelegate.createObject(null, { title: menus[m].title })
             _objects.push(sub)
             fill(sub, menus[m].items || [])
             addMenu(sub)
@@ -70,10 +76,10 @@ Menu {
             var it = items[i]
             var obj
             if (it.separator) {
-                obj = separatorComponent.createObject(null)
+                obj = separatorDelegate.createObject(null)
                 menu.addItem(obj)
             } else if (it.items) {
-                obj = submenuComponent.createObject(null, { title: it.text, enabled: it.enabled !== false })
+                obj = submenuDelegate.createObject(null, { title: it.text, enabled: it.enabled !== false })
                 fill(obj, it.items)
                 menu.addMenu(obj)
             } else {
@@ -91,8 +97,8 @@ Menu {
         fitWidth(menu)
     }
 
-    Component { id: separatorComponent; MenuSeparator {} }
-    Component { id: submenuComponent; Menu {} }
+    Component { id: plainSeparator; MenuSeparator {} }
+    Component { id: plainSubmenu; Menu {} }
     Component {
         id: defaultItem
         MenuItem {

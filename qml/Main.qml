@@ -798,15 +798,39 @@ ApplicationWindow {
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall + 1
                 }
+                // A row that opens a submenu: room for the arrow.
+                Item { visible: !!menuItem.subMenu; implicitWidth: 14 }
+            }
+            arrow: Text {
+                visible: !!menuItem.subMenu
+                x: menuItem.width - width - 14
+                y: Math.round((menuItem.height - height) / 2)
+                text: "›"
+                color: menuItem.enabled ? Theme.textMuted : Theme.textFaint
+                font.pixelSize: Theme.fontBody + 3
             }
             background: Rectangle { color: menuItem.highlighted && menuItem.enabled ? Theme.surfaceHover : "transparent"; radius: 6; anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6 }
         }
     }
+    // Submenus and separators in the same look (the settings menu's).
+    Component {
+        id: earshotSubMenu
+        Menu {
+            topPadding: 6
+            bottomPadding: 6
+            delegate: earshotMenuItem
+            background: Rectangle { implicitWidth: 180; color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
+        }
+    }
+    Component { id: earshotSeparator; MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } } }
     AppMenu {
         id: appMenu
         model: window.menuModel
         onTriggered: id => window.menuAction(id)
         itemDelegate: earshotMenuItem
+        delegate: earshotMenuItem
+        submenuDelegate: earshotSubMenu
+        separatorDelegate: earshotSeparator
         topPadding: 6
         bottomPadding: 6
         background: Rectangle { implicitWidth: 180; color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
@@ -819,6 +843,9 @@ ApplicationWindow {
         model: [{ title: "Settings", items: window.settingsItems }]
         onTriggered: id => window.menuAction(id)
         itemDelegate: earshotMenuItem
+        delegate: earshotMenuItem
+        submenuDelegate: earshotSubMenu
+        separatorDelegate: earshotSeparator
         implicitWidth: 300
         topPadding: 6
         bottomPadding: 6
