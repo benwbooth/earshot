@@ -593,91 +593,91 @@ ApplicationWindow {
     }
     // The settings (Ctrl+, opens just these, below the menu button).
     readonly property var settingsItems: [
-        { id: "card-heading", text: "Now-Playing Card When a Song Starts:", enabled: false },
-        { id: "card-always", text: "Always", checkable: true, checked: Api.nowPlayingCard === "always" },
-        { id: "card-background", text: "Only When Earshot Isn't in Front", checkable: true, checked: Api.nowPlayingCard === "background" },
-        { id: "card-never", text: "Never", checkable: true, checked: Api.nowPlayingCard === "never" },
+        { id: "card-heading", icon: "preferences-desktop-notification-bell", text: "Now-Playing Card When a Song Starts:", enabled: false },
+        { id: "card-always", icon: "notification-active", text: "Always", checkable: true, checked: Api.nowPlayingCard === "always" },
+        { id: "card-background", icon: "window", text: "Only When Earshot Isn't in Front", checkable: true, checked: Api.nowPlayingCard === "background" },
+        { id: "card-never", icon: "notifications-disabled", text: "Never", checkable: true, checked: Api.nowPlayingCard === "never" },
         // Off: "Added to playlist" and the like show inside the window instead.
-        { id: "desktop-notices", text: "Notices as Desktop Notifications", checkable: true, checked: Api.desktopNotices },
+        { id: "desktop-notices", icon: "preferences-desktop-notification", text: "Notices as Desktop Notifications", checkable: true, checked: Api.desktopNotices },
         { separator: true },
         // Turns loud songs down and quiet ones up, so they all sound about as loud.
-        { id: "leveling", text: "Level the Volume Between Songs", checkable: true, checked: Player.leveling },
+        { id: "leveling", icon: "view-media-equalizer", text: "Level the Volume Between Songs", checkable: true, checked: Player.leveling },
         // Leaves songs marked explicit out of song lists, the queue and radio.
-        { id: "hide-explicit", text: "Hide Explicit Songs", checkable: true, checked: Api.hideExplicit },
+        { id: "hide-explicit", icon: "view-filter", text: "Hide Explicit Songs", checkable: true, checked: Api.hideExplicit },
         // Songs, music videos and albums before other videos in YouTube searches (nothing is hidden).
-        { id: "prefer-music", text: "Prefer Music in YouTube Results", checkable: true, checked: Api.preferMusic },
+        { id: "prefer-music", icon: "view-media-genre", text: "Prefer Music in YouTube Results", checkable: true, checked: Api.preferMusic },
         { separator: true },
         // The same Earshot in a browser on this computer, sharing this window's playlists.
-        { id: "web-version", text: "Open the Web Version" }
+        { id: "web-version", icon: "internet-web-browser", text: "Open the Web Version" }
     ]
     readonly property var userPlaylists: sidebar.playlists.filter(p => !p.special)
     readonly property var menuModel: [
-        { title: "Earshot", items: [
-            { id: "about", text: "About Earshot" },
-            { id: "settings", text: "Settings…", shortcut: "Ctrl+," },
+        { title: "Earshot", icon: "audio-headphones", items: [
+            { id: "about", icon: "help-about", text: "About Earshot" },
+            { id: "settings", icon: "configure", text: "Settings…", shortcut: "Ctrl+," },
             { separator: true }
         ].concat(window.settingsItems, [
             { separator: true },
-            { id: "hide", text: "Hide Earshot", enabled: tray.available && window.visible },
-            { id: "quit", text: "Quit Earshot", shortcut: "Ctrl+Q" } ]) },
-        { title: "File", items: [
-            { id: "new-playlist", text: "New Playlist…", shortcut: "Ctrl+N" },
-            { id: "import-playlist", text: "Import a Playlist…" },
+            { id: "hide", icon: "view-hidden", text: "Hide Earshot", enabled: tray.available && window.visible },
+            { id: "quit", icon: "application-exit", text: "Quit Earshot", shortcut: "Ctrl+Q" } ]) },
+        { title: "File", icon: "folder", items: [
+            { id: "new-playlist", icon: "document-new", text: "New Playlist…", shortcut: "Ctrl+N" },
+            { id: "import-playlist", icon: "document-import", text: "Import a Playlist…" },
             { separator: true },
-            { id: "close", text: "Close Window", enabled: window.visible } ] },
-        { title: "Edit", items: [
-            { id: "find", text: "Search…", shortcut: "Ctrl+F" },
-            { id: "clear-search", text: "Clear Search", enabled: topBar.searchField.text !== "" },
-            { id: "clear-history", text: "Clear Recent Searches", enabled: topBar.historyItems.length > 0 } ] },
-        { title: "View", items: [
-            { id: "back", text: "Back", shortcut: "Alt+Left", enabled: stack.depth > 1 },
+            { id: "close", icon: "window-close", text: "Close Window", enabled: window.visible } ] },
+        { title: "Edit", icon: "document-edit", items: [
+            { id: "find", icon: "edit-find", text: "Search…", shortcut: "Ctrl+F" },
+            { id: "clear-search", icon: "edit-clear", text: "Clear Search", enabled: topBar.searchField.text !== "" },
+            { id: "clear-history", icon: "edit-clear-history", text: "Clear Recent Searches", enabled: topBar.historyItems.length > 0 } ] },
+        { title: "View", icon: "view-visible", items: [
+            { id: "back", icon: "go-previous", text: "Back", shortcut: "Alt+Left", enabled: stack.depth > 1 },
             { separator: true },
-            { id: "go-home", text: "Home", checkable: true, checked: window.showing("home") },
-            { id: "go-search", text: "Search", checkable: true, checked: window.showing("search") },
-            { id: "go-trending", text: "Trending", checkable: true, checked: window.showing("trending") },
-            { id: "go-youtube", text: "YouTube", checkable: true, checked: window.showing("service", "youtube") },
-            { id: "go-radio", text: "Reddit Radio", checkable: true, checked: window.showing("radio") },
-            { id: "go-bandcamp", text: "Bandcamp", checkable: true, checked: window.showing("bandcamp") },
-            { id: "go-soundcloud", text: "SoundCloud", checkable: true, checked: window.showing("service", "soundcloud") },
-            { id: "go-mixcloud", text: "Mixcloud", checkable: true, checked: window.showing("service", "mixcloud") },
-            { id: "go-archive", text: "Internet Archive", checkable: true, checked: window.showing("service", "archive") },
-            { id: "go-queue", text: "Queue", checkable: true, checked: window.showing("queue") },
+            { id: "go-home", icon: "go-home", text: "Home", checkable: true, checked: window.showing("home") },
+            { id: "go-search", icon: "system-search", text: "Search", checkable: true, checked: window.showing("search") },
+            { id: "go-trending", icon: "office-chart-line", text: "Trending", checkable: true, checked: window.showing("trending") },
+            { id: "go-youtube", icon: "im-youtube", text: "YouTube", checkable: true, checked: window.showing("service", "youtube") },
+            { id: "go-radio", icon: "radio", text: "Reddit Radio", checkable: true, checked: window.showing("radio") },
+            { id: "go-bandcamp", icon: "folder-music", text: "Bandcamp", checkable: true, checked: window.showing("bandcamp") },
+            { id: "go-soundcloud", icon: "folder-cloud", text: "SoundCloud", checkable: true, checked: window.showing("service", "soundcloud") },
+            { id: "go-mixcloud", icon: "weather-clouds", text: "Mixcloud", checkable: true, checked: window.showing("service", "mixcloud") },
+            { id: "go-archive", icon: "folder-library", text: "Internet Archive", checkable: true, checked: window.showing("service", "archive") },
+            { id: "go-queue", icon: "media-playlist-normal", text: "Queue", checkable: true, checked: window.showing("queue") },
             { separator: true },
-            { id: "go-albums", text: "Albums", checkable: true, checked: window.showing("albums") },
-            { id: "go-liked", text: "Liked Songs", checkable: true, checked: window.showing("playlist", "liked") },
-            { id: "go-history", text: "History", checkable: true, checked: window.showing("history") },
-            { id: "playlists", text: "Playlists", enabled: window.userPlaylists.length > 0, items: window.userPlaylists.length > 0
-                ? window.userPlaylists.map(p => ({ id: "playlist-" + p.id, text: p.name, checkable: true, checked: window.showing("playlist", p.id) }))
-                : [{ id: "playlist-none", text: "No Playlists", enabled: false }] },
+            { id: "go-albums", icon: "view-media-album-cover", text: "Albums", checkable: true, checked: window.showing("albums") },
+            { id: "go-liked", icon: "view-media-favorite", text: "Liked Songs", checkable: true, checked: window.showing("playlist", "liked") },
+            { id: "go-history", icon: "view-history", text: "History", checkable: true, checked: window.showing("history") },
+            { id: "playlists", icon: "view-media-playlist", text: "Playlists", enabled: window.userPlaylists.length > 0, items: window.userPlaylists.length > 0
+                ? window.userPlaylists.map(p => ({ id: "playlist-" + p.id, icon: "media-playlist-play", text: p.name, checkable: true, checked: window.showing("playlist", p.id) }))
+                : [{ id: "playlist-none", icon: "dialog-information", text: "No Playlists", enabled: false }] },
             { separator: true },
-            { id: "album-list", text: "Show Albums as a List", checkable: true, checked: Api.albumList } ] },
-        { title: "Controls", items: [
-            { id: "play", text: Player.playing ? "Pause" : "Play", shortcut: "Space", enabled: Player.current !== null },
-            { id: "next", text: "Next", shortcut: "Ctrl+Right", enabled: Player.hasNext },
-            { id: "previous", text: "Previous", shortcut: "Ctrl+Left", enabled: Player.current !== null },
+            { id: "album-list", icon: "view-list-details", text: "Show Albums as a List", checkable: true, checked: Api.albumList } ] },
+        { title: "Controls", icon: "media-playback-start", items: [
+            { id: "play", icon: Player.playing ? "media-playback-pause" : "media-playback-start", text: Player.playing ? "Pause" : "Play", shortcut: "Space", enabled: Player.current !== null },
+            { id: "next", icon: "media-skip-forward", text: "Next", shortcut: "Ctrl+Right", enabled: Player.hasNext },
+            { id: "previous", icon: "media-skip-backward", text: "Previous", shortcut: "Ctrl+Left", enabled: Player.current !== null },
             { separator: true },
-            { id: "shuffle", text: "Shuffle", shortcut: "Ctrl+S", checkable: true, checked: Player.shuffle },
-            { id: "repeat", text: "Repeat", items: [
-                { id: "repeat-0", text: "Off", checkable: true, checked: Player.repeat === 0 },
-                { id: "repeat-1", text: "All", checkable: true, checked: Player.repeat === 1 },
-                { id: "repeat-2", text: "This Song", checkable: true, checked: Player.repeat === 2 } ] },
-            { id: "next-repeat", text: "Change Repeat", shortcut: "Ctrl+R" },
+            { id: "shuffle", icon: "media-playlist-shuffle", text: "Shuffle", shortcut: "Ctrl+S", checkable: true, checked: Player.shuffle },
+            { id: "repeat", icon: "media-playlist-repeat", text: "Repeat", items: [
+                { id: "repeat-0", icon: "media-repeat-none", text: "Off", checkable: true, checked: Player.repeat === 0 },
+                { id: "repeat-1", icon: "media-repeat-all", text: "All", checkable: true, checked: Player.repeat === 1 },
+                { id: "repeat-2", icon: "media-repeat-single", text: "This Song", checkable: true, checked: Player.repeat === 2 } ] },
+            { id: "next-repeat", icon: ["media-repeat-none", "media-repeat-all", "media-repeat-single"][Player.repeat] || "media-playlist-repeat", text: "Change Repeat", shortcut: "Ctrl+R" },
             // Keep playing songs like these when the queue runs out.
-            { id: "radio", text: "Random Radio", checkable: true, checked: Player.radio },
+            { id: "radio", icon: "media-random-tracks-amarok", text: "Random Radio", checkable: true, checked: Player.radio },
             { separator: true },
-            { id: "mute", text: "Mute", checkable: true, checked: Player.muted },
+            { id: "mute", icon: "audio-volume-muted", text: "Mute", checkable: true, checked: Player.muted },
             { separator: true },
-            { id: "like", text: window.liked ? "Remove from Liked Songs" : "Add to Liked Songs", enabled: Player.current !== null },
-            { id: "source", text: Player.context !== "" ? "Go to " + Player.context : "Go to the Song's Album", enabled: Player.current !== null },
-            { id: "artist", text: "Go to Artist", enabled: Player.current !== null && !!Player.current.artistId },
-            { id: "open-on", text: window.songPage !== "" ? "Open on " + Api.siteName(window.songPage) : "Open on the Web", enabled: window.songPage !== "" } ] },
-        { title: "Window", items: [
-            { id: "minimize", text: "Minimize", enabled: window.visible },
-            { id: "zoom", text: "Zoom", enabled: window.visible },
+            { id: "like", icon: window.liked ? "list-remove" : "love", text: window.liked ? "Remove from Liked Songs" : "Add to Liked Songs", enabled: Player.current !== null },
+            { id: "source", icon: "go-jump", text: Player.context !== "" ? "Go to " + Player.context : "Go to the Song's Album", enabled: Player.current !== null },
+            { id: "artist", icon: "view-media-artist", text: "Go to Artist", enabled: Player.current !== null && !!Player.current.artistId },
+            { id: "open-on", icon: "link", text: window.songPage !== "" ? "Open on " + Api.siteName(window.songPage) : "Open on the Web", enabled: window.songPage !== "" } ] },
+        { title: "Window", icon: "window-duplicate", items: [
+            { id: "minimize", icon: "window-minimize", text: "Minimize", enabled: window.visible },
+            { id: "zoom", icon: "window-maximize", text: "Zoom", enabled: window.visible },
             { separator: true },
-            { id: "mini", text: "Mini Player", shortcut: "Ctrl+M", checkable: true, checked: miniPlayer.visible } ] },
-        { title: "Help", items: [
-            { id: "website", text: "Earshot on GitHub" } ] }
+            { id: "mini", icon: "view-restore", text: "Mini Player", shortcut: "Ctrl+M", checkable: true, checked: miniPlayer.visible } ] },
+        { title: "Help", icon: "help-contents", items: [
+            { id: "website", icon: "folder-git", text: "Earshot on GitHub" } ] }
     ]
 
     // The full window in front (for menu items chosen from the mini player).
@@ -768,72 +768,14 @@ ApplicationWindow {
         function onVisibleChanged() { if (miniPlayer.visible) Qt.callLater(miniMenu.attach) }
     }
 
-    // Earshot's look for menu items: a check for toggles, the key on the right.
-    Component {
-        id: earshotMenuItem
-        MenuItem {
-            id: menuItem
-            property string shortcutText
-            implicitHeight: 34
-            // The check is drawn below, in Earshot's colour.
-            indicator: Item {}
-            contentItem: RowLayout {
-                spacing: 8
-                Icon {
-                    name: "check"
-                    size: 14
-                    color: Theme.accent
-                    opacity: menuItem.checked ? 1 : 0
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: menuItem.text
-                    color: menuItem.enabled ? Theme.text : Theme.textMuted
-                    font.pixelSize: Theme.fontBody
-                }
-                Text {
-                    visible: menuItem.shortcutText !== ""
-                    Layout.leftMargin: 16
-                    text: menuItem.shortcutText
-                    color: Theme.textFaint
-                    font.pixelSize: Theme.fontSmall + 1
-                }
-                // A row that opens a submenu: room for the arrow.
-                Item { visible: !!menuItem.subMenu; implicitWidth: 14 }
-            }
-            arrow: Text {
-                visible: !!menuItem.subMenu
-                x: menuItem.width - width - 14
-                y: Math.round((menuItem.height - height) / 2)
-                text: "›"
-                color: menuItem.enabled ? Theme.textMuted : Theme.textFaint
-                font.pixelSize: Theme.fontBody + 3
-            }
-            background: Rectangle { color: menuItem.highlighted && menuItem.enabled ? Theme.surfaceHover : "transparent"; radius: 6; anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6 }
-        }
-    }
-    // Submenus and separators in the same look (the settings menu's).
-    Component {
-        id: earshotSubMenu
-        Menu {
-            topPadding: 6
-            bottomPadding: 6
-            delegate: earshotMenuItem
-            background: Rectangle { implicitWidth: 180; color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
-        }
-    }
-    Component { id: earshotSeparator; MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } } }
     AppMenu {
         id: appMenu
         model: window.menuModel
         onTriggered: id => window.menuAction(id)
-        itemDelegate: earshotMenuItem
-        delegate: earshotMenuItem
-        submenuDelegate: earshotSubMenu
-        separatorDelegate: earshotSeparator
-        topPadding: 6
-        bottomPadding: 6
-        background: Rectangle { implicitWidth: 180; color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
+        // Grove's glass look, in Earshot's (always dark) colours.
+        dark: true
+        accent: Theme.accent
+        popupType: Popup.Item
         onClosed: topBar.menuClosedAt = Date.now()
     }
     // Ctrl+,: the settings alone, as the Earshot menu has them.
@@ -842,14 +784,9 @@ ApplicationWindow {
         flat: true
         model: [{ title: "Settings", items: window.settingsItems }]
         onTriggered: id => window.menuAction(id)
-        itemDelegate: earshotMenuItem
-        delegate: earshotMenuItem
-        submenuDelegate: earshotSubMenu
-        separatorDelegate: earshotSeparator
-        implicitWidth: 300
-        topPadding: 6
-        bottomPadding: 6
-        background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
+        dark: true
+        accent: Theme.accent
+        popupType: Popup.Item
         onClosed: topBar.menuClosedAt = Date.now()
     }
 
