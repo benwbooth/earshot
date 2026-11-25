@@ -62,6 +62,7 @@ fn main() {
         QmlFile::from("qml/MacMenuIcon.qml"),
         QmlFile::from("qml/MacMenuItem.qml"),
         QmlFile::from("qml/MacMenu.qml"),
+        QmlFile::from("qml/MacMenuButton.qml"),
         QmlFile::from("qml/MacMenuSeparator.qml"),
         QmlFile::from("qml/MacMenuStyle.qml"),
         QmlFile::from("qml/ChromeButtons.qml"),

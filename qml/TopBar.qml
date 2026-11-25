@@ -310,11 +310,11 @@ Rectangle {
 
         // The menu (the same menus as the desktop's global menu bar, settings
         // included): Main.qml's AppMenu, opened below this button.
-        IconButton {
+        MacMenuButton {
             id: menuButton
-            iconName: "menu"
-            iconSize: 18
-            tip: "Menu"
+            dark: true
+            fg: Theme.text
+            menuOpen: bar.menuShown
             Layout.rightMargin: 8
             // Was the menu open when you pressed? Then this click only closes
             // it (it may close before or after the click).
