@@ -74,16 +74,9 @@ Rectangle {
             window.showMaximized()
     }
 
-    // Moving and maximizing the window from empty parts of the bar
-    DragHandler {
-        target: null
-        grabPermissions: PointerHandler.CanTakeOverFromAnything
-        onActiveChanged: if (active) bar.window.startSystemMove()
-    }
-    TapHandler {
-        acceptedButtons: Qt.LeftButton
-        onDoubleTapped: bar.toggleMaximized()
-    }
+    // Moving and maximizing the window from empty parts of the bar, and the
+    // window menu on a right-click (the shared ChromeTitleArea, as every app)
+    ChromeTitleArea { anchors.fill: parent; window: bar.window; menuDark: true; menuAccent: Theme.accent }
 
     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
 

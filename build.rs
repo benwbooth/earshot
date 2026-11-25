@@ -64,6 +64,9 @@ fn main() {
         QmlFile::from("qml/MacMenu.qml"),
         QmlFile::from("qml/MacMenuSeparator.qml"),
         QmlFile::from("qml/MacMenuStyle.qml"),
+        QmlFile::from("qml/ChromeButtons.qml"),
+        QmlFile::from("qml/ChromeResizeEdges.qml"),
+        QmlFile::from("qml/ChromeTitleArea.qml"),
     ]);
 
     let icons: Vec<String> = std::fs::read_dir("qml/icons")
