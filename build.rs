@@ -55,6 +55,15 @@ fn main() {
         QmlFile::from("qml/Marquee.qml"),
         QmlFile::from("qml/ForYouPage.qml"),
         QmlFile::from("qml/AppMenu.qml"),
+        QmlFile::from("qml/MacComboBox.qml"),
+        QmlFile::from("qml/MacComboItem.qml"),
+        QmlFile::from("qml/MacComboPopup.qml"),
+        QmlFile::from("qml/MacMenuBackground.qml"),
+        QmlFile::from("qml/MacMenuIcon.qml"),
+        QmlFile::from("qml/MacMenuItem.qml"),
+        QmlFile::from("qml/MacMenu.qml"),
+        QmlFile::from("qml/MacMenuSeparator.qml"),
+        QmlFile::from("qml/MacMenuStyle.qml"),
     ]);
 
     let icons: Vec<String> = std::fs::read_dir("qml/icons")

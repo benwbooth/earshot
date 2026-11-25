@@ -2,8 +2,13 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Earshot
 
-Menu {
+// A song's menu: the shared macOS 26 menu (MacMenu, from
+// hearth/shared/app-menus) in Earshot's colours.
+
+MacMenu {
     id: menu
+    dark: true
+    accent: Theme.accent
     property var tracks: []           // the songs this menu acts on
     property string playlistId: ""    // set when the songs are in one of your playlists
     property int playlistIndex: -1
@@ -27,49 +32,30 @@ Menu {
             popup()
     }
 
-    topPadding: 6
-    bottomPadding: 6
-    implicitWidth: 240
 
-    background: Rectangle {
-        implicitWidth: 240
-        color: Theme.surfaceRaised
-        radius: Theme.radius
-        border.color: Theme.border
-    }
-
-    delegate: MenuItem { id: item; contentItem: Text { leftPadding: 6; text: item.text; color: item.enabled ? Theme.text : Theme.textFaint; font.pixelSize: Theme.fontBody; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
-        background: Rectangle { color: item.highlighted ? Theme.surfaceHover : "transparent"; radius: 6; anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6 }
-        arrow: Icon { x: item.width - width - 14; anchors.verticalCenter: parent.verticalCenter; name: "forward"; size: 14; visible: item.subMenu; color: Theme.textMuted }
-        implicitHeight: 34 }
-
-    MenuItem { text: menu.tracks.length > 1 ? "Play all next" : "Play next"; onTriggered: Player.playNext(menu.tracks) }
-    MenuItem { text: "Add to queue"; onTriggered: Player.enqueue(menu.tracks) }
-    MenuItem {
+    MacMenuItem { text: menu.tracks.length > 1 ? "Play all next" : "Play next"; onTriggered: Player.playNext(menu.tracks) }
+    MacMenuItem { text: "Add to queue"; onTriggered: Player.enqueue(menu.tracks) }
+    MacMenuItem {
         text: "Open on " + Api.siteName(menu.webPage)
         visible: menu.webPage !== ""
         height: visible ? implicitHeight : 0
         onTriggered: Api.openWeb(menu.webPage)
     }
 
-    Menu {
+    MacMenu {
         id: addMenu
         title: "Add to playlist"
-        topPadding: 6
-        bottomPadding: 6
-        background: Rectangle { implicitWidth: 220; color: Theme.surfaceRaised; radius: Theme.radius; border.color: Theme.border }
-        delegate: menu.delegate
+        dark: true
+        accent: Theme.accent
 
-        MenuItem {
+        MacMenuItem {
             text: "New playlist…"
             onTriggered: Nav.askNewPlaylist(menu.tracks)
         }
-        MenuSeparator {
-            contentItem: Rectangle { implicitHeight: 1; color: Theme.border }
-        }
+        MacMenuSeparator {}
         Instantiator {
             model: menu.playlists.filter(p => p.id !== "liked")
-            delegate: MenuItem {
+            delegate: MacMenuItem {
                 required property var modelData
                 text: modelData.name
                 onTriggered: {
@@ -83,48 +69,48 @@ Menu {
         }
     }
 
-    MenuItem {
+    MacMenuItem {
         text: menu.liked ? "Remove from Liked songs" : "Add to Liked songs"
         visible: menu.track !== null
         height: visible ? implicitHeight : 0
         onTriggered: Backend.setLiked(JSON.stringify(menu.track), !menu.liked)
     }
 
-    MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.border } }
+    MacMenuSeparator {}
 
-    MenuItem {
+    MacMenuItem {
         text: "Go to album"
         enabled: menu.track !== null && !!menu.track.albumId
         height: menu.track && menu.track.albumId ? implicitHeight : 0
         visible: height > 0
         onTriggered: Nav.album(menu.track.albumId)
     }
-    MenuItem {
+    MacMenuItem {
         text: "Go to artist"
         enabled: menu.track !== null && !!menu.track.artistId
         height: menu.track && menu.track.artistId ? implicitHeight : 0
         visible: height > 0
         onTriggered: Nav.artist(menu.track.artistId)
     }
-    MenuItem {
+    MacMenuItem {
         text: "Open on Reddit"
         height: menu.track && menu.track.link ? implicitHeight : 0
         visible: height > 0
         onTriggered: Qt.openUrlExternally(menu.track.link)
     }
-    MenuItem {
+    MacMenuItem {
         text: "Move up"
         height: menu.playlistId !== "" && menu.playlistIndex > 0 ? implicitHeight : 0
         visible: height > 0
         onTriggered: Backend.moveInPlaylist(menu.playlistId, menu.playlistIndex, menu.playlistIndex - 1)
     }
-    MenuItem {
+    MacMenuItem {
         text: "Move down"
         height: menu.playlistId !== "" && menu.playlistIndex >= 0 && menu.playlistIndex < menu.playlistLength - 1 ? implicitHeight : 0
         visible: height > 0
         onTriggered: Backend.moveInPlaylist(menu.playlistId, menu.playlistIndex, menu.playlistIndex + 1)
     }
-    MenuItem {
+    MacMenuItem {
         text: "Remove from this playlist"
         height: menu.playlistId !== "" && menu.playlistIndex >= 0 ? implicitHeight : 0
         visible: height > 0
@@ -133,13 +119,13 @@ Menu {
             menu.removed()
         }
     }
-    MenuItem {
+    MacMenuItem {
         text: "Remove from queue"
         height: menu.queueIndex >= 0 && menu.queueIndex !== Player.index ? implicitHeight : 0
         visible: height > 0
         onTriggered: Player.removeAt(menu.queueIndex)
     }
-    MenuItem {
+    MacMenuItem {
         text: "Remove from History"
         height: menu.historyMode && menu.track !== null ? implicitHeight : 0
         visible: height > 0
