@@ -6,11 +6,10 @@ mod native;
 use cxx_qt_lib::QString;
 
 fn main() {
-    // A dark, flat look by default regardless of the desktop's Qt style.
-    if std::env::var_os("QT_QUICK_CONTROLS_STYLE").is_none() {
-        // SAFETY: set before any other thread exists.
-        set_qt_env("QT_QUICK_CONTROLS_STYLE", "Basic");
-    }
+    // A dark, flat look by default regardless of the desktop's Qt style
+    // (EARSHOT_STYLE picks another; not the session's QT_QUICK_CONTROLS_STYLE,
+    // which hearth sets for other apps).
+    set_qt_env("QT_QUICK_CONTROLS_STYLE", std::env::var("EARSHOT_STYLE").unwrap_or_else(|_| "Basic".into()));
 
     // YouTube's player runs in Qt WebEngine, which has to be set up first.
     native::init_web_engine();
