@@ -1,5 +1,6 @@
 #include "earshot/native.h"
 #include "earshot/global_menu.h"
+#include <QtCore/QProcessEnvironment>
 
 #include <string>
 #include <vector>
@@ -21,6 +22,29 @@
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusMessage>
 #endif
+
+// Puts back what start-up changed in the environment for Qt (noted as
+// __APP_ORIG_<name>: empty = unset, else "=value"), once the main QML has
+// loaded, so programs this app starts get the desktop's own (our
+// QT_QUICK_CONTROLS_STYLE=Basic made KDE apps opened from here draw plain
+// light controls, 2026-11-25).
+static void restoreLaunchEnv()
+{
+    const QStringList keys = QProcessEnvironment::systemEnvironment().keys();
+    for (const QString& k : keys) {
+        if (!k.startsWith(QLatin1String("__APP_ORIG_")))
+            continue;
+        const QByteArray key = k.toLocal8Bit();
+        const QByteArray name = k.mid(11).toLocal8Bit();
+        const QByteArray v = qgetenv(key.constData());
+        if (v.startsWith('='))
+            qputenv(name.constData(), v.mid(1));
+        else
+            qunsetenv(name.constData());
+        qunsetenv(key.constData());
+    }
+}
+
 
 void earshotReloadKWinRules()
 {
@@ -161,6 +185,7 @@ int earshotRun(const rust::Vec<rust::String>& args, const QString& desktopId, co
     engine.load(QUrl(qml));
     if (engine.rootObjects().isEmpty())
         return 1;
+    restoreLaunchEnv();
 
     QObject* window = engine.rootObjects().first();
     QObject::connect(&server, &QLocalServer::newConnection, &server, [&server, window]() {
