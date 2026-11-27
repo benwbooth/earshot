@@ -190,6 +190,7 @@ pub fn station(subreddit: &str) -> Result<Value, String> {
             }
             let mut tracks = parse_feed(&feed, subreddit);
             find_reddit_audio(&mut tracks);
+            crate::youtube::fill_durations(&mut tracks);
             if tracks.is_empty() {
                 return Err(format!("r/{subreddit} has no links to songs right now."));
             }

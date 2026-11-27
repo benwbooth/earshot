@@ -75,6 +75,48 @@ fn audio_format(answer: &Value) -> Result<(String, u64), String> {
     Ok((url.to_owned(), length))
 }
 
+/// A video's length in seconds, from its player details (given even when
+/// YouTube won't let Earshot's server play the video).
+pub fn length(video: &str) -> Option<u64> {
+    let answer = innertube("player", json!({ "videoId": video, "contentCheckOk": true, "racyCheckOk": true })).ok()?;
+    answer.pointer("/videoDetails/lengthSeconds")?.as_str()?.parse().ok().filter(|seconds| *seconds > 0)
+}
+
+/// Fills in the length of songs that came without one (songs shared on
+/// Reddit: the feed doesn't say), a few at a time: a video's own length, or
+/// for a song still to be looked up, that of the video it would play.
+pub fn fill_durations(tracks: &mut [Value]) {
+    let missing: Vec<usize> = tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t["duration"].as_f64().unwrap_or(0.0) <= 0.0 && t["youtubeId"].is_string() && t["service"].is_null() && t["streamUrl"].is_null())
+        .map(|(index, _)| index)
+        .collect();
+    for chunk in missing.chunks(12) {
+        let found: Vec<(usize, Option<u64>)> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = chunk
+                .iter()
+                .map(|&index| {
+                    let track = &tracks[index];
+                    scope.spawn(move || {
+                        let video = match track["youtubeId"].as_str().filter(|id| !id.is_empty()) {
+                            Some(id) => id.to_owned(),
+                            None => find_videos(track, None).ok()?.into_iter().next()?,
+                        };
+                        length(&video)
+                    })
+                })
+                .collect();
+            chunk.iter().copied().zip(jobs.into_iter().map(|job| job.join().ok().flatten())).collect()
+        });
+        for (index, duration) in found {
+            if let Some(duration) = duration {
+                tracks[index]["duration"] = json!(duration);
+            }
+        }
+    }
+}
+
 /// How much of a video's audio is asked for at once (YouTube refuses a
 /// whole file in one request).
 pub const AUDIO_PIECE: u64 = 1_000_000;
